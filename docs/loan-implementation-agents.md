@@ -8,7 +8,7 @@ Purpose: execute loan parity in ordered tracks, one by one.
 - Agent 2: Completed
 - Agent 3: Completed
 - Agent 4: Completed
-- Agent 5: Not started
+- Agent 5: Completed
 - Agent 6: Not started
 
 ## Agent 1: Active-Loans Register Parity
@@ -80,6 +80,19 @@ Deliverables:
 
 Definition of done:
 - High-impact actions are possible without breaking financial invariants.
+
+Status: Completed.
+- `LoanServiceRequest` model added (propose → separate-actor decide → atomic execution), enforcing exactly one PENDING request per loan.
+- Domain function `calculateLoanPayoff` computes principal/interest/fees/penalties payoff (collected vs waived) on a cash-basis accounting model — no reversing entries are needed for interest/penalties never booked, only principal (always booked in full at disbursement) is guaranteed fully collected.
+- Application service `loan-service-actions.ts` implements: `requestLoanServiceAction`, `decideLoanServiceAction`, `previewLoanPayoff`, and executors for Undo Disbursal, full settlement (Prepay/Foreclosure), and Transaction Reversal (repayments only; disbursement reversal goes through Undo Disbursal instead).
+- Undo Disbursal is only permitted while the loan is ACTIVE with no transactions besides the original disbursement (guarantees safe schedule deletion); reverses the disbursement journal Dr/Cr and resets the loan to APPROVED.
+- Foreclosure always forces `waivePenalties = true`; Prepay allows an operator-chosen `waivePenalties` flag. Both close the loan and reuse `calculateLoanPayoff`.
+- Transaction Reversal decrements installment paid buckets per original allocation and recomputes loan status, allowing a CLOSED/overpaid loan to reopen if reversal creates a new balance.
+- New API routes: `POST/GET /api/loans/[id]/service-actions`, `POST /api/loans/[id]/service-actions/[requestId]/decision`, `GET /api/loans/[id]/payoff-quote`.
+- New `permissions.loanReverse` check (assigned to the Branch Manager default group) gates request and decision; maker-checker enforced by rejecting a decision from the same user who made the request.
+- New "Servicing" tab added to the loan detail page (`loan-service-actions-panel.tsx`) with a request form (live payoff preview) and an approve/reject history list.
+- `LoanInstallment` gained `principalWaivedMinor`/`interestWaivedMinor`/`feesWaivedMinor`/`penaltiesWaivedMinor` columns to record the Waived bucket from the legacy parity breakdown.
+- New unit tests: `loan-payoff.test.ts` (4 tests covering mixed past/future installments, waive-penalties policy, partial prior payments, fully-settled installments).
 
 ## Agent 6: Full-Fidelity Loan Export
 Scope:

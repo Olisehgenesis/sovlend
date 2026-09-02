@@ -242,4 +242,6 @@ strong.negative { color: #a44831; }
 @media (max-width: 760px) { .detail-grid { grid-template-columns: 1fr; } }
 .note-list { margin: 0; padding: 4px 18px 0; list-style: none; display: grid; gap: 12px; }.note-list li { padding-bottom: 12px; border-bottom: 1px solid var(--line); }.note-list p { margin: 0 0 6px; font-size: 13px; line-height: 1.5; }.note-list small { color: var(--muted); font-size: 11px; }
 
-@media (max-width: 760px) { .loan-summary-metrics { grid-template-columns: repeat(2, 1fr); }.loan-summary-metrics article:nth-child(2) { border-right: 0; }.loan-summary-metrics article:nth-child(-n+2) { border-bottom: 1px solid var(--line); } }
+@media (max-width: 760px) { .loan-summary-metrics { grid-template-columns: repeat(2, 1fr); }.loan-summary-metrics article:nth-child(2) { border-right: 0; }.loan-summary-metrics article:nth-child(-n+2) { border-bottom: 1px solid var(--line); } }.configuration-note strong svg { margin-right: 5px; vertical-align: -2px; }
+.payoff-quote { margin-top: 4px; border: 1px solid var(--line); border-radius: 5px; }
+.payoff-quote .payoff-total dt, .payoff-quote .payoff-total dd { color: var(--forest); font-weight: 750; }

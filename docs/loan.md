@@ -177,6 +177,7 @@ Observed actions on loan page:
 - loanId, installmentNumber, dueOn
 - due buckets: principalDueMinor, interestDueMinor, feesDueMinor, penaltiesDueMinor
 - paid buckets: principalPaidMinor, interestPaidMinor, feesPaidMinor, penaltiesPaidMinor
+- waived buckets: principalWaivedMinor, interestWaivedMinor, feesWaivedMinor, penaltiesWaivedMinor (set by Prepay/Foreclosure servicing actions)
 
 ### LoanTransaction fields
 - loanId
@@ -194,6 +195,14 @@ Observed actions on loan page:
 ### LoanTransactionAllocation fields
 - transactionId, installmentId
 - principalMinor, interestMinor, feesMinor, penaltiesMinor
+
+### LoanServiceRequest fields (Agent 5: high-risk servicing, maker-checker)
+- loanId, actionType (UNDO_DISBURSAL, PREPAY, FORECLOSURE, TRANSACTION_REVERSAL)
+- status (PENDING, APPROVED, REJECTED), reason, payload (JSON, captured at request time)
+- idempotencyKey (unique)
+- requestedById, requestedAt, decidedById, decidedAt, decisionNote
+- resultTransactionId (unique, links to the LoanTransaction created on approval)
+- only one PENDING request per loan is allowed at a time; the decider must differ from the requester
 
 ### Other loan-related entities
 - Document (loanId relation)
@@ -299,10 +308,7 @@ Observed actions on loan page:
 ## Gaps Between Legacy Surface and Current SovLend Surface
 Legacy shows broader per-loan tabs than current SovLend loan page:
 - Not yet surfaced in SovLend loan UI:
-  - Overdue Charges tab
-  - Undo Disbursal action
-  - Foreclosure action
-  - Prepay Loan action
+  - None remaining for high-risk servicing actions (Undo Disbursal, Foreclosure, Prepay Loan are now available under the "Servicing" tab, maker-checker controlled)
 - Not yet surfaced in SovLend loan register:
   - Export-to-document action matching legacy operator flow
 - Partially present elsewhere:
@@ -362,9 +368,10 @@ For communication/control:
 - Loan notes tab: Legacy yes, SovLend yes
 - Loan collateral tab: Legacy yes, SovLend yes
 - Overdue charges tab: Legacy yes, SovLend partial
-- Prepay loan action: Legacy yes, SovLend no
-- Foreclosure action: Legacy yes, SovLend no
-- Undo disbursal action: Legacy yes, SovLend no
+- Prepay loan action: Legacy yes, SovLend yes (maker-checker, Servicing tab)
+- Foreclosure action: Legacy yes, SovLend yes (maker-checker, Servicing tab)
+- Undo disbursal action: Legacy yes, SovLend yes (maker-checker, Servicing tab, only while no repayments posted)
+- Transaction reversal action: Legacy yes, SovLend yes (maker-checker, repayment transactions only)
 - Loan export: Legacy yes, SovLend yes (CSV)
 
 ### Live examples captured
@@ -447,13 +454,10 @@ For communication/control:
 - Loan notes: GET/POST /api/loans/[id]/notes
 - Loan documents: GET/POST /api/loans/[id]/documents and DELETE /api/loans/[id]/documents/[documentId]
 - Loan collateral: GET/POST /api/loans/[id]/collateral and PATCH/DELETE /api/loans/[id]/collateral/[collateralId]
+- High-impact servicing (maker-checker): GET/POST /api/loans/[id]/service-actions, POST /api/loans/[id]/service-actions/[requestId]/decision, GET /api/loans/[id]/payoff-quote
 
 ### Routes missing for full legacy parity
-- High-impact servicing:
-  - POST /api/loans/[id]/undo-disbursal
-  - POST /api/loans/[id]/prepay
-  - POST /api/loans/[id]/foreclose
-  - POST /api/loans/[id]/transactions/[txnId]/reverse
+- None remaining for the six-track parity plan; Agent 6 (full-fidelity export) is the only outstanding track.
 
 ### Active-loans register parity gaps from legacy sample
 - Missing unified register filter by name/client/staff/office

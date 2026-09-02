@@ -243,6 +243,8 @@ model User {
   assignedSavingsAccounts SavingsAccount[] @relation("AssignedSavingsOfficer")
   submittedSavingsAccounts SavingsAccount[] @relation("SavingsAccountSubmittedBy")
   approvedSavingsAccounts SavingsAccount[] @relation("SavingsAccountApprovedBy")
+  loanServiceRequestsMade LoanServiceRequest[] @relation("LoanServiceRequestRequestedBy")
+  loanServiceRequestsDecided LoanServiceRequest[] @relation("LoanServiceRequestDecidedBy")
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
 
@@ -706,6 +708,7 @@ model Loan {
   notes                 LoanNote[]
   collateralItems       LoanCollateral[]
   reminders             Reminder[]
+  serviceRequests       LoanServiceRequest[]
   createdAt             DateTime   @default(now())
   updatedAt             DateTime   @updatedAt
 
@@ -726,6 +729,10 @@ model LoanInstallment {
   interestPaidMinor     BigInt   @default(0)
   feesPaidMinor         BigInt   @default(0)
   penaltiesPaidMinor    BigInt   @default(0)
+  principalWaivedMinor  BigInt   @default(0)
+  interestWaivedMinor   BigInt   @default(0)
+  feesWaivedMinor       BigInt   @default(0)
+  penaltiesWaivedMinor  BigInt   @default(0)
   loan                  Loan     @relation(fields: [loanId], references: [id])
   reminders             Reminder[]
   transactionAllocations LoanTransactionAllocation[]
@@ -755,6 +762,7 @@ model LoanTransaction {
   reversedBy             LoanTransaction? @relation("TransactionReversal", fields: [reversedById], references: [id])
   reverses               LoanTransaction? @relation("TransactionReversal")
   allocations            LoanTransactionAllocation[]
+  serviceRequest         LoanServiceRequest?
   createdAt              DateTime @default(now())
 
   @@index([loanId, businessDate])
@@ -794,6 +802,31 @@ model LoanCollateral {
 
   @@index([loanId, status])
   @@index([loanId, valuationDate])
+}
+
+model LoanServiceRequest {
+  id                  String    @id @default(uuid()) @db.Uuid
+  loanId              String    @db.Uuid
+  actionType          String
+  status              String    @default("PENDING")
+  reason              String?
+  payload             Json?
+  idempotencyKey      String    @unique
+  requestedById       String
+  requestedAt         DateTime  @default(now())
+  decidedById         String?
+  decidedAt           DateTime?
+  decisionNote        String?
+  resultTransactionId String?   @unique @db.Uuid
+  loan                Loan      @relation(fields: [loanId], references: [id], onDelete: Cascade)
+  requestedBy         User      @relation("LoanServiceRequestRequestedBy", fields: [requestedById], references: [id])
+  decidedBy           User?     @relation("LoanServiceRequestDecidedBy", fields: [decidedById], references: [id])
+  resultTransaction   LoanTransaction? @relation(fields: [resultTransactionId], references: [id])
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  @@index([loanId, status])
+  @@index([loanId, actionType])
 }
 
 model SavingsAccount {

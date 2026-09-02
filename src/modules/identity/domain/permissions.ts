@@ -28,7 +28,7 @@ export type PermissionCode = (typeof permissions)[keyof typeof permissions];
 
 export const defaultPermissionGroups: Record<string, readonly PermissionCode[]> = {
   "General Manager": Object.values(permissions).filter((code) => code !== permissions.treasuryApprove),
-  "Branch Manager": [permissions.clientView, permissions.clientManage, permissions.loanView, permissions.loanApply, permissions.loanApprove, permissions.loanDisburse, permissions.loanRepayment, permissions.loanClose, permissions.savingsView, permissions.savingsTransact, permissions.savingsApprove, permissions.ledgerView, permissions.reportView, permissions.productManage],
+  "Branch Manager": [permissions.clientView, permissions.clientManage, permissions.loanView, permissions.loanApply, permissions.loanApprove, permissions.loanDisburse, permissions.loanRepayment, permissions.loanClose, permissions.loanReverse, permissions.savingsView, permissions.savingsTransact, permissions.savingsApprove, permissions.ledgerView, permissions.reportView, permissions.productManage],
   Teller: [permissions.clientView, permissions.loanView, permissions.loanRepayment, permissions.savingsView, permissions.savingsTransact],
   "Loan Officer": [permissions.clientView, permissions.clientManage, permissions.loanView, permissions.loanApply, permissions.reportView],
   "Treasury Signer": [permissions.treasuryView, permissions.treasuryApprove, permissions.ledgerView, permissions.auditView],

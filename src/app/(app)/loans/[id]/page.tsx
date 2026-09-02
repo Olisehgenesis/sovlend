@@ -6,6 +6,7 @@ import { notFound, redirect } from "next/navigation";
 import { LoanCollateralPanel } from "@/components/loan-collateral-panel";
 import { LoanChargesPanel } from "@/components/loan-charge-panel";
 import { LoanDocumentsPanel, LoanNotesPanel } from "@/components/loan-record-forms";
+import { LoanServiceActionsPanel } from "@/components/loan-service-actions-panel";
 import { RepaymentForm } from "@/components/repayment-form";
 import { Breadcrumbs } from "@/components/breadcrumbs";
 import { auth } from "@/lib/auth";
@@ -27,7 +28,7 @@ export default async function LoanPage({
   const scope = await getUserDataScope(prisma, session.user.id);
   if (!scope) redirect("/");
   const tab = (await searchParams).tab;
-  const activeTab = tab === "charges" || tab === "overdue-charges" || tab === "documents" || tab === "notes" || tab === "collateral" ? tab : "schedule";
+  const activeTab = tab === "charges" || tab === "overdue-charges" || tab === "documents" || tab === "notes" || tab === "collateral" || tab === "servicing" ? tab : "schedule";
   const loan = await prisma.loan.findFirst({
     where: {
       id: (await params).id,
@@ -57,6 +58,12 @@ export default async function LoanPage({
   const canManageCharges = await authorization.isAllowed({
     actorUserId: session.user.id,
     permission: permissions.clientManage,
+    organizationId: scope.organizationId,
+    officeId: loan.officeId,
+  });
+  const canRequestServiceActions = await authorization.isAllowed({
+    actorUserId: session.user.id,
+    permission: permissions.loanReverse,
     organizationId: scope.organizationId,
     officeId: loan.officeId,
   });
@@ -92,6 +99,22 @@ export default async function LoanPage({
     select: { id: true, name: true, type: true },
     orderBy: [{ type: "asc" }, { name: "asc" }],
   });
+  const serviceRequests = await prisma.loanServiceRequest.findMany({
+    where: { loanId: loan.id },
+    include: { requestedBy: { select: { name: true } }, decidedBy: { select: { name: true } } },
+    orderBy: { requestedAt: "desc" },
+  });
+  const hasPendingDisbursement =
+    loan.status === "ACTIVE" &&
+    Boolean(loan.disbursedOn) &&
+    loan.transactions.every((item) => item.transactionType === "DISBURSEMENT");
+  const isOpenLoan = ["ACTIVE", "IN_ARREARS", "OVERPAID"].includes(loan.status);
+  const repaymentTransactions = loan.transactions
+    .filter((item) => item.transactionType === "REPAYMENT" && !item.reversedById)
+    .map((item) => ({
+      id: item.id,
+      label: `${item.businessDate.toLocaleDateString()} · ${formatMinor(item.denominationAmountMinor, loan.denominationCurrency)}${item.externalReference ? ` · ${item.externalReference}` : ""}`,
+    }));
   return (
     <main className="directory-page">
       <Breadcrumbs
@@ -140,6 +163,7 @@ export default async function LoanPage({
         <Link className={activeTab === "collateral" ? "active" : ""} href={`/loans/${loan.id}?tab=collateral`}>Loan Collateral</Link>
         <Link className={activeTab === "documents" ? "active" : ""} href={`/loans/${loan.id}?tab=documents`}>Loan Documents</Link>
         <Link className={activeTab === "notes" ? "active" : ""} href={`/loans/${loan.id}?tab=notes`}>Notes</Link>
+        <Link className={activeTab === "servicing" ? "active" : ""} href={`/loans/${loan.id}?tab=servicing`}>Servicing</Link>
       </nav>
       {["ACTIVE", "IN_ARREARS", "OVERPAID"].includes(loan.status) ? (
         <section className="panel repayment-panel">
@@ -278,6 +302,38 @@ export default async function LoanPage({
               body: note.body,
               authorName: note.author.name,
               createdAtLabel: new Intl.DateTimeFormat("en-UG", { dateStyle: "medium", timeStyle: "short" }).format(note.createdAt),
+            }))}
+          />
+        </section>
+      ) : null}
+      {activeTab === "servicing" ? (
+        <section className="panel">
+          <div className="panel-heading">
+            <div>
+              <h2>High-risk servicing actions</h2>
+              <p>Undo disbursal, prepay, foreclosure, and transaction reversal — all maker-checker controlled</p>
+            </div>
+          </div>
+          <LoanServiceActionsPanel
+            loanId={loan.id}
+            canRequest={canRequestServiceActions}
+            hasPendingDisbursement={hasPendingDisbursement}
+            isOpenLoan={isOpenLoan}
+            settlementAccounts={settlementAccounts}
+            repaymentTransactions={repaymentTransactions}
+            currencyCode={loan.denominationCurrency}
+            requests={serviceRequests.map((item) => ({
+              id: item.id,
+              actionType: item.actionType,
+              status: item.status,
+              reason: item.reason,
+              requestedByName: item.requestedBy.name,
+              requestedAt: new Intl.DateTimeFormat("en-UG", { dateStyle: "medium", timeStyle: "short" }).format(item.requestedAt),
+              decidedByName: item.decidedBy?.name ?? null,
+              decidedAt: item.decidedAt ? new Intl.DateTimeFormat("en-UG", { dateStyle: "medium", timeStyle: "short" }).format(item.decidedAt) : null,
+              decisionNote: item.decisionNote,
+              canDecide: item.status === "PENDING" && item.requestedById !== session.user.id,
+              isOwnRequest: item.requestedById === session.user.id,
             }))}
           />
         </section>
