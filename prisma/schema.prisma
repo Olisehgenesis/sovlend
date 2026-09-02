@@ -1,0 +1,1067 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  ADMIN
+  GENERAL_MANAGER
+  BRANCH_MANAGER
+  TELLER
+  LOAN_OFFICER
+  CLIENT
+  INVESTOR
+  TREASURY_SIGNER
+  AUDITOR
+}
+
+enum ClientStatus {
+  DRAFT
+  SUBMITTED
+  ACTIVE
+  INACTIVE
+  CLOSED
+  REJECTED
+  BLOCKED
+}
+
+enum KycStatus {
+  INCOMPLETE
+  SUBMITTED
+  VERIFIED
+  REJECTED
+}
+
+enum LoanApplicationStatus {
+  DRAFT
+  SUBMITTED
+  APPROVED
+  REJECTED
+  WITHDRAWN
+  DISBURSED
+}
+
+enum LoanStatus {
+  APPROVED
+  ACTIVE
+  IN_ARREARS
+  OVERPAID
+  WRITTEN_OFF
+  CLOSED
+}
+
+enum AccountType {
+  ASSET
+  LIABILITY
+  EQUITY
+  REVENUE
+  EXPENSE
+}
+
+enum EntryDirection {
+  DEBIT
+  CREDIT
+}
+
+enum JournalStatus {
+  PENDING
+  POSTED
+  REVERSED
+}
+
+enum OwnershipType {
+  INVESTOR_CAPITAL
+  CLIENT_SAVINGS
+  COMPANY_TREASURY
+  OPERATING_FUNDS
+}
+
+enum WalletKind {
+  HOT
+  COLD_MULTISIG
+  DEPOSIT
+}
+
+enum WalletNetwork {
+  BITCOIN
+  EVM
+}
+
+enum ProposalStatus {
+  DRAFT
+  PENDING_APPROVAL
+  APPROVED
+  BROADCAST
+  CONFIRMED
+  REJECTED
+  FAILED
+}
+
+enum PriceStatus {
+  QUORUM
+  DEGRADED
+  MANUAL
+}
+
+enum ReminderType {
+  REPAYMENT_DUE_SOON
+  REPAYMENT_DUE_TODAY
+  REPAYMENT_OVERDUE
+}
+
+enum ReminderStatus {
+  SCHEDULED
+  PROCESSING
+  SENT
+  FAILED
+  CANCELLED
+}
+
+enum PermissionScope {
+  ORGANIZATION
+  OFFICE
+  OWN
+}
+
+enum InvestorAccessStatus {
+  REQUESTED
+  INVITED
+  ACTIVE
+  REJECTED
+  SUSPENDED
+}
+
+enum InvestmentStatus {
+  DRAFT
+  AWAITING_INVOICE
+  AWAITING_PAYMENT
+  SETTLEMENT_PENDING
+  FUNDED
+  EXPIRED
+  CANCELLED
+  REFUNDED
+}
+
+enum LightningInvoiceStatus {
+  NEW
+  PAID
+  EXPIRED
+  CANCELLED
+}
+
+enum MigrationRunStatus {
+  CREATED
+  EXTRACTING
+  EXTRACTED
+  IMPORTING
+  RECONCILING
+  COMPLETED
+  FAILED
+}
+
+model Organization {
+  id            String          @id @default(uuid()) @db.Uuid
+  name          String
+  baseCurrency  String          @default("UGX")
+  offices       Office[]
+  users         User[]
+  clients       Client[]
+  loanProducts  LoanProduct[]
+  ownershipPools OwnershipPool[]
+  permissionGroups PermissionGroup[]
+  investorAccesses InvestorOrganizationAccess[]
+  investorInvites InvestorInvite[]
+  investorRequests InvestorAccessRequest[]
+  investments InvestmentCommitment[]
+  settlementAccounts SettlementAccount[]
+  accountingDefaults LoanAccountingDefaults?
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+}
+
+model Office {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @db.Uuid
+  parentId       String?  @db.Uuid
+  name           String
+  externalId     String?
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  parent         Office?  @relation("OfficeHierarchy", fields: [parentId], references: [id])
+  children       Office[] @relation("OfficeHierarchy")
+  users          User[]
+  clients        Client[]
+  loans          Loan[]
+  journals       Journal[]
+  permissionAssignments UserPermissionAssignment[]
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@unique([organizationId, name])
+  @@index([organizationId, parentId])
+}
+
+model User {
+  id              String        @id
+  name            String
+  email           String        @unique
+  emailVerified   Boolean       @default(false)
+  image           String?
+  role            String?
+  banned          Boolean?      @default(false)
+  banReason       String?
+  banExpires      DateTime?
+  organizationId  String?       @db.Uuid
+  officeId        String?       @db.Uuid
+  systemRole      UserRole      @default(CLIENT)
+  organization    Organization? @relation(fields: [organizationId], references: [id])
+  office          Office?       @relation(fields: [officeId], references: [id])
+  sessions         Session[]
+  accounts         Account[]
+  passkeys         Passkey[]
+  clientProfile    Client?       @relation("ClientAuthUser")
+  assignedClients Client[]    @relation("AssignedOfficer")
+  assignedLoans  Loan[]       @relation("AssignedLoanOfficer")
+  approvals      Approval[]
+  auditEvents    AuditEvent[]
+  permissionAssignments UserPermissionAssignment[]
+  submittedApplications LoanApplication[] @relation("ApplicationSubmitter")
+  investorProfile InvestorProfile?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@index([organizationId, officeId, systemRole])
+  @@map("user")
+}
+
+model Session {
+  id             String   @id
+  expiresAt      DateTime
+  token          String   @unique
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  ipAddress      String?
+  userAgent      String?
+  userId         String
+  impersonatedBy String?
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("session")
+}
+
+model Account {
+  id                    String    @id
+  issuer                String
+  accountId             String
+  providerId            String
+  userId                String
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  password              String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([issuer, accountId], map: "account_issuer_accountId_uidx")
+  @@index([userId])
+  @@map("account")
+}
+
+model Verification {
+  id         String   @id
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([identifier])
+  @@map("verification")
+}
+
+model Passkey {
+  id           String    @id
+  name         String?
+  publicKey    String
+  userId       String
+  credentialID String
+  counter      Int
+  deviceType   String
+  backedUp     Boolean
+  transports   String?
+  createdAt    DateTime?
+  aaguid       String?
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([credentialID])
+  @@map("passkey")
+}
+
+model Currency {
+  code       String   @id @db.VarChar(10)
+  name       String
+  exponent   Int
+  active     Boolean  @default(true)
+  accounts   LedgerAccount[]
+  pricesBase PriceSnapshot[] @relation("PriceBase")
+  pricesQuote PriceSnapshot[] @relation("PriceQuote")
+  createdAt  DateTime @default(now())
+}
+
+model Client {
+  id                String       @id @default(uuid()) @db.Uuid
+  authUserId        String?      @unique
+  organizationId    String       @db.Uuid
+  officeId          String       @db.Uuid
+  assignedOfficerId String?
+  accountNumber     String
+  externalId        String?
+  firstName         String
+  middleName        String?
+  lastName          String
+  mobileNumber      String?
+  dateOfBirth       DateTime?    @db.Date
+  genderCode        String?
+  clientTypeCode    String?
+  classificationCode String?
+  isStaff           Boolean      @default(false)
+  status            ClientStatus @default(DRAFT)
+  kycStatus         KycStatus    @default(INCOMPLETE)
+  submittedOn       DateTime?    @db.Date
+  activatedOn       DateTime?    @db.Date
+  organization      Organization @relation(fields: [organizationId], references: [id])
+  office            Office       @relation(fields: [officeId], references: [id])
+  assignedOfficer   User?        @relation("AssignedOfficer", fields: [assignedOfficerId], references: [id])
+  authUser          User?        @relation("ClientAuthUser", fields: [authUserId], references: [id])
+  applications      LoanApplication[]
+  loans             Loan[]
+  savingsAccounts   SavingsAccount[]
+  documents         Document[]
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+
+  @@unique([organizationId, accountNumber])
+  @@index([organizationId, officeId, status])
+  @@index([organizationId, externalId])
+}
+
+model LoanProduct {
+  id                    String   @id @default(uuid()) @db.Uuid
+  organizationId        String   @db.Uuid
+  name                  String
+  shortName             String
+  denominationCurrency  String   @default("UGX")
+  principalMinMinor     BigInt
+  principalMaxMinor     BigInt
+  annualRateBps         Int
+  repaymentCount        Int
+  repaymentFrequency    String
+  amortizationMethod    String
+  interestMethod        String
+  lateFeeRule           Json?
+  version               Int      @default(1)
+  active                Boolean  @default(true)
+  organization          Organization @relation(fields: [organizationId], references: [id])
+  applications          LoanApplication[]
+  loans                 Loan[]
+  accountingMapping     LoanProductAccountingMapping?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@unique([organizationId, shortName, version])
+  @@index([organizationId, active])
+}
+
+model LoanApplication {
+  id                    String                @id @default(uuid()) @db.Uuid
+  submittedById         String?
+  clientId              String                @db.Uuid
+  productId             String                @db.Uuid
+  proposedPrincipalMinor BigInt
+  approvedPrincipalMinor BigInt?
+  status                LoanApplicationStatus @default(DRAFT)
+  purpose               String?
+  submittedAt           DateTime?
+  approvedAt            DateTime?
+  client                Client                @relation(fields: [clientId], references: [id])
+  product               LoanProduct           @relation(fields: [productId], references: [id])
+  submittedBy           User?                 @relation("ApplicationSubmitter", fields: [submittedById], references: [id])
+  approvals             Approval[]
+  loan                  Loan?
+  createdAt             DateTime              @default(now())
+  updatedAt             DateTime              @updatedAt
+
+  @@index([clientId, status])
+  @@index([productId, status])
+  @@index([submittedById, status])
+}
+
+model PermissionDefinition {
+  code              String   @id
+  description       String
+  riskLevel         String
+  groupPermissions  PermissionGroupPermission[]
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+}
+
+model PermissionGroup {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @db.Uuid
+  name           String
+  description    String?
+  system         Boolean  @default(false)
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  permissions    PermissionGroupPermission[]
+  assignments    UserPermissionAssignment[]
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@unique([organizationId, name])
+  @@index([organizationId])
+}
+
+model PermissionGroupPermission {
+  groupId       String @db.Uuid
+  permissionCode String
+  group         PermissionGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  permission    PermissionDefinition @relation(fields: [permissionCode], references: [code], onDelete: Restrict)
+  createdAt     DateTime @default(now())
+
+  @@id([groupId, permissionCode])
+  @@index([permissionCode])
+}
+
+model UserPermissionAssignment {
+  id                   String          @id @default(uuid()) @db.Uuid
+  userId               String
+  groupId              String          @db.Uuid
+  scope                 PermissionScope
+  officeId              String?         @db.Uuid
+  includeChildOffices   Boolean         @default(false)
+  approvalLimitMinor    BigInt?
+  approvalCurrencyCode String?
+  validFrom             DateTime        @default(now())
+  validUntil            DateTime?
+  user                  User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  group                 PermissionGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  office                Office?         @relation(fields: [officeId], references: [id])
+  createdAt             DateTime        @default(now())
+  updatedAt             DateTime        @updatedAt
+
+  @@unique([userId, groupId, scope, officeId])
+  @@index([userId, validUntil])
+  @@index([officeId, scope])
+}
+
+model Approval {
+  id            String   @id @default(uuid()) @db.Uuid
+  applicationId String   @db.Uuid
+  reviewerId    String
+  decision      String
+  reason        String?
+  application   LoanApplication @relation(fields: [applicationId], references: [id])
+  reviewer      User     @relation(fields: [reviewerId], references: [id])
+  decidedAt     DateTime @default(now())
+
+  @@index([applicationId, decidedAt])
+}
+
+model Loan {
+  id                    String     @id @default(uuid()) @db.Uuid
+  applicationId         String     @unique @db.Uuid
+  clientId              String     @db.Uuid
+  productId             String     @db.Uuid
+  officeId              String     @db.Uuid
+  loanOfficerId         String?
+  accountNumber         String     @unique
+  denominationCurrency  String     @default("UGX")
+  principalMinor        BigInt
+  termsSnapshot         Json?
+  scheduleVersion       Int        @default(1)
+  status                LoanStatus @default(APPROVED)
+  disbursedOn           DateTime?  @db.Date
+  maturesOn             DateTime?  @db.Date
+  application           LoanApplication @relation(fields: [applicationId], references: [id])
+  client                Client     @relation(fields: [clientId], references: [id])
+  product               LoanProduct @relation(fields: [productId], references: [id])
+  office                Office     @relation(fields: [officeId], references: [id])
+  loanOfficer           User?      @relation("AssignedLoanOfficer", fields: [loanOfficerId], references: [id])
+  installments          LoanInstallment[]
+  transactions          LoanTransaction[]
+  documents             Document[]
+  reminders             Reminder[]
+  createdAt             DateTime   @default(now())
+  updatedAt             DateTime   @updatedAt
+
+  @@index([officeId, status])
+  @@index([clientId, status])
+}
+
+model LoanInstallment {
+  id                    String   @id @default(uuid()) @db.Uuid
+  loanId                String   @db.Uuid
+  installmentNumber     Int
+  dueOn                 DateTime @db.Date
+  principalDueMinor     BigInt
+  interestDueMinor      BigInt
+  feesDueMinor          BigInt   @default(0)
+  penaltiesDueMinor     BigInt   @default(0)
+  principalPaidMinor    BigInt   @default(0)
+  interestPaidMinor     BigInt   @default(0)
+  feesPaidMinor         BigInt   @default(0)
+  penaltiesPaidMinor    BigInt   @default(0)
+  loan                  Loan     @relation(fields: [loanId], references: [id])
+  reminders             Reminder[]
+  transactionAllocations LoanTransactionAllocation[]
+  createdAt             DateTime @default(now())
+
+  @@unique([loanId, installmentNumber])
+  @@index([dueOn])
+}
+
+model LoanTransaction {
+  id                     String   @id @default(uuid()) @db.Uuid
+  loanId                 String   @db.Uuid
+  transactionType        String
+  businessDate           DateTime @db.Date
+  settlementCurrency     String
+  settlementChannel      String
+  settlementAccountId    String?  @db.Uuid
+  settlementAmountMinor  BigInt
+  denominationAmountMinor BigInt
+  priceSnapshotId        String?  @db.Uuid
+  externalReference      String?
+  idempotencyKey         String   @unique
+  reversedById           String?  @unique @db.Uuid
+  loan                   Loan     @relation(fields: [loanId], references: [id])
+  settlementAccount      SettlementAccount? @relation(fields: [settlementAccountId], references: [id])
+  priceSnapshot          PriceSnapshot? @relation(fields: [priceSnapshotId], references: [id])
+  reversedBy             LoanTransaction? @relation("TransactionReversal", fields: [reversedById], references: [id])
+  reverses               LoanTransaction? @relation("TransactionReversal")
+  allocations            LoanTransactionAllocation[]
+  createdAt              DateTime @default(now())
+
+  @@index([loanId, businessDate])
+  @@index([externalReference])
+  @@index([settlementAccountId])
+}
+
+model LoanTransactionAllocation {
+  id                 String @id @default(uuid()) @db.Uuid
+  transactionId      String @db.Uuid
+  installmentId      String @db.Uuid
+  principalMinor     BigInt @default(0)
+  interestMinor      BigInt @default(0)
+  feesMinor          BigInt @default(0)
+  penaltiesMinor     BigInt @default(0)
+  transaction        LoanTransaction @relation(fields: [transactionId], references: [id])
+  installment        LoanInstallment @relation(fields: [installmentId], references: [id])
+  createdAt          DateTime @default(now())
+
+  @@unique([transactionId, installmentId])
+  @@index([installmentId])
+}
+
+model SavingsAccount {
+  id             String   @id @default(uuid()) @db.Uuid
+  clientId       String   @db.Uuid
+  accountNumber  String   @unique
+  currencyCode   String
+  status         String
+  client         Client   @relation(fields: [clientId], references: [id])
+  transactions   SavingsTransaction[]
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([clientId, status])
+}
+
+model SavingsTransaction {
+  id                   String   @id @default(uuid()) @db.Uuid
+  savingsAccountId     String   @db.Uuid
+  transactionType      String
+  amountMinor          BigInt
+  externalReference    String?
+  idempotencyKey       String   @unique
+  savingsAccount       SavingsAccount @relation(fields: [savingsAccountId], references: [id])
+  createdAt            DateTime @default(now())
+
+  @@index([savingsAccountId, createdAt])
+}
+
+model OwnershipPool {
+  id             String        @id @default(uuid()) @db.Uuid
+  organizationId String        @db.Uuid
+  name           String
+  type           OwnershipType
+  organization   Organization  @relation(fields: [organizationId], references: [id])
+  accounts       LedgerAccount[]
+  createdAt      DateTime      @default(now())
+
+  @@unique([organizationId, name])
+}
+
+model LedgerAccount {
+  id              String      @id @default(uuid()) @db.Uuid
+  code            String
+  name            String
+  type            AccountType
+  currencyCode    String      @db.VarChar(10)
+  ownershipPoolId String?     @db.Uuid
+  active          Boolean     @default(true)
+  externalId      String?
+  usage           String      @default("DETAIL")
+  description     String?
+  manualEntriesAllowed Boolean @default(false)
+  currency        Currency    @relation(fields: [currencyCode], references: [code])
+  ownershipPool   OwnershipPool? @relation(fields: [ownershipPoolId], references: [id])
+  lines           JournalLine[]
+  principalMappings LoanProductAccountingMapping[] @relation("PrincipalReceivable")
+  interestReceivableMappings LoanProductAccountingMapping[] @relation("InterestReceivable")
+  interestIncomeMappings LoanProductAccountingMapping[] @relation("InterestIncome")
+  feeIncomeMappings LoanProductAccountingMapping[] @relation("FeeIncome")
+  penaltyIncomeMappings LoanProductAccountingMapping[] @relation("PenaltyIncome")
+  writeOffMappings LoanProductAccountingMapping[] @relation("WriteOffExpense")
+  overpaymentMappings LoanProductAccountingMapping[] @relation("OverpaymentLiability")
+  settlementAccounts SettlementAccount[]
+  defaultPrincipalFor LoanAccountingDefaults[] @relation("DefaultPrincipalReceivable")
+  defaultInterestFor LoanAccountingDefaults[] @relation("DefaultInterestIncome")
+  defaultFeeFor LoanAccountingDefaults[] @relation("DefaultFeeIncome")
+  defaultPenaltyFor LoanAccountingDefaults[] @relation("DefaultPenaltyIncome")
+  defaultWriteOffFor LoanAccountingDefaults[] @relation("DefaultWriteOffExpense")
+  defaultOverpaymentFor LoanAccountingDefaults[] @relation("DefaultOverpaymentLiability")
+  createdAt       DateTime    @default(now())
+
+  @@unique([code, currencyCode, ownershipPoolId])
+  @@index([type, currencyCode])
+}
+
+model LoanProductAccountingMapping {
+  id                           String @id @default(uuid()) @db.Uuid
+  productId                    String @unique @db.Uuid
+  principalReceivableAccountId String @db.Uuid
+  interestReceivableAccountId  String? @db.Uuid
+  interestIncomeAccountId      String @db.Uuid
+  feeIncomeAccountId           String? @db.Uuid
+  penaltyIncomeAccountId       String? @db.Uuid
+  writeOffExpenseAccountId     String? @db.Uuid
+  overpaymentLiabilityAccountId String? @db.Uuid
+  product                      LoanProduct @relation(fields: [productId], references: [id], onDelete: Cascade)
+  principalReceivableAccount   LedgerAccount @relation("PrincipalReceivable", fields: [principalReceivableAccountId], references: [id])
+  interestReceivableAccount    LedgerAccount? @relation("InterestReceivable", fields: [interestReceivableAccountId], references: [id])
+  interestIncomeAccount        LedgerAccount @relation("InterestIncome", fields: [interestIncomeAccountId], references: [id])
+  feeIncomeAccount             LedgerAccount? @relation("FeeIncome", fields: [feeIncomeAccountId], references: [id])
+  penaltyIncomeAccount         LedgerAccount? @relation("PenaltyIncome", fields: [penaltyIncomeAccountId], references: [id])
+  writeOffExpenseAccount       LedgerAccount? @relation("WriteOffExpense", fields: [writeOffExpenseAccountId], references: [id])
+  overpaymentLiabilityAccount  LedgerAccount? @relation("OverpaymentLiability", fields: [overpaymentLiabilityAccountId], references: [id])
+  createdAt                    DateTime @default(now())
+  updatedAt                    DateTime @updatedAt
+}
+
+// Organization-wide fallback accounts used to pre-fill new loan product mappings.
+model LoanAccountingDefaults {
+  id                            String   @id @default(uuid()) @db.Uuid
+  organizationId                String   @unique @db.Uuid
+  principalReceivableAccountId  String?  @db.Uuid
+  interestIncomeAccountId       String?  @db.Uuid
+  feeIncomeAccountId            String?  @db.Uuid
+  penaltyIncomeAccountId        String?  @db.Uuid
+  writeOffExpenseAccountId      String?  @db.Uuid
+  overpaymentLiabilityAccountId String?  @db.Uuid
+  organization                  Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  principalReceivableAccount    LedgerAccount? @relation("DefaultPrincipalReceivable", fields: [principalReceivableAccountId], references: [id])
+  interestIncomeAccount         LedgerAccount? @relation("DefaultInterestIncome", fields: [interestIncomeAccountId], references: [id])
+  feeIncomeAccount              LedgerAccount? @relation("DefaultFeeIncome", fields: [feeIncomeAccountId], references: [id])
+  penaltyIncomeAccount          LedgerAccount? @relation("DefaultPenaltyIncome", fields: [penaltyIncomeAccountId], references: [id])
+  writeOffExpenseAccount        LedgerAccount? @relation("DefaultWriteOffExpense", fields: [writeOffExpenseAccountId], references: [id])
+  overpaymentLiabilityAccount   LedgerAccount? @relation("DefaultOverpaymentLiability", fields: [overpaymentLiabilityAccountId], references: [id])
+  createdAt                     DateTime @default(now())
+  updatedAt                     DateTime @updatedAt
+}
+
+model SettlementAccount {
+  id             String @id @default(uuid()) @db.Uuid
+  organizationId String @db.Uuid
+  name           String
+  type           String
+  provider       String?
+  accountReference String?
+  currencyCode   String @db.VarChar(10)
+  ledgerAccountId String @db.Uuid
+  active         Boolean @default(true)
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  ledgerAccount  LedgerAccount @relation(fields: [ledgerAccountId], references: [id])
+  loanTransactions LoanTransaction[]
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@unique([organizationId, name, currencyCode])
+  @@index([organizationId, type, active])
+  @@index([ledgerAccountId])
+  @@map("SettlementAccountMapping")
+}
+
+model Journal {
+  id              String        @id @default(uuid()) @db.Uuid
+  officeId        String        @db.Uuid
+  businessDate    DateTime      @db.Date
+  referenceType   String
+  referenceId     String?
+  narration       String
+  status          JournalStatus @default(PENDING)
+  reversalOfId    String?       @unique @db.Uuid
+  idempotencyKey  String        @unique
+  office          Office        @relation(fields: [officeId], references: [id])
+  lines           JournalLine[]
+  reversalOf      Journal?      @relation("JournalReversal", fields: [reversalOfId], references: [id])
+  reversedBy      Journal?      @relation("JournalReversal")
+  postedAt        DateTime?
+  createdAt       DateTime      @default(now())
+
+  @@index([officeId, businessDate, status])
+  @@index([referenceType, referenceId])
+}
+
+model JournalLine {
+  id              String         @id @default(uuid()) @db.Uuid
+  journalId       String         @db.Uuid
+  accountId       String         @db.Uuid
+  direction       EntryDirection
+  amountMinor     BigInt
+  memo            String?
+  journal         Journal        @relation(fields: [journalId], references: [id])
+  account         LedgerAccount  @relation(fields: [accountId], references: [id])
+  createdAt       DateTime       @default(now())
+
+  @@index([journalId])
+  @@index([accountId, createdAt])
+}
+
+model PriceSnapshot {
+  id             String      @id @default(uuid()) @db.Uuid
+  baseCode       String      @db.VarChar(10)
+  quoteCode      String      @db.VarChar(10)
+  price          Decimal     @db.Decimal(38, 18)
+  status         PriceStatus
+  observedAt     DateTime
+  expiresAt      DateTime
+  sourceQuotes   Json
+  createdAt      DateTime    @default(now())
+  base           Currency    @relation("PriceBase", fields: [baseCode], references: [code])
+  quote          Currency    @relation("PriceQuote", fields: [quoteCode], references: [code])
+  loanTransactions LoanTransaction[]
+  investments InvestmentCommitment[]
+
+  @@index([baseCode, quoteCode, observedAt(sort: Desc)])
+}
+
+model InvestorProfile {
+  id            String    @id @default(uuid()) @db.Uuid
+  userId        String    @unique
+  displayName   String
+  kycStatus     KycStatus @default(INCOMPLETE)
+  payoutAddress String?
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accesses      InvestorOrganizationAccess[]
+  commitments   InvestmentCommitment[]
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+}
+
+model InvestorOrganizationAccess {
+  id             String               @id @default(uuid()) @db.Uuid
+  investorId     String               @db.Uuid
+  organizationId String               @db.Uuid
+  status         InvestorAccessStatus @default(REQUESTED)
+  approvedAt     DateTime?
+  investor       InvestorProfile      @relation(fields: [investorId], references: [id], onDelete: Cascade)
+  organization   Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  commitments    InvestmentCommitment[]
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+
+  @@unique([investorId, organizationId])
+  @@index([organizationId, status])
+}
+
+model InvestorInvite {
+  id             String               @id @default(uuid()) @db.Uuid
+  organizationId String               @db.Uuid
+  email          String
+  tokenHash      String               @unique
+  status         InvestorAccessStatus @default(INVITED)
+  expiresAt      DateTime
+  acceptedAt     DateTime?
+  createdById    String
+  organization   Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdAt      DateTime             @default(now())
+
+  @@index([email, status])
+  @@index([organizationId, status])
+}
+
+model InvestorAccessRequest {
+  id             String               @id @default(uuid()) @db.Uuid
+  organizationId String               @db.Uuid
+  name           String
+  email          String
+  message        String?
+  status         InvestorAccessStatus @default(REQUESTED)
+  organization   Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+
+  @@index([organizationId, status, createdAt])
+  @@index([email])
+}
+
+model InvestmentCommitment {
+  id                 String           @id @default(uuid()) @db.Uuid
+  investorId         String           @db.Uuid
+  accessId           String           @db.Uuid
+  organizationId     String           @db.Uuid
+  contributionCurrency String
+  contributionAmountMinor BigInt
+  amountSats         BigInt
+  priceSnapshotId    String           @db.Uuid
+  status             InvestmentStatus @default(AWAITING_INVOICE)
+  idempotencyKey     String           @unique
+  investor           InvestorProfile  @relation(fields: [investorId], references: [id])
+  access             InvestorOrganizationAccess @relation(fields: [accessId], references: [id])
+  organization       Organization     @relation(fields: [organizationId], references: [id])
+  priceSnapshot      PriceSnapshot    @relation(fields: [priceSnapshotId], references: [id])
+  invoice            LightningInvoice?
+  createdAt          DateTime         @default(now())
+  fundedAt           DateTime?
+  updatedAt          DateTime         @updatedAt
+
+  @@index([investorId, status, createdAt(sort: Desc)])
+  @@index([organizationId, status])
+}
+
+model LightningInvoice {
+  id             String                 @id @default(uuid()) @db.Uuid
+  commitmentId   String                 @unique @db.Uuid
+  provider       String
+  providerInvoiceId String              @unique
+  bolt11         String                 @db.Text
+  paymentHash    String?                @unique
+  amountSats     BigInt
+  status         LightningInvoiceStatus @default(NEW)
+  expiresAt      DateTime
+  settledAt      DateTime?
+  commitment     InvestmentCommitment   @relation(fields: [commitmentId], references: [id], onDelete: Cascade)
+  createdAt      DateTime               @default(now())
+  updatedAt      DateTime               @updatedAt
+
+  @@index([status, expiresAt])
+}
+
+model MigrationRun {
+  id             String             @id @default(uuid()) @db.Uuid
+  sourceSystem   String
+  sourceTenant   String
+  organizationId String?            @db.Uuid
+  status         MigrationRunStatus @default(CREATED)
+  manifestSha256 String?
+  startedAt      DateTime?
+  completedAt    DateTime?
+  error          String?
+  artifacts      MigrationArtifact[]
+  checkpoints    MigrationCheckpoint[]
+  mappings       MigrationIdMap[]
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+
+  @@index([sourceSystem, sourceTenant, createdAt(sort: Desc)])
+}
+
+model MigrationArtifact {
+  id          String   @id @default(uuid()) @db.Uuid
+  runId       String   @db.Uuid
+  entityType  String
+  sourcePath  String
+  pageNumber  Int
+  recordCount Int
+  sha256      String
+  filePath    String
+  run         MigrationRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now())
+
+  @@unique([runId, entityType, pageNumber])
+  @@index([runId, entityType])
+}
+
+model MigrationCheckpoint {
+  id         String   @id @default(uuid()) @db.Uuid
+  runId      String   @db.Uuid
+  entityType String
+  cursor     String
+  completed  Boolean  @default(false)
+  run        MigrationRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+  updatedAt  DateTime @updatedAt
+
+  @@unique([runId, entityType])
+}
+
+model MigrationIdMap {
+  id         String   @id @default(uuid()) @db.Uuid
+  runId      String   @db.Uuid
+  entityType String
+  legacyId   String
+  sovlendId  String   @db.Uuid
+  run        MigrationRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now())
+
+  @@unique([runId, entityType, legacyId])
+  @@index([entityType, sovlendId])
+}
+
+model SystemWallet {
+  id              String        @id @default(uuid()) @db.Uuid
+  name            String
+  kind            WalletKind
+  network         WalletNetwork
+  publicAddress   String
+  assetCode       String
+  active          Boolean       @default(true)
+  proposals       TransferProposal[]
+  createdAt       DateTime      @default(now())
+
+  @@unique([network, publicAddress])
+}
+
+model TransferProposal {
+  id                 String         @id @default(uuid()) @db.Uuid
+  walletId           String         @db.Uuid
+  destinationAddress String
+  assetCode          String
+  amountMinor        BigInt
+  networkFeeMinor    BigInt?
+  status             ProposalStatus @default(DRAFT)
+  threshold          Int
+  unsignedPayload    Json?
+  transactionHash    String?
+  idempotencyKey     String         @unique
+  wallet             SystemWallet   @relation(fields: [walletId], references: [id])
+  approvals          TransferApproval[]
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
+
+  @@index([walletId, status])
+}
+
+model TransferApproval {
+  id           String   @id @default(uuid()) @db.Uuid
+  proposalId   String   @db.Uuid
+  signerRef    String
+  signatureRef String
+  approvedAt   DateTime @default(now())
+  proposal     TransferProposal @relation(fields: [proposalId], references: [id])
+
+  @@unique([proposalId, signerRef])
+}
+
+model Document {
+  id          String   @id @default(uuid()) @db.Uuid
+  clientId    String?  @db.Uuid
+  loanId      String?  @db.Uuid
+  name        String
+  description String?
+  objectKey   String   @unique
+  sha256      String
+  mediaType   String
+  client      Client?  @relation(fields: [clientId], references: [id])
+  loan        Loan?    @relation(fields: [loanId], references: [id])
+  createdAt   DateTime @default(now())
+
+  @@index([clientId])
+  @@index([loanId])
+}
+
+model OutboxEvent {
+  id            String   @id @default(uuid()) @db.Uuid
+  aggregateType String
+  aggregateId   String
+  eventType     String
+  payload       Json
+  occurredAt    DateTime @default(now())
+  publishedAt   DateTime?
+  attempts      Int      @default(0)
+  lastError     String?
+
+  @@index([publishedAt, occurredAt])
+  @@index([aggregateType, aggregateId])
+}
+
+model InboxEvent {
+  id          String   @id @db.Uuid
+  handler     String
+  processedAt DateTime @default(now())
+
+  @@unique([id, handler])
+}
+
+model AuditEvent {
+  id             String   @id @default(uuid()) @db.Uuid
+  actorId        String?
+  action         String
+  entityType     String
+  entityId       String
+  correlationId  String   @db.Uuid
+  metadata       Json
+  previousHash   String?
+  eventHash      String
+  actor          User?    @relation(fields: [actorId], references: [id])
+  occurredAt     DateTime @default(now())
+
+  @@index([entityType, entityId, occurredAt])
+  @@index([correlationId])
+}
+
+model Notification {
+  id             String   @id @default(uuid()) @db.Uuid
+  audienceType   String
+  audienceId     String
+  title          String
+  body           String
+  channels       Json
+  deduplicationKey String @unique
+  readAt         DateTime?
+  createdAt      DateTime @default(now())
+  reminders      Reminder[]
+
+  @@index([audienceType, audienceId, readAt, createdAt(sort: Desc)])
+}
+
+model Reminder {
+  id              String         @id @default(uuid()) @db.Uuid
+  loanId          String         @db.Uuid
+  installmentId   String         @db.Uuid
+  notificationId  String?        @db.Uuid
+  type            ReminderType
+  status          ReminderStatus @default(SCHEDULED)
+  scheduledFor    DateTime
+  deduplicationKey String        @unique
+  attempts        Int            @default(0)
+  lastError       String?
+  sentAt          DateTime?
+  loan            Loan           @relation(fields: [loanId], references: [id])
+  installment     LoanInstallment @relation(fields: [installmentId], references: [id])
+  notification    Notification?  @relation(fields: [notificationId], references: [id])
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  @@index([status, scheduledFor])
+  @@index([loanId, type])
+}

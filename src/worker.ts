@@ -1,0 +1,159 @@
+import { PrismaClient } from "@prisma/client";
+import { Worker } from "bullmq";
+
+import { enqueueRepaymentReminders } from "@/modules/notifications/application/reminder-scanner";
+import { classifyLoanArrears } from "@/modules/lending/application/classify-arrears";
+import { reminderJobId, reminderJobSchema } from "@/modules/notifications/domain/reminder";
+import { CachedPriceService } from "@/modules/pricing/application/cached-price-service";
+import { PriceAggregator } from "@/modules/pricing/application/price-aggregator";
+import type { CurrencyPair } from "@/modules/pricing/domain/types";
+import { createFiatProviders } from "@/modules/pricing/infrastructure/additional-providers";
+import { BullMqPriceRefreshQueue, PrismaPriceSnapshotStore, RedisPriceCache } from "@/modules/pricing/infrastructure/price-cache-adapters";
+import { createCryptoProviders } from "@/modules/pricing/infrastructure/providers";
+import {
+  domainEventQueue,
+  maintenanceQueue,
+  priceRefreshQueue,
+  redisConnection,
+  registerSchedules,
+  reminderQueue,
+} from "@/modules/notifications/infrastructure/queues";
+
+const prisma = new PrismaClient();
+let stopping = false;
+
+const maintenanceWorker = new Worker(
+  "maintenance",
+  async (job) => {
+    if (job.name === "scan-repayment-reminders") {
+      return { queued: await enqueueRepaymentReminders(prisma, reminderQueue) };
+    }
+    if (job.name === "classify-loan-arrears") {
+      return { changed: await classifyLoanArrears(prisma) };
+    }
+    throw new Error(`Unknown maintenance job: ${job.name}`);
+  },
+  { connection: redisConnection },
+);
+
+const reminderWorker = new Worker(
+  "repayment-reminders",
+  async (job) => {
+    const data = reminderJobSchema.parse(job.data);
+    const deduplicationKey = reminderJobId(data);
+    const title = data.type === "REPAYMENT_OVERDUE" ? "Loan repayment overdue" : "Loan repayment reminder";
+    const body = `${data.currencyCode} ${data.amountDueMinor} is due for loan ${data.accountNumber} on ${data.dueOn.slice(0, 10)}.`;
+
+    return prisma.$transaction(async (transaction) => {
+      const notification = await transaction.notification.upsert({
+        where: { deduplicationKey },
+        create: {
+          audienceType: "CLIENT",
+          audienceId: data.clientId,
+          title,
+          body,
+          channels: ["IN_APP"],
+          deduplicationKey,
+        },
+        update: {},
+      });
+
+      return transaction.reminder.upsert({
+        where: { deduplicationKey },
+        create: {
+          loanId: data.loanId,
+          installmentId: data.installmentId,
+          notificationId: notification.id,
+          type: data.type,
+          status: "SENT",
+          scheduledFor: new Date(),
+          deduplicationKey,
+          attempts: job.attemptsMade + 1,
+          sentAt: new Date(),
+        },
+        update: {
+          notificationId: notification.id,
+          status: "SENT",
+          attempts: job.attemptsMade + 1,
+          sentAt: new Date(),
+          lastError: null,
+        },
+      });
+    });
+  },
+  { connection: redisConnection, concurrency: 10 },
+);
+
+const priceWorker = new Worker(
+  "price-refresh",
+  async (job) => {
+    const pair = job.data as CurrencyPair;
+    const crypto = pair.base === "BTC" || pair.base === "USDC";
+    const providers = crypto ? createCryptoProviders(process.env) : createFiatProviders(process.env);
+    const aggregator = new PriceAggregator(providers, {
+      minimumSources: crypto ? 3 : 1,
+      timeoutMs: 4_000,
+      maximumAgeMs: crypto ? 2 * 60_000 : 36 * 60 * 60_000,
+      expiresAfterMs: crypto ? 2 * 60_000 : 60 * 60_000,
+      maximumDeviationBps: crypto ? 150 : 300,
+    });
+    const service = new CachedPriceService(
+      aggregator,
+      new RedisPriceCache(redisConnection),
+      new PrismaPriceSnapshotStore(prisma),
+      new BullMqPriceRefreshQueue(priceRefreshQueue),
+    );
+    return service.refresh(pair);
+  },
+  { connection: redisConnection, concurrency: 2 },
+);
+
+async function publishOutboxBatch(): Promise<void> {
+  const events = await prisma.outboxEvent.findMany({
+    where: { publishedAt: null },
+    orderBy: { occurredAt: "asc" },
+    take: 100,
+  });
+
+  for (const event of events) {
+    await domainEventQueue.add(event.eventType, event.payload, {
+      jobId: event.id,
+      attempts: 8,
+      backoff: { type: "exponential", delay: 1_000 },
+      removeOnComplete: 1_000,
+      removeOnFail: 5_000,
+    });
+
+    await prisma.outboxEvent.update({
+      where: { id: event.id },
+      data: { publishedAt: new Date(), attempts: { increment: 1 } },
+    });
+  }
+}
+
+async function run(): Promise<void> {
+  await registerSchedules();
+
+  while (!stopping) {
+    try {
+      await publishOutboxBatch();
+    } catch (error) {
+      console.error("Outbox publication failed", error);
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 1_000));
+  }
+}
+
+async function shutdown(): Promise<void> {
+  stopping = true;
+  await Promise.all([maintenanceWorker.close(), reminderWorker.close(), priceWorker.close()]);
+  await Promise.all([domainEventQueue.close(), maintenanceQueue.close(), reminderQueue.close(), priceRefreshQueue.close()]);
+  await redisConnection.quit();
+  await prisma.$disconnect();
+}
+
+process.once("SIGTERM", shutdown);
+process.once("SIGINT", shutdown);
+
+void run();
