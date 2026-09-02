@@ -36,7 +36,7 @@ export function CreateClientForm({ offices }: { offices: Array<{ id: string; nam
       return;
     }
     toast.success(`Client ${result.accountNumber} created`);
-    router.push("/clients");
+    router.push(`/clients/${result.accountNumber}`);
     router.refresh();
   }
 

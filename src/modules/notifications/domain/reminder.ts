@@ -8,7 +8,9 @@ export const reminderJobSchema = z.object({
   type: z.enum(["REPAYMENT_DUE_SOON", "REPAYMENT_DUE_TODAY", "REPAYMENT_OVERDUE"]),
   dueOn: z.iso.datetime(),
   amountDueMinor: z.string().regex(/^\d+$/),
+  feesDueMinor: z.string().regex(/^\d+$/),
   currencyCode: z.string().min(3).max(10),
+  mobileNumber: z.string().nullable(),
 });
 
 export type ReminderJob = z.infer<typeof reminderJobSchema>;

@@ -1,5 +1,7 @@
 import { rebuildManifest, verifyArchive } from "./archive";
 import { extractLegacy } from "./extract";
+import { ReadOnlyFineractClient } from "./fineract-client";
+import { importAllLegacyData } from "./import-all";
 import { importFoundation } from "./import-foundation";
 import { prisma } from "@/lib/prisma";
 
@@ -33,7 +35,25 @@ async function main() {
     console.log(`Imported verified foundation run ${result.runId} with ${result.artifacts} artifacts`);
     return;
   }
-  throw new Error("Usage: migration:extract | migration:verify <archive-directory> | migration:manifest <archive-directory> | migration:import <archive-directory>");
+  if (command === "import-all-clients") {
+    const organizationName = process.env.MIGRATION_ORGANIZATION_NAME;
+    const officeName = process.env.MIGRATION_DEFAULT_OFFICE_NAME;
+    const actorEmail = process.env.MIGRATION_ACTOR_EMAIL;
+    const includeLoans = process.env.MIGRATION_INCLUDE_LOANS === "true";
+    const { LEGACY_BASE_URL, LEGACY_TENANT_ID, LEGACY_USERNAME, LEGACY_PASSWORD } = process.env;
+    if (!organizationName || !officeName || !actorEmail || !LEGACY_BASE_URL || !LEGACY_TENANT_ID || !LEGACY_USERNAME || !LEGACY_PASSWORD) {
+      throw new Error("Usage: MIGRATION_ORGANIZATION_NAME=... MIGRATION_DEFAULT_OFFICE_NAME=... MIGRATION_ACTOR_EMAIL=... [MIGRATION_INCLUDE_LOANS=true] LEGACY_*=... pnpm migration:import-all-clients");
+    }
+    const organization = await prisma.organization.findFirstOrThrow({ where: { name: organizationName } });
+    const office = await prisma.office.findFirstOrThrow({ where: { name: officeName, organizationId: organization.id } });
+    const actor = await prisma.user.findFirstOrThrow({ where: { email: actorEmail.toLowerCase() } });
+    const fineract = new ReadOnlyFineractClient(LEGACY_BASE_URL, LEGACY_TENANT_ID, LEGACY_USERNAME, LEGACY_PASSWORD);
+    const result = await importAllLegacyData(prisma, fineract, { organizationId: organization.id, defaultOfficeId: office.id, actorUserId: actor.id, includeLoans });
+    console.log(`Imported ${result.clientsImported} clients (${result.clientsSkipped} already present), ${result.loansImported} loans.`);
+    if (result.errors.length > 0) console.log(`${result.errors.length} issues:\n${result.errors.join("\n")}`);
+    return;
+  }
+  throw new Error("Usage: migration:extract | migration:verify <archive-directory> | migration:manifest <archive-directory> | migration:import <archive-directory> | migration:import-all-clients");
 }
 
 void main().catch((error) => { console.error(error instanceof Error ? error.message : error); process.exitCode = 1; });

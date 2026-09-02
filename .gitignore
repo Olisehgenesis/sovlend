@@ -24,6 +24,9 @@
 # sensitive migration archives
 /.migration-data/
 
+# locally stored client document uploads
+/.uploads/
+
 # misc
 .DS_Store
 *.pem

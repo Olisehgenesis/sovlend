@@ -4,6 +4,8 @@ import { Worker } from "bullmq";
 import { enqueueRepaymentReminders } from "@/modules/notifications/application/reminder-scanner";
 import { classifyLoanArrears } from "@/modules/lending/application/classify-arrears";
 import { reminderJobId, reminderJobSchema } from "@/modules/notifications/domain/reminder";
+import { sendSms } from "@/modules/notifications/infrastructure/sms";
+import { formatMinor } from "@/modules/money/domain/format-minor";
 import { CachedPriceService } from "@/modules/pricing/application/cached-price-service";
 import { PriceAggregator } from "@/modules/pricing/application/price-aggregator";
 import type { CurrencyPair } from "@/modules/pricing/domain/types";
@@ -42,7 +44,19 @@ const reminderWorker = new Worker(
     const data = reminderJobSchema.parse(job.data);
     const deduplicationKey = reminderJobId(data);
     const title = data.type === "REPAYMENT_OVERDUE" ? "Loan repayment overdue" : "Loan repayment reminder";
-    const body = `${data.currencyCode} ${data.amountDueMinor} is due for loan ${data.accountNumber} on ${data.dueOn.slice(0, 10)}.`;
+    const amount = formatMinor(BigInt(data.amountDueMinor), data.currencyCode);
+    const dueDate = data.dueOn.slice(0, 10);
+    const body = `${amount} is due for loan ${data.accountNumber} on ${dueDate}.`;
+
+    const smsMessage =
+      data.type === "REPAYMENT_DUE_SOON"
+        ? `Reminder: your loan ${data.accountNumber} payment of ${amount} is due on ${dueDate}. Pay on time to avoid penalties.`
+        : data.type === "REPAYMENT_DUE_TODAY"
+          ? `Your loan ${data.accountNumber} payment of ${amount} is due TODAY (${dueDate}). Please pay to avoid penalties.`
+          : `Your loan ${data.accountNumber} payment of ${amount} is OVERDUE (was due ${dueDate})${BigInt(data.feesDueMinor) > 0n ? `, including ${formatMinor(BigInt(data.feesDueMinor), data.currencyCode)} in fees/penalties` : ""}. Please pay immediately.`;
+
+    const smsResult = data.mobileNumber ? await sendSms(data.mobileNumber, smsMessage) : { ok: false, error: "Client has no mobile number on file" };
+    const channels = smsResult.ok ? ["IN_APP", "SMS"] : ["IN_APP"];
 
     return prisma.$transaction(async (transaction) => {
       const notification = await transaction.notification.upsert({
@@ -52,10 +66,10 @@ const reminderWorker = new Worker(
           audienceId: data.clientId,
           title,
           body,
-          channels: ["IN_APP"],
+          channels,
           deduplicationKey,
         },
-        update: {},
+        update: { channels },
       });
 
       return transaction.reminder.upsert({
@@ -70,13 +84,14 @@ const reminderWorker = new Worker(
           deduplicationKey,
           attempts: job.attemptsMade + 1,
           sentAt: new Date(),
+          lastError: smsResult.ok ? null : smsResult.error,
         },
         update: {
           notificationId: notification.id,
           status: "SENT",
           attempts: job.attemptsMade + 1,
           sentAt: new Date(),
-          lastError: null,
+          lastError: smsResult.ok ? null : smsResult.error,
         },
       });
     });

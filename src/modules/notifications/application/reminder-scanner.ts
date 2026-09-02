@@ -18,7 +18,7 @@ export async function enqueueRepaymentReminders(
       dueOn: { gte: start, lte: horizon },
       loan: { status: { in: ["ACTIVE", "IN_ARREARS"] } },
     },
-    include: { loan: { select: { id: true, clientId: true, accountNumber: true, denominationCurrency: true } } },
+    include: { loan: { select: { id: true, clientId: true, accountNumber: true, denominationCurrency: true, client: { select: { mobileNumber: true } } } } },
   });
 
   let queued = 0;
@@ -29,6 +29,7 @@ export async function enqueueRepaymentReminders(
 
     if (outstanding <= 0n) continue;
 
+    const feesOutstanding = installment.feesDueMinor + installment.penaltiesDueMinor - installment.feesPaidMinor - installment.penaltiesPaidMinor;
     const days = Math.floor((installment.dueOn.getTime() - now.getTime()) / 86_400_000);
     const type = days < 0 ? "REPAYMENT_OVERDUE" : days === 0 ? "REPAYMENT_DUE_TODAY" : "REPAYMENT_DUE_SOON";
     const data: ReminderJob = {
@@ -39,7 +40,9 @@ export async function enqueueRepaymentReminders(
       type,
       dueOn: installment.dueOn.toISOString(),
       amountDueMinor: outstanding.toString(),
+      feesDueMinor: (feesOutstanding > 0n ? feesOutstanding : 0n).toString(),
       currencyCode: installment.loan.denominationCurrency,
+      mobileNumber: installment.loan.client.mobileNumber,
     };
 
     await queue.add("repayment-reminder", data, {

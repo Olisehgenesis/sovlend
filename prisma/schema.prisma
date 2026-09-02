@@ -167,10 +167,14 @@ model Organization {
   id            String          @id @default(uuid()) @db.Uuid
   name          String
   baseCurrency  String          @default("UGX")
+  nextClientSequence Int        @default(1)
+  nextGroupSequence Int         @default(1)
   offices       Office[]
   users         User[]
   clients       Client[]
   loanProducts  LoanProduct[]
+  savingsProducts SavingsProduct[]
+  chargeDefinitions ChargeDefinition[]
   ownershipPools OwnershipPool[]
   permissionGroups PermissionGroup[]
   investorAccesses InvestorOrganizationAccess[]
@@ -179,6 +183,7 @@ model Organization {
   investments InvestmentCommitment[]
   settlementAccounts SettlementAccount[]
   accountingDefaults LoanAccountingDefaults?
+  groups        Group[]
   createdAt     DateTime        @default(now())
   updatedAt     DateTime        @updatedAt
 }
@@ -197,6 +202,7 @@ model Office {
   loans          Loan[]
   journals       Journal[]
   permissionAssignments UserPermissionAssignment[]
+  groups         Group[]
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
@@ -230,6 +236,13 @@ model User {
   permissionAssignments UserPermissionAssignment[]
   submittedApplications LoanApplication[] @relation("ApplicationSubmitter")
   investorProfile InvestorProfile?
+  clientNotes    ClientNote[]
+  loanNotes      LoanNote[]
+  assignedGroups Group[]      @relation("AssignedGroupOfficer")
+  groupNotes     GroupNote[]
+  assignedSavingsAccounts SavingsAccount[] @relation("AssignedSavingsOfficer")
+  submittedSavingsAccounts SavingsAccount[] @relation("SavingsAccountSubmittedBy")
+  approvedSavingsAccounts SavingsAccount[] @relation("SavingsAccountApprovedBy")
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
 
@@ -325,6 +338,8 @@ model Client {
   assignedOfficerId String?
   accountNumber     String
   externalId        String?
+  photoDocumentId   String?      @unique @db.Uuid
+  signatureDocumentId String?    @unique @db.Uuid
   firstName         String
   middleName        String?
   lastName          String
@@ -342,16 +357,165 @@ model Client {
   office            Office       @relation(fields: [officeId], references: [id])
   assignedOfficer   User?        @relation("AssignedOfficer", fields: [assignedOfficerId], references: [id])
   authUser          User?        @relation("ClientAuthUser", fields: [authUserId], references: [id])
+  photoDocument     Document?    @relation("ClientPhoto", fields: [photoDocumentId], references: [id], onDelete: SetNull)
+  signatureDocument Document?    @relation("ClientSignature", fields: [signatureDocumentId], references: [id], onDelete: SetNull)
   applications      LoanApplication[]
   loans             Loan[]
   savingsAccounts   SavingsAccount[]
   documents         Document[]
+  familyMembers     ClientFamilyMember[]
+  identifiers       ClientIdentifier[]
+  notes             ClientNote[]
+  charges           Charge[]
+  groupMemberships  GroupMember[]
   createdAt         DateTime     @default(now())
   updatedAt         DateTime     @updatedAt
 
   @@unique([organizationId, accountNumber])
   @@index([organizationId, officeId, status])
   @@index([organizationId, externalId])
+}
+
+model ClientFamilyMember {
+  id            String    @id @default(uuid()) @db.Uuid
+  clientId      String    @db.Uuid
+  firstName     String
+  middleName    String?
+  lastName      String
+  qualification String?
+  mobileNumber  String?
+  age           Int?
+  isDependent   Boolean   @default(false)
+  relationship  String?
+  genderCode    String?
+  profession    String?
+  maritalStatus String?
+  dateOfBirth   DateTime? @db.Date
+  client        Client    @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  documents     Document[]
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([clientId])
+}
+
+model ClientIdentifier {
+  id           String   @id @default(uuid()) @db.Uuid
+  clientId     String   @db.Uuid
+  documentType String
+  status       String   @default("ACTIVE")
+  uniqueNumber String
+  description  String?
+  client       Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  documents    Document[]
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([clientId, documentType, uniqueNumber])
+  @@index([clientId])
+}
+
+model ClientNote {
+  id        String   @id @default(uuid()) @db.Uuid
+  clientId  String   @db.Uuid
+  authorId  String
+  body      String
+  client    Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  author    User     @relation(fields: [authorId], references: [id])
+  createdAt DateTime @default(now())
+
+  @@index([clientId])
+}
+
+model Charge {
+  id                 String    @id @default(uuid()) @db.Uuid
+  clientId           String    @db.Uuid
+  loanId             String?   @db.Uuid
+  chargeDefinitionId String?   @db.Uuid
+  savingsAccountId   String?   @db.Uuid
+  name               String
+  amountMinor        BigInt
+  currencyCode       String    @default("UGX")
+  status             String    @default("PENDING")
+  dueOn              DateTime? @db.Date
+  client             Client    @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  loan               Loan?     @relation(fields: [loanId], references: [id], onDelete: SetNull)
+  chargeDefinition   ChargeDefinition? @relation(fields: [chargeDefinitionId], references: [id], onDelete: SetNull)
+  savingsAccount     SavingsAccount? @relation(fields: [savingsAccountId], references: [id], onDelete: SetNull)
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  @@index([clientId, status])
+  @@index([loanId, status])
+  @@index([loanId, dueOn])
+  @@index([chargeDefinitionId])
+  @@index([savingsAccountId])
+}
+
+enum GroupStatus {
+  PENDING
+  ACTIVE
+  CLOSED
+}
+
+model Group {
+  id             String       @id @default(uuid()) @db.Uuid
+  organizationId String       @db.Uuid
+  officeId       String       @db.Uuid
+  staffId        String?
+  accountNumber  String
+  externalId     String?
+  name           String
+  status         GroupStatus  @default(PENDING)
+  submittedOn    DateTime?    @db.Date
+  activatedOn    DateTime?    @db.Date
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  office         Office       @relation(fields: [officeId], references: [id])
+  assignedOfficer User?       @relation("AssignedGroupOfficer", fields: [staffId], references: [id])
+  members        GroupMember[]
+  notes          GroupNote[]
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@unique([organizationId, accountNumber])
+  @@index([organizationId, officeId, status])
+}
+
+model GroupMember {
+  id        String   @id @default(uuid()) @db.Uuid
+  groupId   String   @db.Uuid
+  clientId  String   @db.Uuid
+  joinedOn  DateTime @default(now()) @db.Date
+  group     Group    @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  client    Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([groupId, clientId])
+  @@index([clientId])
+}
+
+model GroupNote {
+  id        String   @id @default(uuid()) @db.Uuid
+  groupId   String   @db.Uuid
+  authorId  String
+  body      String
+  group     Group    @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  author    User     @relation(fields: [authorId], references: [id])
+  createdAt DateTime @default(now())
+
+  @@index([groupId])
+}
+
+model LoanNote {
+  id        String   @id @default(uuid()) @db.Uuid
+  loanId    String   @db.Uuid
+  authorId  String
+  body      String
+  loan      Loan     @relation(fields: [loanId], references: [id], onDelete: Cascade)
+  author    User     @relation(fields: [authorId], references: [id])
+  createdAt DateTime @default(now())
+
+  @@index([loanId])
 }
 
 model LoanProduct {
@@ -378,6 +542,45 @@ model LoanProduct {
   updatedAt             DateTime @updatedAt
 
   @@unique([organizationId, shortName, version])
+  @@index([organizationId, active])
+}
+
+model SavingsProduct {
+  id                     String   @id @default(uuid()) @db.Uuid
+  organizationId         String   @db.Uuid
+  name                   String
+  shortName              String
+  description            String?
+  currencyCode           String   @default("UGX")
+  nominalAnnualRateBps   Int      @default(0)
+  minOpeningBalanceMinor BigInt   @default(0)
+  active                 Boolean  @default(true)
+  organization           Organization @relation(fields: [organizationId], references: [id])
+  savingsAccounts        SavingsAccount[]
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  @@unique([organizationId, shortName])
+  @@index([organizationId, active])
+}
+
+model ChargeDefinition {
+  id              String   @id @default(uuid()) @db.Uuid
+  organizationId  String   @db.Uuid
+  name            String
+  appliesTo       String
+  calculationType String
+  amountMinor     BigInt?
+  percentageBps   Int?
+  currencyCode    String   @default("UGX")
+  penalty         Boolean  @default(false)
+  active          Boolean  @default(true)
+  organization    Organization @relation(fields: [organizationId], references: [id])
+  charges         Charge[]
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([organizationId, name])
   @@index([organizationId, active])
 }
 
@@ -498,7 +701,10 @@ model Loan {
   loanOfficer           User?      @relation("AssignedLoanOfficer", fields: [loanOfficerId], references: [id])
   installments          LoanInstallment[]
   transactions          LoanTransaction[]
+  charges               Charge[]
   documents             Document[]
+  notes                 LoanNote[]
+  collateralItems       LoanCollateral[]
   reminders             Reminder[]
   createdAt             DateTime   @default(now())
   updatedAt             DateTime   @updatedAt
@@ -572,18 +778,51 @@ model LoanTransactionAllocation {
   @@index([installmentId])
 }
 
+model LoanCollateral {
+  id                    String   @id @default(uuid()) @db.Uuid
+  loanId                String   @db.Uuid
+  type                  String
+  description           String?
+  estimatedValueMinor   BigInt?
+  valuationCurrencyCode String   @default("UGX")
+  valuationDate         DateTime? @db.Date
+  status                String   @default("ACTIVE")
+  metadata              Json?
+  loan                  Loan     @relation(fields: [loanId], references: [id], onDelete: Cascade)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@index([loanId, status])
+  @@index([loanId, valuationDate])
+}
+
 model SavingsAccount {
   id             String   @id @default(uuid()) @db.Uuid
   clientId       String   @db.Uuid
+  productId      String?  @db.Uuid
+  fieldOfficerId String?
+  submittedById  String?
+  approvedById   String?
   accountNumber  String   @unique
+  accountType    String   @default("SAVINGS")
+  externalId     String?
   currencyCode   String
   status         String
+  submittedOn    DateTime? @db.Date
+  approvedOn     DateTime? @db.Date
+  termsSnapshot  Json?
   client         Client   @relation(fields: [clientId], references: [id])
+  product        SavingsProduct? @relation(fields: [productId], references: [id])
+  fieldOfficer   User?    @relation("AssignedSavingsOfficer", fields: [fieldOfficerId], references: [id])
+  submittedBy    User?    @relation("SavingsAccountSubmittedBy", fields: [submittedById], references: [id])
+  approvedBy     User?    @relation("SavingsAccountApprovedBy", fields: [approvedById], references: [id])
   transactions   SavingsTransaction[]
+  charges        Charge[]
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
   @@index([clientId, status])
+  @@index([productId])
 }
 
 model SavingsTransaction {
@@ -973,20 +1212,28 @@ model TransferApproval {
 }
 
 model Document {
-  id          String   @id @default(uuid()) @db.Uuid
-  clientId    String?  @db.Uuid
-  loanId      String?  @db.Uuid
-  name        String
-  description String?
-  objectKey   String   @unique
-  sha256      String
-  mediaType   String
-  client      Client?  @relation(fields: [clientId], references: [id])
-  loan        Loan?    @relation(fields: [loanId], references: [id])
-  createdAt   DateTime @default(now())
+  id           String            @id @default(uuid()) @db.Uuid
+  clientId     String?           @db.Uuid
+  loanId       String?           @db.Uuid
+  identifierId String?           @db.Uuid
+  familyMemberId String?         @db.Uuid
+  name         String
+  description  String?
+  objectKey    String            @unique
+  sha256       String
+  mediaType    String
+  client       Client?           @relation(fields: [clientId], references: [id])
+  loan         Loan?             @relation(fields: [loanId], references: [id])
+  identifier   ClientIdentifier? @relation(fields: [identifierId], references: [id], onDelete: SetNull)
+  familyMember ClientFamilyMember? @relation(fields: [familyMemberId], references: [id], onDelete: SetNull)
+  clientPhotoFor Client?         @relation("ClientPhoto")
+  clientSignatureFor Client?     @relation("ClientSignature")
+  createdAt    DateTime          @default(now())
 
   @@index([clientId])
   @@index([loanId])
+  @@index([identifierId])
+  @@index([familyMemberId])
 }
 
 model OutboxEvent {

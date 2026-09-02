@@ -8,6 +8,11 @@ export class AuthorizationService {
   constructor(private readonly prisma: PrismaClient) {}
 
   async assertAllowed(context: Omit<PermissionContext, "officeAncestorIds">): Promise<void> {
+    const allowed = await this.isAllowed(context);
+    if (!allowed) throw new PermissionDeniedError(`Permission denied: ${context.permission}`);
+  }
+
+  async isAllowed(context: Omit<PermissionContext, "officeAncestorIds">): Promise<boolean> {
     const [assignments, officeAncestorIds] = await Promise.all([
       this.prisma.userPermissionAssignment.findMany({
         where: { userId: context.actorUserId },
@@ -16,7 +21,7 @@ export class AuthorizationService {
       context.officeId ? this.getOfficeAncestors(context.officeId) : Promise.resolve([]),
     ]);
 
-    const allowed = hasPermission(
+    return hasPermission(
       assignments.map((assignment) => ({
         permissionCodes: assignment.group.permissions.map((item) => item.permissionCode),
         organizationId: assignment.group.organizationId,
@@ -30,8 +35,21 @@ export class AuthorizationService {
       })),
       { ...context, officeAncestorIds },
     );
+  }
 
-    if (!allowed) throw new PermissionDeniedError(`Permission denied: ${context.permission}`);
+  // For organization-wide resources with no office dimension (e.g. products): any active
+  // assignment granting the permission counts, regardless of the assignment's office scope.
+  async isAllowedForOrganization(actorUserId: string, organizationId: string, permission: PermissionCode): Promise<boolean> {
+    const now = new Date();
+    const assignments = await this.prisma.userPermissionAssignment.findMany({
+      where: { userId: actorUserId },
+      include: { group: { include: { permissions: true } } },
+    });
+    return assignments.some((assignment) => {
+      if (assignment.group.organizationId !== organizationId) return false;
+      if (assignment.validFrom > now || (assignment.validUntil && assignment.validUntil <= now)) return false;
+      return assignment.group.permissions.some((item) => item.permissionCode === permission);
+    });
   }
 
   private async getOfficeAncestors(officeId: string): Promise<string[]> {

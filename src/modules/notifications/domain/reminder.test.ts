@@ -12,7 +12,9 @@ describe("repayment reminder jobs", () => {
       type: "REPAYMENT_DUE_TODAY",
       dueOn: "2026-09-01T00:00:00.000Z",
       amountDueMinor: "408308",
+      feesDueMinor: "0",
       currencyCode: "UGX",
+      mobileNumber: "0700000000",
     });
 
     expect(reminderJobId(data)).toBe(

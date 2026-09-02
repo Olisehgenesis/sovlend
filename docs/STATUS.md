@@ -20,7 +20,7 @@ Verified on 1 September 2026.
 - Arrears: daily BullMQ classification, cure and automatic closure when no balance remains.
 - Accounting setup: manager-controlled product and settlement mappings; disbursement and repayment fail closed until mappings exist.
 - Data integrity: append-only price, audit, loan and savings transactions; posted journals are immutable and must balance per currency.
-- Backup: encrypted Restic backup execution and PostgreSQL 17 restore drill verified.
+- Backup: backup container and schedule are present, but end-to-end backup currently fails until RESTIC_REPOSITORY and RESTIC_PASSWORD are configured; restore drill is pending re-verification.
 
 ## Not Yet A Complete Lending Product
 

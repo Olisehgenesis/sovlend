@@ -42,11 +42,15 @@ export async function POST(request: Request) {
   }
 
   const id = randomUUID();
-  const accountNumber = `SL-${id.replaceAll("-", "").slice(0, 12).toUpperCase()}`;
+  const today = new Date();
+  const datePrefix = `${today.getUTCFullYear()}${String(today.getUTCMonth() + 1).padStart(2, "0")}${String(today.getUTCDate()).padStart(2, "0")}`;
   const correlationId = randomUUID();
-  const metadata = { officeId: office.id, accountNumber };
-  const eventHash = createHash("sha256").update(JSON.stringify({ correlationId, action: "client.created", metadata })).digest("hex");
   const client = await prisma.$transaction(async (transaction) => {
+    const [organization] = await transaction.$queryRaw<{ nextClientSequence: number }[]>`UPDATE "Organization" SET "nextClientSequence" = "nextClientSequence" + 1 WHERE id = ${scope.organizationId}::uuid RETURNING "nextClientSequence"`;
+    const sequence = organization.nextClientSequence;
+    const accountNumber = `${datePrefix}${String(sequence).padStart(6, "0")}`;
+    const metadata = { officeId: office.id, accountNumber };
+    const eventHash = createHash("sha256").update(JSON.stringify({ correlationId, action: "client.created", metadata })).digest("hex");
     const created = await transaction.client.create({
       data: {
         id,
@@ -70,6 +74,7 @@ export async function POST(request: Request) {
     });
     await transaction.auditEvent.create({ data: { actorId: session.user.id, action: "client.created", entityType: "Client", entityId: created.id, correlationId, metadata, eventHash } });
     await transaction.outboxEvent.create({ data: { aggregateType: "Client", aggregateId: created.id, eventType: "client.created", payload: metadata } });
+    await transaction.savingsAccount.create({ data: { clientId: created.id, accountNumber: created.accountNumber, currencyCode: "UGX", status: "ACTIVE" } });
     return created;
   });
   return NextResponse.json({ id: client.id, accountNumber: client.accountNumber }, { status: 201 });

@@ -15,6 +15,7 @@ const descriptions: Record<string, string> = {
   [permissions.loanReverse]: "Reverse eligible loan transactions",
   [permissions.savingsView]: "View savings accounts",
   [permissions.savingsTransact]: "Record savings transactions",
+  [permissions.savingsApprove]: "Approve requested savings accounts (maker-checker)",
   [permissions.treasuryView]: "View treasury and investor positions",
   [permissions.treasuryPropose]: "Propose treasury movements",
   [permissions.treasuryApprove]: "Approve treasury movements as a separate signer",
@@ -24,6 +25,7 @@ const descriptions: Record<string, string> = {
   [permissions.userManage]: "Manage user identities",
   [permissions.permissionManage]: "Manage permission groups and assignments",
   [permissions.auditView]: "View immutable audit records",
+  [permissions.productManage]: "Create and edit loan, savings and charge products",
 };
 
 export async function seedPermissionGroups(prisma: PrismaClient, organizationId: string) {
