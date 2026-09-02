@@ -34,6 +34,14 @@ export type ImportLegacyLoansCommand = Readonly<{
   actorUserId: string;
 }>;
 
+export type ImportLegacyGroupLoansCommand = Readonly<{
+  legacyGroupId: number;
+  groupId: string;
+  organizationId: string;
+  officeId: string;
+  actorUserId: string;
+}>;
+
 export type ImportLegacyLoansResult = Readonly<{
   loansImported: number;
   loansSkipped: readonly string[];
@@ -47,7 +55,32 @@ export type ImportLegacyLoansResult = Readonly<{
 export async function importLegacyLoansForClient(prisma: PrismaLike, fineract: ReadOnlyFineractClient, command: ImportLegacyLoansCommand): Promise<ImportLegacyLoansResult> {
   const accounts = (await fineract.getClientAccounts(command.legacyClientId)) as { loanAccounts?: Array<{ id: number }> };
   const loanIds = accounts.loanAccounts?.map((account) => account.id) ?? [];
+  return importLegacyLoanAccounts(prisma, fineract, loanIds, {
+    owner: { clientId: command.clientId },
+    organizationId: command.organizationId,
+    officeId: command.officeId,
+    actorUserId: command.actorUserId,
+  });
+}
 
+/** Same as importLegacyLoansForClient but for a group-owned account (e.g. a SACCO-style "GROUP LOAN"). */
+export async function importLegacyLoansForGroup(prisma: PrismaLike, fineract: ReadOnlyFineractClient, command: ImportLegacyGroupLoansCommand): Promise<ImportLegacyLoansResult> {
+  const accounts = (await fineract.getGroupAccounts(command.legacyGroupId)) as { loanAccounts?: Array<{ id: number }> };
+  const loanIds = accounts.loanAccounts?.map((account) => account.id) ?? [];
+  return importLegacyLoanAccounts(prisma, fineract, loanIds, {
+    owner: { groupId: command.groupId },
+    organizationId: command.organizationId,
+    officeId: command.officeId,
+    actorUserId: command.actorUserId,
+  });
+}
+
+async function importLegacyLoanAccounts(
+  prisma: PrismaLike,
+  fineract: ReadOnlyFineractClient,
+  loanIds: readonly number[],
+  command: Readonly<{ owner: { clientId: string } | { groupId: string }; organizationId: string; officeId: string; actorUserId: string }>,
+): Promise<ImportLegacyLoansResult> {
   let loansImported = 0;
   const loansSkipped: string[] = [];
 
@@ -73,8 +106,10 @@ export async function importLegacyLoansForClient(prisma: PrismaLike, fineract: R
       await prisma.$transaction(async (transaction) => {
         const application = await transaction.loanApplication.create({
           data: {
-            clientId: command.clientId,
+            clientId: "clientId" in command.owner ? command.owner.clientId : null,
+            groupId: "groupId" in command.owner ? command.owner.groupId : null,
             productId: product.id,
+            officeId: command.officeId,
             proposedPrincipalMinor: principalMinor,
             approvedPrincipalMinor: principalMinor,
             status: "DISBURSED",
@@ -87,7 +122,8 @@ export async function importLegacyLoansForClient(prisma: PrismaLike, fineract: R
         const createdLoan = await transaction.loan.create({
           data: {
             applicationId: application.id,
-            clientId: command.clientId,
+            clientId: "clientId" in command.owner ? command.owner.clientId : null,
+            groupId: "groupId" in command.owner ? command.owner.groupId : null,
             productId: product.id,
             officeId: command.officeId,
             accountNumber: `LEGACY-${legacyLoanId}`,

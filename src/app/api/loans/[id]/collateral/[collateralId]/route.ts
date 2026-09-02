@@ -25,7 +25,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   if (!scope) return NextResponse.json({ error: "Workspace assignment required" }, { status: 403 });
 
   const { id, collateralId } = await params;
-  const loan = await prisma.loan.findFirst({ where: { id, client: { organizationId: scope.organizationId } } });
+  const loan = await prisma.loan.findFirst({ where: { id, office: { organizationId: scope.organizationId } } });
   if (!loan || (scope.officeIds && !scope.officeIds.includes(loan.officeId))) {
     return NextResponse.json({ error: "Loan not found" }, { status: 404 });
   }
@@ -68,7 +68,7 @@ export async function DELETE(_request: Request, { params }: { params: Promise<{ 
   if (!scope) return NextResponse.json({ error: "Workspace assignment required" }, { status: 403 });
 
   const { id, collateralId } = await params;
-  const loan = await prisma.loan.findFirst({ where: { id, client: { organizationId: scope.organizationId } } });
+  const loan = await prisma.loan.findFirst({ where: { id, office: { organizationId: scope.organizationId } } });
   if (!loan || (scope.officeIds && !scope.officeIds.includes(loan.officeId))) {
     return NextResponse.json({ error: "Loan not found" }, { status: 404 });
   }

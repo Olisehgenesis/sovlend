@@ -40,16 +40,17 @@ async function main() {
     const officeName = process.env.MIGRATION_DEFAULT_OFFICE_NAME;
     const actorEmail = process.env.MIGRATION_ACTOR_EMAIL;
     const includeLoans = process.env.MIGRATION_INCLUDE_LOANS === "true";
+    const includeGroups = process.env.MIGRATION_INCLUDE_GROUPS !== "false";
     const { LEGACY_BASE_URL, LEGACY_TENANT_ID, LEGACY_USERNAME, LEGACY_PASSWORD } = process.env;
     if (!organizationName || !officeName || !actorEmail || !LEGACY_BASE_URL || !LEGACY_TENANT_ID || !LEGACY_USERNAME || !LEGACY_PASSWORD) {
-      throw new Error("Usage: MIGRATION_ORGANIZATION_NAME=... MIGRATION_DEFAULT_OFFICE_NAME=... MIGRATION_ACTOR_EMAIL=... [MIGRATION_INCLUDE_LOANS=true] LEGACY_*=... pnpm migration:import-all-clients");
+      throw new Error("Usage: MIGRATION_ORGANIZATION_NAME=... MIGRATION_DEFAULT_OFFICE_NAME=... MIGRATION_ACTOR_EMAIL=... [MIGRATION_INCLUDE_LOANS=true] [MIGRATION_INCLUDE_GROUPS=false] LEGACY_*=... pnpm migration:import-all-clients");
     }
     const organization = await prisma.organization.findFirstOrThrow({ where: { name: organizationName } });
     const office = await prisma.office.findFirstOrThrow({ where: { name: officeName, organizationId: organization.id } });
     const actor = await prisma.user.findFirstOrThrow({ where: { email: actorEmail.toLowerCase() } });
     const fineract = new ReadOnlyFineractClient(LEGACY_BASE_URL, LEGACY_TENANT_ID, LEGACY_USERNAME, LEGACY_PASSWORD);
-    const result = await importAllLegacyData(prisma, fineract, { organizationId: organization.id, defaultOfficeId: office.id, actorUserId: actor.id, includeLoans });
-    console.log(`Imported ${result.clientsImported} clients (${result.clientsSkipped} already present), ${result.loansImported} loans.`);
+    const result = await importAllLegacyData(prisma, fineract, { organizationId: organization.id, defaultOfficeId: office.id, actorUserId: actor.id, includeLoans, includeGroups });
+    console.log(`Imported ${result.clientsImported} clients (${result.clientsSkipped} already present), ${result.groupsImported} groups (${result.groupsSkipped} already present), ${result.loansImported} loans.`);
     if (result.errors.length > 0) console.log(`${result.errors.length} issues:\n${result.errors.join("\n")}`);
     return;
   }

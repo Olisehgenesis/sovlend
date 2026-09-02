@@ -43,6 +43,7 @@ function parseScopeParams(scopeType: ExportScopeType, params: unknown) {
 
 const loanInclude = {
   client: { select: { firstName: true, lastName: true, accountNumber: true } },
+  group: { select: { name: true, accountNumber: true } },
   office: { select: { name: true } },
   product: { select: { name: true } },
   loanOfficer: { select: { name: true } },
@@ -93,7 +94,7 @@ export async function requestLoanExport(
     const loan = await prisma.loan.findFirst({
       where: {
         id: params.loanId,
-        client: { organizationId: command.organizationId },
+        office: { organizationId: command.organizationId },
         ...(command.officeIds ? { officeId: { in: [...command.officeIds] } } : {}),
       },
       select: { id: true },
@@ -140,12 +141,12 @@ async function resolveLoans(prisma: PrismaClient, job: { scopeType: string; scop
 
   if (job.scopeType === "SINGLE_LOAN") {
     const { loanId } = singleLoanParamsSchema.parse(params);
-    return prisma.loan.findMany({ where: { id: loanId, client: { organizationId: job.organizationId }, ...officeFilter }, include: loanInclude });
+    return prisma.loan.findMany({ where: { id: loanId, office: { organizationId: job.organizationId }, ...officeFilter }, include: loanInclude });
   }
 
   if (job.scopeType === "FILTERED") {
     const filters = filteredParamsSchema.parse(params);
-    const where: Prisma.LoanWhereInput = { client: { organizationId: job.organizationId }, ...officeFilter };
+    const where: Prisma.LoanWhereInput = { office: { organizationId: job.organizationId }, ...officeFilter };
     if (filters.status) where.status = filters.status;
     if (filters.arrears) where.status = "IN_ARREARS";
     if (filters.officeId) where.officeId = filters.officeId;
@@ -161,7 +162,7 @@ async function resolveLoans(prisma: PrismaClient, job: { scopeType: string; scop
   }
 
   // PORTFOLIO: every loan in the frozen office scope.
-  return prisma.loan.findMany({ where: { client: { organizationId: job.organizationId }, ...officeFilter }, include: loanInclude, orderBy: { createdAt: "asc" } });
+  return prisma.loan.findMany({ where: { office: { organizationId: job.organizationId }, ...officeFilter }, include: loanInclude, orderBy: { createdAt: "asc" } });
 }
 
 async function toExportRecords(prisma: PrismaClient, loans: LoanWithIncludes[]): Promise<ExportLoanRecord[]> {
@@ -214,8 +215,8 @@ async function toExportRecords(prisma: PrismaClient, loans: LoanWithIncludes[]):
       maturesOn: loan.maturesOn,
       createdAt: loan.createdAt,
       officeName: loan.office.name,
-      clientAccountNumber: loan.client.accountNumber,
-      clientName: `${loan.client.firstName} ${loan.client.lastName}`,
+      clientAccountNumber: loan.client ? loan.client.accountNumber : (loan.group?.accountNumber ?? ""),
+      clientName: loan.client ? `${loan.client.firstName} ${loan.client.lastName}` : `Group: ${loan.group?.name ?? "Unknown"}`,
       productName: loan.product.name,
       loanOfficerName: loan.loanOfficer?.name ?? null,
       applicationId: loan.applicationId,

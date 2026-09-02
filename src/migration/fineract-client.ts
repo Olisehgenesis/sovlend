@@ -87,6 +87,17 @@ export class ReadOnlyFineractClient {
     return response.json();
   }
 
+  /** Full group record including client members and the collection-meeting calendar. */
+  async getGroup(groupId: number): Promise<unknown> {
+    const response = await this.fetchWithRetry(this.buildUrl(`groups/${groupId}`, { associations: "all" }), "application/json");
+    return response.json();
+  }
+
+  async getGroupAccounts(groupId: number): Promise<unknown> {
+    const response = await this.fetchWithRetry(this.buildUrl(`groups/${groupId}/accounts`), "application/json");
+    return response.json();
+  }
+
   async getLoan(loanId: number): Promise<unknown> {
     const response = await this.fetchWithRetry(this.buildUrl(`loans/${loanId}`, { associations: "repaymentSchedule,transactions" }), "application/json");
     return response.json();

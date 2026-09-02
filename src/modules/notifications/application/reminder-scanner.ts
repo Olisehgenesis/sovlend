@@ -23,6 +23,9 @@ export async function enqueueRepaymentReminders(
 
   let queued = 0;
   for (const installment of installments) {
+    // Group-owned loans have no single client to notify by SMS; skip until group-level reminders are supported.
+    if (!installment.loan.clientId) continue;
+
     const outstanding =
       installment.principalDueMinor + installment.interestDueMinor + installment.feesDueMinor + installment.penaltiesDueMinor -
       installment.principalPaidMinor - installment.interestPaidMinor - installment.feesPaidMinor - installment.penaltiesPaidMinor;
@@ -42,7 +45,7 @@ export async function enqueueRepaymentReminders(
       amountDueMinor: outstanding.toString(),
       feesDueMinor: (feesOutstanding > 0n ? feesOutstanding : 0n).toString(),
       currencyCode: installment.loan.denominationCurrency,
-      mobileNumber: installment.loan.client.mobileNumber,
+      mobileNumber: installment.loan.client?.mobileNumber ?? null,
     };
 
     await queue.add("repayment-reminder", data, {

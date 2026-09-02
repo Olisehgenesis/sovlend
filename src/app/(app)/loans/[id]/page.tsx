@@ -32,10 +32,11 @@ export default async function LoanPage({
   const loan = await prisma.loan.findFirst({
     where: {
       id: (await params).id,
-      client: { organizationId: scope.organizationId },
+      office: { organizationId: scope.organizationId },
     },
     include: {
       client: { include: { office: true } },
+      group: { select: { name: true, accountNumber: true } },
       product: true,
       charges: { orderBy: { createdAt: "desc" } },
       collateralItems: { orderBy: { createdAt: "desc" } },
@@ -125,7 +126,7 @@ export default async function LoanPage({
           <p className="eyebrow">Loan account</p>
           <h1>{loan.accountNumber}</h1>
           <p>
-            {loan.client.firstName} {loan.client.lastName} · {loan.product.name}
+            {loan.client ? `${loan.client.firstName} ${loan.client.lastName}` : `Group: ${loan.group?.name ?? "Unknown"}`} · {loan.product.name}
           </p>
         </div>
         <span

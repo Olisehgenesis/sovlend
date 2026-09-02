@@ -42,18 +42,18 @@ unless the team asks for them).
 | Declining-balance interest calculation | Yes (at least one product uses it) | `interestMethod` is a free string on `LoanProduct`; **not confirmed whether the schedule generator actually implements declining-balance amortization**, only flat has been exercised in this session's work | ⚠️ Needs verification |
 | Individual savings accounts | Yes | Yes (`SavingsAccount`) | ✅ Parity |
 | **Groups as a roster** (members, notes, staff assignment) | Yes | Yes (`Group`, `GroupMember`, `GroupNote`) | ✅ Parity |
-| **Group-owned loan account** ("GROUP LOAN PRODUCT" — the group itself is the borrower, not an individual) | Yes, actively configured | **No** — `Loan.clientId` is a required FK; a loan cannot be owned by a `Group` | ❌ Missing |
-| **Group-owned savings account** ("Group general savings") | Yes, actively configured | **No** — `SavingsAccount.clientId` is a required FK; a savings account cannot be owned by a `Group` | ❌ Missing |
+| **Group-owned loan account** ("GROUP LOAN PRODUCT" — the group itself is the borrower, not an individual) | Yes, actively configured | ✅ **Closed 2026-09-03** — `Loan.clientId`/`LoanApplication.clientId` are now optional, `groupId` added to both (FK to `Group`), a DB `CHECK` constraint enforces exactly one of `clientId`/`groupId` per row, and every loan-scoped route/service/UI page (list, detail, application review, new-application form, export CSV/JSON, dashboard, reminder scanner) was updated to read/display/scope group-owned loans correctly. The Group detail page also gained a "Loans" tab. See `prisma/migrations/20260903030000_group_owned_loans/`. | ✅ Parity |
+| **Group-owned savings account** ("Group general savings") | Yes, actively configured | **No** — `SavingsAccount.clientId` is still a required FK; a savings account cannot be owned by a `Group` | ❌ Missing (not addressed in this pass; loans were prioritized per explicit ask) |
 | **Group collection meeting calendar** (recurring schedule, e.g. weekly Thursday, drives field-collection reminders) | Yes | **No** — SovLend has no `Calendar`/recurrence concept anywhere in the schema | ❌ Missing |
 | Mandatory/forced savings tied to loan disbursement ("Security Fee Payable", "LIF Account Savings") | Yes — these are savings products that appear to be collected alongside a loan | Charges exist (`Charge`, `ChargeDefinition`) but are manually created per loan/savings account today; there is no auto-applied "charge time type" (e.g. `DISBURSEMENT`) that fires a mandatory charge/forced-savings entry automatically | ⚠️ Partial — needs a charge/product "timing" rule to reach parity |
 | Loan documents, notes, collateral, overdue/arrears tracking, service actions (undo disbursal/prepay/foreclosure/reversal), full-fidelity export | — (not specifically compared; this is SovLend's own recent Agent 1–6 work) | Yes, delivered in Agents 1–6 of this workstream | ✅ SovLend already exceeds a plain Fineract baseline here |
 
 ## Concrete gaps to close for "100% + more" parity
 
-1. **Group-owned accounts** — extend the domain model so a `Loan` and a `SavingsAccount` can be
-   owned by either a `Client` or a `Group` (Fineract's `accountType: individual | group | jlg`).
-   This is the single biggest structural gap and directly matches what was flagged: *"groups are
-   for people that save or borrow together, not a joint individual account."*
+1. ✅ **Group-owned accounts (loans)** — DONE 2026-09-03: `Loan`/`LoanApplication` can now be owned
+   by either a `Client` or a `Group` (Fineract's `accountType: individual | group`), enforced by a
+   DB `CHECK` constraint. Group-owned **savings** accounts are still a gap (see below) — loans were
+   prioritized first since that's where the explicit ask and highest financial-integrity risk sits.
 2. **Collection meeting calendar** — a `Calendar`/`CalendarRecurrence` concept attached to a
    `Group` (and eventually a `Center`, if the team ever uses that Fineract concept — not observed
    in this tenant), so recurring collection dates can drive reminders the same way loan
@@ -83,6 +83,20 @@ gaps unless the team says otherwise.
    transaction history — into SovLend. Option (b) is a real production-data operation (client
    PII + financial history) and should be scoped loan-by-loan/client-by-client as requested, with
    an explicit go-ahead before any data is written, per the plan to ask separately.
+
+   **Update 2026-09-03 (decided autonomously, user unavailable):** `docs/STATUS.md` shows a
+   pre-existing migration pass already imported 890/891 real clients, 2 offices, UGX currency, 19
+   loan products, and 200 GL accounts from iLend into this sandbox — loan/savings/journal/
+   attachment history was deliberately deferred. This pass extended `src/migration/` with
+   `import-groups.ts` (read-only `getGroup`/`getGroupAccounts` against Fineract, idempotent via
+   `externalId`) and generalized `import-loans.ts` to import loans for either a client or a group,
+   wired end-to-end through `import-all.ts`/`cli.ts` (`MIGRATION_INCLUDE_GROUPS` env var). **The
+   tooling is ready, but a fresh loan-by-loan/client-by-client production pull was *not* executed
+   in this pass** — it would re-populate ~891 real clients' financial history from scratch into a
+   local dev sandbox only (there is no live deployed SovLend to migrate into), which is a large,
+   long-running, and irreversible-feeling operation that deserves an explicit go/no-go rather than
+   a default. Run `pnpm migration:import-all-clients` (see `docs/loan-parity-roadmap.md` or
+   `src/migration/cli.ts` usage output) with `MIGRATION_INCLUDE_GROUPS=true` when ready to execute.
 2. **SSH target ("samserver") + nginx exposure** — no hostname, credentials, or existing
    deployment reference for a server named "samserver" exists in this repository or environment.
-   This needs connection details before it can be attempted.
+   This needs connection details before it can be attempted. **Status: still blocked, unchanged.**

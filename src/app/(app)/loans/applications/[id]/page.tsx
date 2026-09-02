@@ -22,10 +22,12 @@ export default async function LoanApplicationPage({
   const application = await prisma.loanApplication.findFirst({
     where: {
       id: (await params).id,
-      client: { organizationId: scope.organizationId },
+      office: { organizationId: scope.organizationId },
     },
     include: {
       client: { include: { office: true } },
+      group: { select: { name: true, accountNumber: true } },
+      office: { select: { name: true } },
       product: true,
       loan: true,
       submittedBy: { select: { id: true, name: true } },
@@ -37,7 +39,7 @@ export default async function LoanApplicationPage({
   });
   if (
     !application ||
-    (scope.officeIds && !scope.officeIds.includes(application.client.officeId))
+    (scope.officeIds && !scope.officeIds.includes(application.officeId))
   )
     notFound();
   const proposed = formatMinor(
@@ -103,8 +105,11 @@ export default async function LoanApplicationPage({
           <p className="eyebrow">Maker-checker review</p>
           <h1>Loan application</h1>
           <p>
-            {application.client.firstName} {application.client.lastName} ·{" "}
-            {application.client.accountNumber}
+            {application.client
+              ? `${application.client.firstName} ${application.client.lastName}`
+              : `Group: ${application.group?.name ?? "Unknown"}`}{" "}
+            ·{" "}
+            {application.client ? application.client.accountNumber : (application.group?.accountNumber ?? "")}
           </p>
         </div>
         <span
@@ -138,7 +143,7 @@ export default async function LoanApplicationPage({
             </div>
             <div>
               <dt>Office</dt>
-              <dd>{application.client.office.name}</dd>
+              <dd>{application.office.name}</dd>
             </div>
             <div>
               <dt>Product</dt>

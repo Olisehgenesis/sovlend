@@ -45,12 +45,14 @@ export default async function LoansPage({ searchParams }: { searchParams: Promis
     searchFilters.push({ client: { lastName: { contains: query, mode: "insensitive" } } });
     searchFilters.push({ client: { accountNumber: { contains: query } } });
     searchFilters.push({ client: { mobileNumber: { contains: query } } });
+    searchFilters.push({ group: { name: { contains: query, mode: "insensitive" } } });
+    searchFilters.push({ group: { accountNumber: { contains: query } } });
     searchFilters.push({ office: { name: { contains: query, mode: "insensitive" } } });
     searchFilters.push({ loanOfficer: { is: { name: { contains: query, mode: "insensitive" } } } });
   }
 
   const loanWhere: Prisma.LoanWhereInput = {
-    client: { organizationId: userScope.organizationId },
+    office: { organizationId: userScope.organizationId },
     ...officeWhere(userScope),
     status: { in: activeLoanStatuses },
     ...(searchFilters.length > 0 ? { AND: [{ OR: searchFilters }] } : {}),
@@ -63,12 +65,10 @@ export default async function LoansPage({ searchParams }: { searchParams: Promis
     }),
     prisma.loanApplication.findMany({
       where: {
-        client: {
-          organizationId: userScope.organizationId,
-          ...officeWhere(userScope),
-        },
+        office: { organizationId: userScope.organizationId },
+        ...officeWhere(userScope),
       },
-      include: { client: true, product: true },
+      include: { client: true, group: true, product: true },
       orderBy: { createdAt: "desc" },
       take: 20,
     }),
@@ -81,6 +81,7 @@ export default async function LoansPage({ searchParams }: { searchParams: Promis
     where: loanWhere,
     include: {
       client: { include: { office: { select: { name: true } } } },
+      group: { select: { name: true, accountNumber: true } },
       product: true,
       loanOfficer: { select: { name: true } },
       installments: {
@@ -175,14 +176,14 @@ export default async function LoansPage({ searchParams }: { searchParams: Promis
                     const penaltiesDue = loan.installments.reduce((sum, item) => sum + item.penaltiesDueMinor - item.penaltiesPaidMinor, 0n);
                     const totalDue = principalDue + interestDue + feesDue + penaltiesDue;
                     const totalPaid = loan.installments.reduce((sum, item) => sum + item.principalPaidMinor + item.interestPaidMinor + item.feesPaidMinor + item.penaltiesPaidMinor, 0n);
-                    const borrower = `${loan.client.firstName} ${loan.client.lastName}`;
+                    const borrower = loan.client ? `${loan.client.firstName} ${loan.client.lastName}` : `Group: ${loan.group?.name ?? "Unknown"}`;
                     return (
                       <tr key={loan.id}>
                         <td>
                           {borrower}
                           <Link className="row-link" href={`/loans/${loan.id}`} aria-label={`Open ${loan.accountNumber}`} />
                         </td>
-                        <td className="mono">{loan.client.accountNumber}</td>
+                        <td className="mono">{loan.client ? loan.client.accountNumber : (loan.group?.accountNumber ?? "")}</td>
                         <td>{loan.product.name}</td>
                         <td>
                           <span className={`status ${loan.status === "ACTIVE" ? "up-to-date" : loan.status === "IN_ARREARS" ? "in-arrears" : "review"}`}>
@@ -252,7 +253,7 @@ export default async function LoansPage({ searchParams }: { searchParams: Promis
                   {applications.map((application) => (
                     <tr key={application.id}>
                       <td>
-                        {application.client.firstName} {application.client.lastName}
+                        {application.client ? `${application.client.firstName} ${application.client.lastName}` : `Group: ${application.group?.name ?? "Unknown"}`}
                       </td>
                       <td>{application.product.name}</td>
                       <td>

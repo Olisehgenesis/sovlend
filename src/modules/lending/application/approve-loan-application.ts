@@ -10,7 +10,7 @@ export async function approveLoanApplication(
 ) {
   const application = await prisma.loanApplication.findUnique({
     where: { id: command.applicationId },
-    include: { client: { select: { organizationId: true, officeId: true } }, product: { select: { denominationCurrency: true, principalMinMinor: true, principalMaxMinor: true, annualRateBps: true, repaymentCount: true, repaymentFrequency: true, amortizationMethod: true, interestMethod: true, version: true } } },
+    include: { office: { select: { organizationId: true } }, product: { select: { denominationCurrency: true, principalMinMinor: true, principalMaxMinor: true, annualRateBps: true, repaymentCount: true, repaymentFrequency: true, amortizationMethod: true, interestMethod: true, version: true } } },
   });
   if (!application) throw new Error("Loan application not found");
   if (application.status !== "SUBMITTED") throw new Error("Only submitted applications can be approved");
@@ -23,8 +23,8 @@ export async function approveLoanApplication(
   await new AuthorizationService(prisma).assertAllowed({
     actorUserId: command.actorUserId,
     permission: permissions.loanApprove,
-    organizationId: application.client.organizationId,
-    officeId: application.client.officeId,
+    organizationId: application.office.organizationId,
+    officeId: application.officeId,
     amountMinor: command.approvedPrincipalMinor,
     currencyCode: application.product.denominationCurrency,
   });
@@ -42,8 +42,9 @@ export async function approveLoanApplication(
       data: {
         applicationId: application.id,
         clientId: application.clientId,
+        groupId: application.groupId,
         productId: application.productId,
-        officeId: application.client.officeId,
+        officeId: application.officeId,
         accountNumber,
         denominationCurrency: application.product.denominationCurrency,
         principalMinor: command.approvedPrincipalMinor,

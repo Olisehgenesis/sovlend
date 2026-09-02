@@ -24,7 +24,7 @@ export async function loadDashboard(userId: string) {
   const today = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
   const tomorrow = new Date(today.getTime() + 86_400_000);
   const loanScope = {
-    client: { organizationId: user.organizationId },
+    office: { organizationId: user.organizationId },
     ...officeWhere(scope),
   };
 
@@ -54,6 +54,7 @@ export async function loadDashboard(userId: string) {
         status: true,
         denominationCurrency: true,
         client: { select: { firstName: true, middleName: true, lastName: true } },
+        group: { select: { name: true } },
         product: { select: { name: true } },
         installments: {
           where: { dueOn: { lt: tomorrow } },
@@ -107,7 +108,9 @@ export async function loadDashboard(userId: string) {
     attentionLoans: attentionLoans
       .map((loan) => ({
         id: loan.id,
-        borrower: [loan.client.firstName, loan.client.middleName, loan.client.lastName].filter(Boolean).join(" "),
+        borrower: loan.client
+          ? [loan.client.firstName, loan.client.middleName, loan.client.lastName].filter(Boolean).join(" ")
+          : `Group: ${loan.group?.name ?? "Unknown"}`,
         account: loan.accountNumber,
         product: loan.product.name,
         currencyCode: loan.denominationCurrency,

@@ -153,17 +153,17 @@ Observed actions on loan page:
 
 ### LoanApplication fields
 - id, submittedById
-- clientId, productId
+- clientId (optional), groupId (optional — exactly one of clientId/groupId required, DB `CHECK` constraint), officeId, productId
 - proposedPrincipalMinor
 - approvedPrincipalMinor
 - status
 - purpose
 - submittedAt, approvedAt
-- relations: approvals, loan, client, product
+- relations: approvals, loan, client, group, office, product
 
 ### Loan fields
 - id, applicationId (unique)
-- clientId, productId, officeId, loanOfficerId
+- clientId (optional), groupId (optional — exactly one of clientId/groupId required, DB `CHECK` constraint), productId, officeId, loanOfficerId
 - accountNumber (unique)
 - denominationCurrency
 - principalMinor
@@ -356,7 +356,7 @@ For communication/control:
 - Active loans register pagination: Legacy yes, SovLend yes
 - Active loans register export-to-document flow: Legacy yes, SovLend partial (CSV export exists)
 - Active loans row click-through interaction: Legacy yes, SovLend yes
-- Group and individual loan visibility: Legacy yes, SovLend yes (both are Loan records linked to Client)
+- Group and individual loan visibility: Legacy yes, SovLend yes (Loan/LoanApplication can be owned by either a Client or a Group — added 2026-09-03, see `prisma/migrations/20260903030000_group_owned_loans/`)
 - Loan application capture: Legacy yes, SovLend yes
 - Maker-checker approval: Legacy yes, SovLend yes
 - Maker-checker disbursement separation: Legacy yes, SovLend yes

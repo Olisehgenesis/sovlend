@@ -3,12 +3,15 @@ import type { PrismaClient } from "@prisma/client";
 import { ReadOnlyFineractClient } from "./fineract-client";
 import { importLegacyClient } from "./import-client";
 import { importLegacyLoansForClient } from "./import-loans";
+import { importAllLegacyGroups } from "./import-groups";
 
 export type ImportAllCommand = Readonly<{
   organizationId: string;
   defaultOfficeId: string;
   actorUserId: string;
   includeLoans: boolean;
+  /** Also import groups (SACCO-style collective savings/borrowing groups) and their member roster. */
+  includeGroups?: boolean;
 }>;
 
 /** Bulk-imports every legacy client (with family/identities/notes/documents) and, optionally, their loan history. Resumable: already-imported clients and loans are skipped. */
@@ -51,7 +54,18 @@ export async function importAllLegacyData(prisma: PrismaClient, fineract: ReadOn
     if (offset >= page.totalFilteredRecords) break;
   }
 
-  return { clientsImported, clientsSkipped, loansImported, errors };
+  let groupsImported = 0;
+  let groupsSkipped = 0;
+  if (command.includeGroups) {
+    const groupResult = await importAllLegacyGroups(prisma, fineract, { organizationId: command.organizationId, defaultOfficeId: command.defaultOfficeId, actorUserId: command.actorUserId, includeLoans: command.includeLoans });
+    groupsImported = groupResult.groupsImported;
+    groupsSkipped = groupResult.groupsSkipped;
+    loansImported += groupResult.loansImported;
+    errors.push(...groupResult.errors);
+  }
+
+  return { clientsImported, clientsSkipped, loansImported, groupsImported, groupsSkipped, errors };
 }
 
 export { ReadOnlyFineractClient };
+

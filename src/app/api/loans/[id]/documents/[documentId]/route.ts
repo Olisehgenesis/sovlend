@@ -14,7 +14,7 @@ export async function DELETE(_request: Request, { params }: { params: Promise<{ 
   if (!scope) return NextResponse.json({ error: "Workspace assignment required" }, { status: 403 });
 
   const { id, documentId } = await params;
-  const loan = await prisma.loan.findFirst({ where: { id, client: { organizationId: scope.organizationId } } });
+  const loan = await prisma.loan.findFirst({ where: { id, office: { organizationId: scope.organizationId } } });
   if (!loan || (scope.officeIds && !scope.officeIds.includes(loan.officeId))) {
     return NextResponse.json({ error: "Loan not found" }, { status: 404 });
   }

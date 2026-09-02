@@ -201,6 +201,7 @@ model Office {
   users                 User[]
   clients               Client[]
   loans                 Loan[]
+  loanApplications      LoanApplication[]
   journals              Journal[]
   permissionAssignments UserPermissionAssignment[]
   groups                Group[]
@@ -433,7 +434,8 @@ model ClientNote {
 
 model Charge {
   id                 String            @id @default(uuid()) @db.Uuid
-  clientId           String            @db.Uuid
+  clientId           String?           @db.Uuid
+  groupId            String?           @db.Uuid
   loanId             String?           @db.Uuid
   chargeDefinitionId String?           @db.Uuid
   savingsAccountId   String?           @db.Uuid
@@ -442,7 +444,8 @@ model Charge {
   currencyCode       String            @default("UGX")
   status             String            @default("PENDING")
   dueOn              DateTime?         @db.Date
-  client             Client            @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  client             Client?           @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  group              Group?            @relation(fields: [groupId], references: [id], onDelete: Cascade)
   loan               Loan?             @relation(fields: [loanId], references: [id], onDelete: SetNull)
   chargeDefinition   ChargeDefinition? @relation(fields: [chargeDefinitionId], references: [id], onDelete: SetNull)
   savingsAccount     SavingsAccount?   @relation(fields: [savingsAccountId], references: [id], onDelete: SetNull)
@@ -450,6 +453,7 @@ model Charge {
   updatedAt          DateTime          @updatedAt
 
   @@index([clientId, status])
+  @@index([groupId, status])
   @@index([loanId, status])
   @@index([loanId, dueOn])
   @@index([chargeDefinitionId])
@@ -463,23 +467,26 @@ enum GroupStatus {
 }
 
 model Group {
-  id              String        @id @default(uuid()) @db.Uuid
-  organizationId  String        @db.Uuid
-  officeId        String        @db.Uuid
-  staffId         String?
-  accountNumber   String
-  externalId      String?
-  name            String
-  status          GroupStatus   @default(PENDING)
-  submittedOn     DateTime?     @db.Date
-  activatedOn     DateTime?     @db.Date
-  organization    Organization  @relation(fields: [organizationId], references: [id])
-  office          Office        @relation(fields: [officeId], references: [id])
-  assignedOfficer User?         @relation("AssignedGroupOfficer", fields: [staffId], references: [id])
-  members         GroupMember[]
-  notes           GroupNote[]
-  createdAt       DateTime      @default(now())
-  updatedAt       DateTime      @updatedAt
+  id               String            @id @default(uuid()) @db.Uuid
+  organizationId   String            @db.Uuid
+  officeId         String            @db.Uuid
+  staffId          String?
+  accountNumber    String
+  externalId       String?
+  name             String
+  status           GroupStatus       @default(PENDING)
+  submittedOn      DateTime?         @db.Date
+  activatedOn      DateTime?         @db.Date
+  organization     Organization      @relation(fields: [organizationId], references: [id])
+  office           Office            @relation(fields: [officeId], references: [id])
+  assignedOfficer  User?             @relation("AssignedGroupOfficer", fields: [staffId], references: [id])
+  members          GroupMember[]
+  notes            GroupNote[]
+  loanApplications LoanApplication[]
+  loans            Loan[]
+  charges          Charge[]
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
 
   @@unique([organizationId, accountNumber])
   @@index([organizationId, officeId, status])
@@ -591,7 +598,9 @@ model ChargeDefinition {
 model LoanApplication {
   id                     String                @id @default(uuid()) @db.Uuid
   submittedById          String?
-  clientId               String                @db.Uuid
+  clientId               String?               @db.Uuid
+  groupId                String?               @db.Uuid
+  officeId               String                @db.Uuid
   productId              String                @db.Uuid
   proposedPrincipalMinor BigInt
   approvedPrincipalMinor BigInt?
@@ -599,7 +608,9 @@ model LoanApplication {
   purpose                String?
   submittedAt            DateTime?
   approvedAt             DateTime?
-  client                 Client                @relation(fields: [clientId], references: [id])
+  client                 Client?               @relation(fields: [clientId], references: [id])
+  group                  Group?                @relation(fields: [groupId], references: [id])
+  office                 Office                @relation(fields: [officeId], references: [id])
   product                LoanProduct           @relation(fields: [productId], references: [id])
   submittedBy            User?                 @relation("ApplicationSubmitter", fields: [submittedById], references: [id])
   approvals              Approval[]
@@ -608,6 +619,8 @@ model LoanApplication {
   updatedAt              DateTime              @updatedAt
 
   @@index([clientId, status])
+  @@index([groupId, status])
+  @@index([officeId, status])
   @@index([productId, status])
   @@index([submittedById, status])
 }
@@ -686,7 +699,8 @@ model Approval {
 model Loan {
   id                   String               @id @default(uuid()) @db.Uuid
   applicationId        String               @unique @db.Uuid
-  clientId             String               @db.Uuid
+  clientId             String?              @db.Uuid
+  groupId              String?              @db.Uuid
   productId            String               @db.Uuid
   officeId             String               @db.Uuid
   loanOfficerId        String?
@@ -699,7 +713,8 @@ model Loan {
   disbursedOn          DateTime?            @db.Date
   maturesOn            DateTime?            @db.Date
   application          LoanApplication      @relation(fields: [applicationId], references: [id])
-  client               Client               @relation(fields: [clientId], references: [id])
+  client               Client?              @relation(fields: [clientId], references: [id])
+  group                Group?               @relation(fields: [groupId], references: [id])
   product              LoanProduct          @relation(fields: [productId], references: [id])
   office               Office               @relation(fields: [officeId], references: [id])
   loanOfficer          User?                @relation("AssignedLoanOfficer", fields: [loanOfficerId], references: [id])
@@ -716,6 +731,7 @@ model Loan {
 
   @@index([officeId, status])
   @@index([clientId, status])
+  @@index([groupId, status])
 }
 
 model LoanInstallment {

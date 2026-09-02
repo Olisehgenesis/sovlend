@@ -22,7 +22,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   if (!scope) return NextResponse.json({ error: "Workspace assignment required" }, { status: 403 });
 
   const { id, requestId } = await params;
-  const serviceRequest = await prisma.loanServiceRequest.findFirst({ where: { id: requestId, loanId: id, loan: { client: { organizationId: scope.organizationId } } }, include: { loan: true } });
+  const serviceRequest = await prisma.loanServiceRequest.findFirst({ where: { id: requestId, loanId: id, loan: { office: { organizationId: scope.organizationId } } }, include: { loan: true } });
   if (!serviceRequest || (scope.officeIds && !scope.officeIds.includes(serviceRequest.loan.officeId))) {
     return NextResponse.json({ error: "Servicing request not found" }, { status: 404 });
   }

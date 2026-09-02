@@ -135,3 +135,39 @@ Status: Completed.
 - Add authorization checks to each new route.
 - Add idempotency keys for new financial mutation endpoints.
 - Append audit and outbox events for all critical state changes.
+
+## Post-Agent-6 Follow-On: Group-Owned Loans (2026-09-03)
+
+Triggered by explicit feedback: "groups are for people that save or borrow together, not a joint
+individual account" — comparing against the production iLend/Fineract reference tenant, which
+actively runs a "GROUP LOAN PRODUCT" where the borrower on the loan account is the `Group` itself,
+not one of its members.
+
+Status: Completed.
+- Schema: `Loan.clientId` and `LoanApplication.clientId` made optional; `groupId` (FK to `Group`)
+  added to both; `LoanApplication.officeId` added (new required denormalized column, mirroring
+  `Loan.officeId`) so office/org scoping never needs a `Client` relation; a DB `CHECK` constraint
+  on both tables enforces exactly one of `clientId`/`groupId` is set. `Charge.clientId` was also
+  made optional with a new `Charge.groupId` so charges can be posted on group-owned loans.
+  Migration: `prisma/migrations/20260903030000_group_owned_loans/`.
+- All loan-scoped routes/services updated to scope by `office.organizationId` instead of
+  `client.organizationId` (works identically for client- or group-owned rows): loan-applications
+  create route, approve-loan-application service, 10 loan sub-resource routes (charges,
+  documents, notes, collateral, service-actions, payoff-quote), the loans CSV export route, the
+  Agent-6 full-fidelity export service, the documents-by-id route, and the operations dashboard.
+- UI: loans list/detail pages and the loan-application review page display "Group: {name}" in
+  place of a client name when a loan/application is group-owned; the "new loan application" form
+  gained a borrower-type (Client/Group) selector; the Group detail page gained a "Loans" tab
+  listing the group's loan accounts and pending applications with a "New loan application" link
+  that pre-selects the group.
+- Migration tooling: `src/migration/import-groups.ts` (new — read-only, idempotent import of a
+  legacy iLend group plus its client-member links) and `src/migration/import-loans.ts`
+  (generalized to import loans for either a client or a group owner), wired through
+  `import-all.ts`/`cli.ts` behind a `MIGRATION_INCLUDE_GROUPS` flag (default on).
+- Verification: `npx tsc --noEmit` clean, `pnpm exec vitest run` (44/44 passing), `pnpm build`
+  clean, plus an ad-hoc smoke test creating a group-owned `LoanApplication`/`Loan` end-to-end and
+  confirming the DB `CHECK` constraint rejects an owner-less row.
+- Not done in this pass: group-owned **savings accounts** (a separate, still-open gap — see
+  `docs/ilend-parity-gap.md`); a fresh production data pull using the extended migration tooling
+  (tooling is ready, but running it against the real 891-client iLend tenant was treated as a
+  separate, explicit go/no-go decision rather than a default action).
