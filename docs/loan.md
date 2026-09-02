@@ -450,6 +450,7 @@ For communication/control:
 - POST /api/loans/[id]/disburse
 - POST /api/loans/[id]/repayments
 - GET /api/loans/export
+- Full-fidelity export (Agent 6): GET/POST /api/loans/export-jobs, GET /api/loans/export-jobs/[jobId], GET /api/loans/export-jobs/[jobId]/download
 - Loan charges: GET/POST /api/loans/[id]/charges and PATCH /api/loans/[id]/charges/[chargeId]
 - Loan notes: GET/POST /api/loans/[id]/notes
 - Loan documents: GET/POST /api/loans/[id]/documents and DELETE /api/loans/[id]/documents/[documentId]
@@ -457,7 +458,7 @@ For communication/control:
 - High-impact servicing (maker-checker): GET/POST /api/loans/[id]/service-actions, POST /api/loans/[id]/service-actions/[requestId]/decision, GET /api/loans/[id]/payoff-quote
 
 ### Routes missing for full legacy parity
-- None remaining for the six-track parity plan; Agent 6 (full-fidelity export) is the only outstanding track.
+- None remaining for the six-track parity plan; all six agents (1-6) are complete.
 
 ### Active-loans register parity gaps from legacy sample
 - Missing unified register filter by name/client/staff/office
@@ -518,5 +519,4 @@ Export must support full extraction for any one loan and bulk extraction for all
 - Idempotent export job keys for repeated requests
 
 ### Current SovLend export gap
-- Current implementation exports only application-level summary CSV.
-- Missing complete loan-level operational export package described above.
+- Resolved by Agent 6: async export job API (`LoanExportJob`) supports SINGLE_LOAN/FILTERED/PORTFOLIO scopes, CSV zip (all 13 datasets above) and nested JSON package formats, manifest with as-of date/scope/per-dataset counts, idempotency keys, office-scope + permission enforcement, and async processing via BullMQ worker. UI at `/loans/exports`.

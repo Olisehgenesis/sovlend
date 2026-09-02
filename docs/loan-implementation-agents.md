@@ -9,7 +9,7 @@ Purpose: execute loan parity in ordered tracks, one by one.
 - Agent 3: Completed
 - Agent 4: Completed
 - Agent 5: Completed
-- Agent 6: Not started
+- Agent 6: Completed
 
 ## Agent 1: Active-Loans Register Parity
 Scope:
@@ -106,6 +106,15 @@ Deliverables:
 
 Definition of done:
 - Auditor can reconstruct any loan lifecycle from export package only.
+
+Status: Completed.
+- Pure domain module `loan-export.ts` builds 14 CSV datasets (loans, loan_balances, loan_schedule, loan_transactions, loan_transaction_allocations, loan_charges, loan_overdue_snapshot, loan_documents, loan_notes, loan_collateral, loan_journals, loan_journal_lines, loan_audit_events, loan_reminders) plus a nested JSON export shape and an export manifest (as-of date, scope, per-dataset counts).
+- `LoanExportJob` model (async job pattern matching the rest of the codebase): PENDING → PROCESSING → COMPLETED/FAILED, idempotency key unique per request, stores manifest + result object key/sha256/byte size on completion.
+- Application service `export-loans.ts`: `requestLoanExport` (permission check on `loanView`, idempotency short-circuit, scope validation for SINGLE_LOAN/FILTERED/PORTFOLIO, freezes requester's office scope, audit+outbox `loan.export.requested`), `processLoanExportJob` (resolves loans per scope, batch-gathers journals/journal lines/audit events, builds CSV zip via `archiver` or nested JSON, stores bytes via `export-storage.ts`, marks job COMPLETED/FAILED with audit+outbox events).
+- New BullMQ `loan-export` queue/worker wired the same way as existing notification queues.
+- New routes: `POST/GET /api/loans/export-jobs`, `GET /api/loans/export-jobs/[jobId]`, `GET /api/loans/export-jobs/[jobId]/download`.
+- New `/loans/exports` page + `loan-exports-panel.tsx`: scope/format picker, jobs table with polling while PENDING/PROCESSING, download links once COMPLETED. Header link added from the main loans list.
+- 11 new unit tests (`loan-export.test.ts`) plus a full fixture-based end-to-end smoke test against real local Postgres/Redis (both CSV_ZIP and JSON formats, correct byte-level zip/JSON output, idempotent replay) — confirmed the whole async pipeline works, not just unit-level logic.
 
 ## Execution Order
 1. Agent 1

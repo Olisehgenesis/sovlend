@@ -164,89 +164,91 @@ enum MigrationRunStatus {
 }
 
 model Organization {
-  id            String          @id @default(uuid()) @db.Uuid
-  name          String
-  baseCurrency  String          @default("UGX")
-  nextClientSequence Int        @default(1)
-  nextGroupSequence Int         @default(1)
-  offices       Office[]
-  users         User[]
-  clients       Client[]
-  loanProducts  LoanProduct[]
-  savingsProducts SavingsProduct[]
-  chargeDefinitions ChargeDefinition[]
-  ownershipPools OwnershipPool[]
-  permissionGroups PermissionGroup[]
-  investorAccesses InvestorOrganizationAccess[]
-  investorInvites InvestorInvite[]
-  investorRequests InvestorAccessRequest[]
-  investments InvestmentCommitment[]
+  id                 String                       @id @default(uuid()) @db.Uuid
+  name               String
+  baseCurrency       String                       @default("UGX")
+  nextClientSequence Int                          @default(1)
+  nextGroupSequence  Int                          @default(1)
+  offices            Office[]
+  users              User[]
+  clients            Client[]
+  loanProducts       LoanProduct[]
+  savingsProducts    SavingsProduct[]
+  chargeDefinitions  ChargeDefinition[]
+  ownershipPools     OwnershipPool[]
+  permissionGroups   PermissionGroup[]
+  investorAccesses   InvestorOrganizationAccess[]
+  investorInvites    InvestorInvite[]
+  investorRequests   InvestorAccessRequest[]
+  investments        InvestmentCommitment[]
   settlementAccounts SettlementAccount[]
   accountingDefaults LoanAccountingDefaults?
-  groups        Group[]
-  createdAt     DateTime        @default(now())
-  updatedAt     DateTime        @updatedAt
+  groups             Group[]
+  loanExportJobs     LoanExportJob[]
+  createdAt          DateTime                     @default(now())
+  updatedAt          DateTime                     @updatedAt
 }
 
 model Office {
-  id             String   @id @default(uuid()) @db.Uuid
-  organizationId String   @db.Uuid
-  parentId       String?  @db.Uuid
-  name           String
-  externalId     String?
-  organization   Organization @relation(fields: [organizationId], references: [id])
-  parent         Office?  @relation("OfficeHierarchy", fields: [parentId], references: [id])
-  children       Office[] @relation("OfficeHierarchy")
-  users          User[]
-  clients        Client[]
-  loans          Loan[]
-  journals       Journal[]
+  id                    String                     @id @default(uuid()) @db.Uuid
+  organizationId        String                     @db.Uuid
+  parentId              String?                    @db.Uuid
+  name                  String
+  externalId            String?
+  organization          Organization               @relation(fields: [organizationId], references: [id])
+  parent                Office?                    @relation("OfficeHierarchy", fields: [parentId], references: [id])
+  children              Office[]                   @relation("OfficeHierarchy")
+  users                 User[]
+  clients               Client[]
+  loans                 Loan[]
+  journals              Journal[]
   permissionAssignments UserPermissionAssignment[]
-  groups         Group[]
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  groups                Group[]
+  createdAt             DateTime                   @default(now())
+  updatedAt             DateTime                   @updatedAt
 
   @@unique([organizationId, name])
   @@index([organizationId, parentId])
 }
 
 model User {
-  id              String        @id
-  name            String
-  email           String        @unique
-  emailVerified   Boolean       @default(false)
-  image           String?
-  role            String?
-  banned          Boolean?      @default(false)
-  banReason       String?
-  banExpires      DateTime?
-  organizationId  String?       @db.Uuid
-  officeId        String?       @db.Uuid
-  systemRole      UserRole      @default(CLIENT)
-  organization    Organization? @relation(fields: [organizationId], references: [id])
-  office          Office?       @relation(fields: [officeId], references: [id])
-  sessions         Session[]
-  accounts         Account[]
-  passkeys         Passkey[]
-  clientProfile    Client?       @relation("ClientAuthUser")
-  assignedClients Client[]    @relation("AssignedOfficer")
-  assignedLoans  Loan[]       @relation("AssignedLoanOfficer")
-  approvals      Approval[]
-  auditEvents    AuditEvent[]
-  permissionAssignments UserPermissionAssignment[]
-  submittedApplications LoanApplication[] @relation("ApplicationSubmitter")
-  investorProfile InvestorProfile?
-  clientNotes    ClientNote[]
-  loanNotes      LoanNote[]
-  assignedGroups Group[]      @relation("AssignedGroupOfficer")
-  groupNotes     GroupNote[]
-  assignedSavingsAccounts SavingsAccount[] @relation("AssignedSavingsOfficer")
-  submittedSavingsAccounts SavingsAccount[] @relation("SavingsAccountSubmittedBy")
-  approvedSavingsAccounts SavingsAccount[] @relation("SavingsAccountApprovedBy")
-  loanServiceRequestsMade LoanServiceRequest[] @relation("LoanServiceRequestRequestedBy")
-  loanServiceRequestsDecided LoanServiceRequest[] @relation("LoanServiceRequestDecidedBy")
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
+  id                         String                     @id
+  name                       String
+  email                      String                     @unique
+  emailVerified              Boolean                    @default(false)
+  image                      String?
+  role                       String?
+  banned                     Boolean?                   @default(false)
+  banReason                  String?
+  banExpires                 DateTime?
+  organizationId             String?                    @db.Uuid
+  officeId                   String?                    @db.Uuid
+  systemRole                 UserRole                   @default(CLIENT)
+  organization               Organization?              @relation(fields: [organizationId], references: [id])
+  office                     Office?                    @relation(fields: [officeId], references: [id])
+  sessions                   Session[]
+  accounts                   Account[]
+  passkeys                   Passkey[]
+  clientProfile              Client?                    @relation("ClientAuthUser")
+  assignedClients            Client[]                   @relation("AssignedOfficer")
+  assignedLoans              Loan[]                     @relation("AssignedLoanOfficer")
+  approvals                  Approval[]
+  auditEvents                AuditEvent[]
+  permissionAssignments      UserPermissionAssignment[]
+  submittedApplications      LoanApplication[]          @relation("ApplicationSubmitter")
+  investorProfile            InvestorProfile?
+  clientNotes                ClientNote[]
+  loanNotes                  LoanNote[]
+  assignedGroups             Group[]                    @relation("AssignedGroupOfficer")
+  groupNotes                 GroupNote[]
+  assignedSavingsAccounts    SavingsAccount[]           @relation("AssignedSavingsOfficer")
+  submittedSavingsAccounts   SavingsAccount[]           @relation("SavingsAccountSubmittedBy")
+  approvedSavingsAccounts    SavingsAccount[]           @relation("SavingsAccountApprovedBy")
+  loanServiceRequestsMade    LoanServiceRequest[]       @relation("LoanServiceRequestRequestedBy")
+  loanServiceRequestsDecided LoanServiceRequest[]       @relation("LoanServiceRequestDecidedBy")
+  loanExportJobsRequested    LoanExportJob[]
+  createdAt                  DateTime                   @default(now())
+  updatedAt                  DateTime                   @updatedAt
 
   @@index([organizationId, officeId, systemRole])
   @@map("user")
@@ -322,56 +324,56 @@ model Passkey {
 }
 
 model Currency {
-  code       String   @id @db.VarChar(10)
-  name       String
-  exponent   Int
-  active     Boolean  @default(true)
-  accounts   LedgerAccount[]
-  pricesBase PriceSnapshot[] @relation("PriceBase")
+  code        String          @id @db.VarChar(10)
+  name        String
+  exponent    Int
+  active      Boolean         @default(true)
+  accounts    LedgerAccount[]
+  pricesBase  PriceSnapshot[] @relation("PriceBase")
   pricesQuote PriceSnapshot[] @relation("PriceQuote")
-  createdAt  DateTime @default(now())
+  createdAt   DateTime        @default(now())
 }
 
 model Client {
-  id                String       @id @default(uuid()) @db.Uuid
-  authUserId        String?      @unique
-  organizationId    String       @db.Uuid
-  officeId          String       @db.Uuid
-  assignedOfficerId String?
-  accountNumber     String
-  externalId        String?
-  photoDocumentId   String?      @unique @db.Uuid
-  signatureDocumentId String?    @unique @db.Uuid
-  firstName         String
-  middleName        String?
-  lastName          String
-  mobileNumber      String?
-  dateOfBirth       DateTime?    @db.Date
-  genderCode        String?
-  clientTypeCode    String?
-  classificationCode String?
-  isStaff           Boolean      @default(false)
-  status            ClientStatus @default(DRAFT)
-  kycStatus         KycStatus    @default(INCOMPLETE)
-  submittedOn       DateTime?    @db.Date
-  activatedOn       DateTime?    @db.Date
-  organization      Organization @relation(fields: [organizationId], references: [id])
-  office            Office       @relation(fields: [officeId], references: [id])
-  assignedOfficer   User?        @relation("AssignedOfficer", fields: [assignedOfficerId], references: [id])
-  authUser          User?        @relation("ClientAuthUser", fields: [authUserId], references: [id])
-  photoDocument     Document?    @relation("ClientPhoto", fields: [photoDocumentId], references: [id], onDelete: SetNull)
-  signatureDocument Document?    @relation("ClientSignature", fields: [signatureDocumentId], references: [id], onDelete: SetNull)
-  applications      LoanApplication[]
-  loans             Loan[]
-  savingsAccounts   SavingsAccount[]
-  documents         Document[]
-  familyMembers     ClientFamilyMember[]
-  identifiers       ClientIdentifier[]
-  notes             ClientNote[]
-  charges           Charge[]
-  groupMemberships  GroupMember[]
-  createdAt         DateTime     @default(now())
-  updatedAt         DateTime     @updatedAt
+  id                  String               @id @default(uuid()) @db.Uuid
+  authUserId          String?              @unique
+  organizationId      String               @db.Uuid
+  officeId            String               @db.Uuid
+  assignedOfficerId   String?
+  accountNumber       String
+  externalId          String?
+  photoDocumentId     String?              @unique @db.Uuid
+  signatureDocumentId String?              @unique @db.Uuid
+  firstName           String
+  middleName          String?
+  lastName            String
+  mobileNumber        String?
+  dateOfBirth         DateTime?            @db.Date
+  genderCode          String?
+  clientTypeCode      String?
+  classificationCode  String?
+  isStaff             Boolean              @default(false)
+  status              ClientStatus         @default(DRAFT)
+  kycStatus           KycStatus            @default(INCOMPLETE)
+  submittedOn         DateTime?            @db.Date
+  activatedOn         DateTime?            @db.Date
+  organization        Organization         @relation(fields: [organizationId], references: [id])
+  office              Office               @relation(fields: [officeId], references: [id])
+  assignedOfficer     User?                @relation("AssignedOfficer", fields: [assignedOfficerId], references: [id])
+  authUser            User?                @relation("ClientAuthUser", fields: [authUserId], references: [id])
+  photoDocument       Document?            @relation("ClientPhoto", fields: [photoDocumentId], references: [id], onDelete: SetNull)
+  signatureDocument   Document?            @relation("ClientSignature", fields: [signatureDocumentId], references: [id], onDelete: SetNull)
+  applications        LoanApplication[]
+  loans               Loan[]
+  savingsAccounts     SavingsAccount[]
+  documents           Document[]
+  familyMembers       ClientFamilyMember[]
+  identifiers         ClientIdentifier[]
+  notes               ClientNote[]
+  charges             Charge[]
+  groupMemberships    GroupMember[]
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
 
   @@unique([organizationId, accountNumber])
   @@index([organizationId, officeId, status])
@@ -379,39 +381,39 @@ model Client {
 }
 
 model ClientFamilyMember {
-  id            String    @id @default(uuid()) @db.Uuid
-  clientId      String    @db.Uuid
+  id            String     @id @default(uuid()) @db.Uuid
+  clientId      String     @db.Uuid
   firstName     String
   middleName    String?
   lastName      String
   qualification String?
   mobileNumber  String?
   age           Int?
-  isDependent   Boolean   @default(false)
+  isDependent   Boolean    @default(false)
   relationship  String?
   genderCode    String?
   profession    String?
   maritalStatus String?
-  dateOfBirth   DateTime? @db.Date
-  client        Client    @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  dateOfBirth   DateTime?  @db.Date
+  client        Client     @relation(fields: [clientId], references: [id], onDelete: Cascade)
   documents     Document[]
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
 
   @@index([clientId])
 }
 
 model ClientIdentifier {
-  id           String   @id @default(uuid()) @db.Uuid
-  clientId     String   @db.Uuid
+  id           String     @id @default(uuid()) @db.Uuid
+  clientId     String     @db.Uuid
   documentType String
-  status       String   @default("ACTIVE")
+  status       String     @default("ACTIVE")
   uniqueNumber String
   description  String?
-  client       Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  client       Client     @relation(fields: [clientId], references: [id], onDelete: Cascade)
   documents    Document[]
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
 
   @@unique([clientId, documentType, uniqueNumber])
   @@index([clientId])
@@ -430,22 +432,22 @@ model ClientNote {
 }
 
 model Charge {
-  id                 String    @id @default(uuid()) @db.Uuid
-  clientId           String    @db.Uuid
-  loanId             String?   @db.Uuid
-  chargeDefinitionId String?   @db.Uuid
-  savingsAccountId   String?   @db.Uuid
+  id                 String            @id @default(uuid()) @db.Uuid
+  clientId           String            @db.Uuid
+  loanId             String?           @db.Uuid
+  chargeDefinitionId String?           @db.Uuid
+  savingsAccountId   String?           @db.Uuid
   name               String
   amountMinor        BigInt
-  currencyCode       String    @default("UGX")
-  status             String    @default("PENDING")
-  dueOn              DateTime? @db.Date
-  client             Client    @relation(fields: [clientId], references: [id], onDelete: Cascade)
-  loan               Loan?     @relation(fields: [loanId], references: [id], onDelete: SetNull)
+  currencyCode       String            @default("UGX")
+  status             String            @default("PENDING")
+  dueOn              DateTime?         @db.Date
+  client             Client            @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  loan               Loan?             @relation(fields: [loanId], references: [id], onDelete: SetNull)
   chargeDefinition   ChargeDefinition? @relation(fields: [chargeDefinitionId], references: [id], onDelete: SetNull)
-  savingsAccount     SavingsAccount? @relation(fields: [savingsAccountId], references: [id], onDelete: SetNull)
-  createdAt          DateTime  @default(now())
-  updatedAt          DateTime  @updatedAt
+  savingsAccount     SavingsAccount?   @relation(fields: [savingsAccountId], references: [id], onDelete: SetNull)
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
 
   @@index([clientId, status])
   @@index([loanId, status])
@@ -461,23 +463,23 @@ enum GroupStatus {
 }
 
 model Group {
-  id             String       @id @default(uuid()) @db.Uuid
-  organizationId String       @db.Uuid
-  officeId       String       @db.Uuid
-  staffId        String?
-  accountNumber  String
-  externalId     String?
-  name           String
-  status         GroupStatus  @default(PENDING)
-  submittedOn    DateTime?    @db.Date
-  activatedOn    DateTime?    @db.Date
-  organization   Organization @relation(fields: [organizationId], references: [id])
-  office         Office       @relation(fields: [officeId], references: [id])
-  assignedOfficer User?       @relation("AssignedGroupOfficer", fields: [staffId], references: [id])
-  members        GroupMember[]
-  notes          GroupNote[]
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
+  id              String        @id @default(uuid()) @db.Uuid
+  organizationId  String        @db.Uuid
+  officeId        String        @db.Uuid
+  staffId         String?
+  accountNumber   String
+  externalId      String?
+  name            String
+  status          GroupStatus   @default(PENDING)
+  submittedOn     DateTime?     @db.Date
+  activatedOn     DateTime?     @db.Date
+  organization    Organization  @relation(fields: [organizationId], references: [id])
+  office          Office        @relation(fields: [officeId], references: [id])
+  assignedOfficer User?         @relation("AssignedGroupOfficer", fields: [staffId], references: [id])
+  members         GroupMember[]
+  notes           GroupNote[]
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
 
   @@unique([organizationId, accountNumber])
   @@index([organizationId, officeId, status])
@@ -521,89 +523,89 @@ model LoanNote {
 }
 
 model LoanProduct {
-  id                    String   @id @default(uuid()) @db.Uuid
-  organizationId        String   @db.Uuid
-  name                  String
-  shortName             String
-  denominationCurrency  String   @default("UGX")
-  principalMinMinor     BigInt
-  principalMaxMinor     BigInt
-  annualRateBps         Int
-  repaymentCount        Int
-  repaymentFrequency    String
-  amortizationMethod    String
-  interestMethod        String
-  lateFeeRule           Json?
-  version               Int      @default(1)
-  active                Boolean  @default(true)
-  organization          Organization @relation(fields: [organizationId], references: [id])
-  applications          LoanApplication[]
-  loans                 Loan[]
-  accountingMapping     LoanProductAccountingMapping?
-  createdAt             DateTime @default(now())
-  updatedAt             DateTime @updatedAt
+  id                   String                        @id @default(uuid()) @db.Uuid
+  organizationId       String                        @db.Uuid
+  name                 String
+  shortName            String
+  denominationCurrency String                        @default("UGX")
+  principalMinMinor    BigInt
+  principalMaxMinor    BigInt
+  annualRateBps        Int
+  repaymentCount       Int
+  repaymentFrequency   String
+  amortizationMethod   String
+  interestMethod       String
+  lateFeeRule          Json?
+  version              Int                           @default(1)
+  active               Boolean                       @default(true)
+  organization         Organization                  @relation(fields: [organizationId], references: [id])
+  applications         LoanApplication[]
+  loans                Loan[]
+  accountingMapping    LoanProductAccountingMapping?
+  createdAt            DateTime                      @default(now())
+  updatedAt            DateTime                      @updatedAt
 
   @@unique([organizationId, shortName, version])
   @@index([organizationId, active])
 }
 
 model SavingsProduct {
-  id                     String   @id @default(uuid()) @db.Uuid
-  organizationId         String   @db.Uuid
+  id                     String           @id @default(uuid()) @db.Uuid
+  organizationId         String           @db.Uuid
   name                   String
   shortName              String
   description            String?
-  currencyCode           String   @default("UGX")
-  nominalAnnualRateBps   Int      @default(0)
-  minOpeningBalanceMinor BigInt   @default(0)
-  active                 Boolean  @default(true)
-  organization           Organization @relation(fields: [organizationId], references: [id])
+  currencyCode           String           @default("UGX")
+  nominalAnnualRateBps   Int              @default(0)
+  minOpeningBalanceMinor BigInt           @default(0)
+  active                 Boolean          @default(true)
+  organization           Organization     @relation(fields: [organizationId], references: [id])
   savingsAccounts        SavingsAccount[]
-  createdAt              DateTime @default(now())
-  updatedAt              DateTime @updatedAt
+  createdAt              DateTime         @default(now())
+  updatedAt              DateTime         @updatedAt
 
   @@unique([organizationId, shortName])
   @@index([organizationId, active])
 }
 
 model ChargeDefinition {
-  id              String   @id @default(uuid()) @db.Uuid
-  organizationId  String   @db.Uuid
+  id              String       @id @default(uuid()) @db.Uuid
+  organizationId  String       @db.Uuid
   name            String
   appliesTo       String
   calculationType String
   amountMinor     BigInt?
   percentageBps   Int?
-  currencyCode    String   @default("UGX")
-  penalty         Boolean  @default(false)
-  active          Boolean  @default(true)
+  currencyCode    String       @default("UGX")
+  penalty         Boolean      @default(false)
+  active          Boolean      @default(true)
   organization    Organization @relation(fields: [organizationId], references: [id])
   charges         Charge[]
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
 
   @@unique([organizationId, name])
   @@index([organizationId, active])
 }
 
 model LoanApplication {
-  id                    String                @id @default(uuid()) @db.Uuid
-  submittedById         String?
-  clientId              String                @db.Uuid
-  productId             String                @db.Uuid
+  id                     String                @id @default(uuid()) @db.Uuid
+  submittedById          String?
+  clientId               String                @db.Uuid
+  productId              String                @db.Uuid
   proposedPrincipalMinor BigInt
   approvedPrincipalMinor BigInt?
-  status                LoanApplicationStatus @default(DRAFT)
-  purpose               String?
-  submittedAt           DateTime?
-  approvedAt            DateTime?
-  client                Client                @relation(fields: [clientId], references: [id])
-  product               LoanProduct           @relation(fields: [productId], references: [id])
-  submittedBy           User?                 @relation("ApplicationSubmitter", fields: [submittedById], references: [id])
-  approvals             Approval[]
-  loan                  Loan?
-  createdAt             DateTime              @default(now())
-  updatedAt             DateTime              @updatedAt
+  status                 LoanApplicationStatus @default(DRAFT)
+  purpose                String?
+  submittedAt            DateTime?
+  approvedAt             DateTime?
+  client                 Client                @relation(fields: [clientId], references: [id])
+  product                LoanProduct           @relation(fields: [productId], references: [id])
+  submittedBy            User?                 @relation("ApplicationSubmitter", fields: [submittedById], references: [id])
+  approvals              Approval[]
+  loan                   Loan?
+  createdAt              DateTime              @default(now())
+  updatedAt              DateTime              @updatedAt
 
   @@index([clientId, status])
   @@index([productId, status])
@@ -611,36 +613,36 @@ model LoanApplication {
 }
 
 model PermissionDefinition {
-  code              String   @id
-  description       String
-  riskLevel         String
-  groupPermissions  PermissionGroupPermission[]
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  code             String                      @id
+  description      String
+  riskLevel        String
+  groupPermissions PermissionGroupPermission[]
+  createdAt        DateTime                    @default(now())
+  updatedAt        DateTime                    @updatedAt
 }
 
 model PermissionGroup {
-  id             String   @id @default(uuid()) @db.Uuid
-  organizationId String   @db.Uuid
+  id             String                      @id @default(uuid()) @db.Uuid
+  organizationId String                      @db.Uuid
   name           String
   description    String?
-  system         Boolean  @default(false)
-  organization   Organization @relation(fields: [organizationId], references: [id])
+  system         Boolean                     @default(false)
+  organization   Organization                @relation(fields: [organizationId], references: [id])
   permissions    PermissionGroupPermission[]
   assignments    UserPermissionAssignment[]
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  createdAt      DateTime                    @default(now())
+  updatedAt      DateTime                    @updatedAt
 
   @@unique([organizationId, name])
   @@index([organizationId])
 }
 
 model PermissionGroupPermission {
-  groupId       String @db.Uuid
+  groupId        String               @db.Uuid
   permissionCode String
-  group         PermissionGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
-  permission    PermissionDefinition @relation(fields: [permissionCode], references: [code], onDelete: Restrict)
-  createdAt     DateTime @default(now())
+  group          PermissionGroup      @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  permission     PermissionDefinition @relation(fields: [permissionCode], references: [code], onDelete: Restrict)
+  createdAt      DateTime             @default(now())
 
   @@id([groupId, permissionCode])
   @@index([permissionCode])
@@ -650,18 +652,18 @@ model UserPermissionAssignment {
   id                   String          @id @default(uuid()) @db.Uuid
   userId               String
   groupId              String          @db.Uuid
-  scope                 PermissionScope
-  officeId              String?         @db.Uuid
-  includeChildOffices   Boolean         @default(false)
-  approvalLimitMinor    BigInt?
+  scope                PermissionScope
+  officeId             String?         @db.Uuid
+  includeChildOffices  Boolean         @default(false)
+  approvalLimitMinor   BigInt?
   approvalCurrencyCode String?
-  validFrom             DateTime        @default(now())
-  validUntil            DateTime?
-  user                  User            @relation(fields: [userId], references: [id], onDelete: Cascade)
-  group                 PermissionGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
-  office                Office?         @relation(fields: [officeId], references: [id])
-  createdAt             DateTime        @default(now())
-  updatedAt             DateTime        @updatedAt
+  validFrom            DateTime        @default(now())
+  validUntil           DateTime?
+  user                 User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  group                PermissionGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  office               Office?         @relation(fields: [officeId], references: [id])
+  createdAt            DateTime        @default(now())
+  updatedAt            DateTime        @updatedAt
 
   @@unique([userId, groupId, scope, officeId])
   @@index([userId, validUntil])
@@ -669,101 +671,101 @@ model UserPermissionAssignment {
 }
 
 model Approval {
-  id            String   @id @default(uuid()) @db.Uuid
-  applicationId String   @db.Uuid
+  id            String          @id @default(uuid()) @db.Uuid
+  applicationId String          @db.Uuid
   reviewerId    String
   decision      String
   reason        String?
   application   LoanApplication @relation(fields: [applicationId], references: [id])
-  reviewer      User     @relation(fields: [reviewerId], references: [id])
-  decidedAt     DateTime @default(now())
+  reviewer      User            @relation(fields: [reviewerId], references: [id])
+  decidedAt     DateTime        @default(now())
 
   @@index([applicationId, decidedAt])
 }
 
 model Loan {
-  id                    String     @id @default(uuid()) @db.Uuid
-  applicationId         String     @unique @db.Uuid
-  clientId              String     @db.Uuid
-  productId             String     @db.Uuid
-  officeId              String     @db.Uuid
-  loanOfficerId         String?
-  accountNumber         String     @unique
-  denominationCurrency  String     @default("UGX")
-  principalMinor        BigInt
-  termsSnapshot         Json?
-  scheduleVersion       Int        @default(1)
-  status                LoanStatus @default(APPROVED)
-  disbursedOn           DateTime?  @db.Date
-  maturesOn             DateTime?  @db.Date
-  application           LoanApplication @relation(fields: [applicationId], references: [id])
-  client                Client     @relation(fields: [clientId], references: [id])
-  product               LoanProduct @relation(fields: [productId], references: [id])
-  office                Office     @relation(fields: [officeId], references: [id])
-  loanOfficer           User?      @relation("AssignedLoanOfficer", fields: [loanOfficerId], references: [id])
-  installments          LoanInstallment[]
-  transactions          LoanTransaction[]
-  charges               Charge[]
-  documents             Document[]
-  notes                 LoanNote[]
-  collateralItems       LoanCollateral[]
-  reminders             Reminder[]
-  serviceRequests       LoanServiceRequest[]
-  createdAt             DateTime   @default(now())
-  updatedAt             DateTime   @updatedAt
+  id                   String               @id @default(uuid()) @db.Uuid
+  applicationId        String               @unique @db.Uuid
+  clientId             String               @db.Uuid
+  productId            String               @db.Uuid
+  officeId             String               @db.Uuid
+  loanOfficerId        String?
+  accountNumber        String               @unique
+  denominationCurrency String               @default("UGX")
+  principalMinor       BigInt
+  termsSnapshot        Json?
+  scheduleVersion      Int                  @default(1)
+  status               LoanStatus           @default(APPROVED)
+  disbursedOn          DateTime?            @db.Date
+  maturesOn            DateTime?            @db.Date
+  application          LoanApplication      @relation(fields: [applicationId], references: [id])
+  client               Client               @relation(fields: [clientId], references: [id])
+  product              LoanProduct          @relation(fields: [productId], references: [id])
+  office               Office               @relation(fields: [officeId], references: [id])
+  loanOfficer          User?                @relation("AssignedLoanOfficer", fields: [loanOfficerId], references: [id])
+  installments         LoanInstallment[]
+  transactions         LoanTransaction[]
+  charges              Charge[]
+  documents            Document[]
+  notes                LoanNote[]
+  collateralItems      LoanCollateral[]
+  reminders            Reminder[]
+  serviceRequests      LoanServiceRequest[]
+  createdAt            DateTime             @default(now())
+  updatedAt            DateTime             @updatedAt
 
   @@index([officeId, status])
   @@index([clientId, status])
 }
 
 model LoanInstallment {
-  id                    String   @id @default(uuid()) @db.Uuid
-  loanId                String   @db.Uuid
-  installmentNumber     Int
-  dueOn                 DateTime @db.Date
-  principalDueMinor     BigInt
-  interestDueMinor      BigInt
-  feesDueMinor          BigInt   @default(0)
-  penaltiesDueMinor     BigInt   @default(0)
-  principalPaidMinor    BigInt   @default(0)
-  interestPaidMinor     BigInt   @default(0)
-  feesPaidMinor         BigInt   @default(0)
-  penaltiesPaidMinor    BigInt   @default(0)
-  principalWaivedMinor  BigInt   @default(0)
-  interestWaivedMinor   BigInt   @default(0)
-  feesWaivedMinor       BigInt   @default(0)
-  penaltiesWaivedMinor  BigInt   @default(0)
-  loan                  Loan     @relation(fields: [loanId], references: [id])
-  reminders             Reminder[]
+  id                     String                      @id @default(uuid()) @db.Uuid
+  loanId                 String                      @db.Uuid
+  installmentNumber      Int
+  dueOn                  DateTime                    @db.Date
+  principalDueMinor      BigInt
+  interestDueMinor       BigInt
+  feesDueMinor           BigInt                      @default(0)
+  penaltiesDueMinor      BigInt                      @default(0)
+  principalPaidMinor     BigInt                      @default(0)
+  interestPaidMinor      BigInt                      @default(0)
+  feesPaidMinor          BigInt                      @default(0)
+  penaltiesPaidMinor     BigInt                      @default(0)
+  principalWaivedMinor   BigInt                      @default(0)
+  interestWaivedMinor    BigInt                      @default(0)
+  feesWaivedMinor        BigInt                      @default(0)
+  penaltiesWaivedMinor   BigInt                      @default(0)
+  loan                   Loan                        @relation(fields: [loanId], references: [id])
+  reminders              Reminder[]
   transactionAllocations LoanTransactionAllocation[]
-  createdAt             DateTime @default(now())
+  createdAt              DateTime                    @default(now())
 
   @@unique([loanId, installmentNumber])
   @@index([dueOn])
 }
 
 model LoanTransaction {
-  id                     String   @id @default(uuid()) @db.Uuid
-  loanId                 String   @db.Uuid
-  transactionType        String
-  businessDate           DateTime @db.Date
-  settlementCurrency     String
-  settlementChannel      String
-  settlementAccountId    String?  @db.Uuid
-  settlementAmountMinor  BigInt
+  id                      String                      @id @default(uuid()) @db.Uuid
+  loanId                  String                      @db.Uuid
+  transactionType         String
+  businessDate            DateTime                    @db.Date
+  settlementCurrency      String
+  settlementChannel       String
+  settlementAccountId     String?                     @db.Uuid
+  settlementAmountMinor   BigInt
   denominationAmountMinor BigInt
-  priceSnapshotId        String?  @db.Uuid
-  externalReference      String?
-  idempotencyKey         String   @unique
-  reversedById           String?  @unique @db.Uuid
-  loan                   Loan     @relation(fields: [loanId], references: [id])
-  settlementAccount      SettlementAccount? @relation(fields: [settlementAccountId], references: [id])
-  priceSnapshot          PriceSnapshot? @relation(fields: [priceSnapshotId], references: [id])
-  reversedBy             LoanTransaction? @relation("TransactionReversal", fields: [reversedById], references: [id])
-  reverses               LoanTransaction? @relation("TransactionReversal")
-  allocations            LoanTransactionAllocation[]
-  serviceRequest         LoanServiceRequest?
-  createdAt              DateTime @default(now())
+  priceSnapshotId         String?                     @db.Uuid
+  externalReference       String?
+  idempotencyKey          String                      @unique
+  reversedById            String?                     @unique @db.Uuid
+  loan                    Loan                        @relation(fields: [loanId], references: [id])
+  settlementAccount       SettlementAccount?          @relation(fields: [settlementAccountId], references: [id])
+  priceSnapshot           PriceSnapshot?              @relation(fields: [priceSnapshotId], references: [id])
+  reversedBy              LoanTransaction?            @relation("TransactionReversal", fields: [reversedById], references: [id])
+  reverses                LoanTransaction?            @relation("TransactionReversal")
+  allocations             LoanTransactionAllocation[]
+  serviceRequest          LoanServiceRequest?
+  createdAt               DateTime                    @default(now())
 
   @@index([loanId, businessDate])
   @@index([externalReference])
@@ -771,185 +773,211 @@ model LoanTransaction {
 }
 
 model LoanTransactionAllocation {
-  id                 String @id @default(uuid()) @db.Uuid
-  transactionId      String @db.Uuid
-  installmentId      String @db.Uuid
-  principalMinor     BigInt @default(0)
-  interestMinor      BigInt @default(0)
-  feesMinor          BigInt @default(0)
-  penaltiesMinor     BigInt @default(0)
-  transaction        LoanTransaction @relation(fields: [transactionId], references: [id])
-  installment        LoanInstallment @relation(fields: [installmentId], references: [id])
-  createdAt          DateTime @default(now())
+  id             String          @id @default(uuid()) @db.Uuid
+  transactionId  String          @db.Uuid
+  installmentId  String          @db.Uuid
+  principalMinor BigInt          @default(0)
+  interestMinor  BigInt          @default(0)
+  feesMinor      BigInt          @default(0)
+  penaltiesMinor BigInt          @default(0)
+  transaction    LoanTransaction @relation(fields: [transactionId], references: [id])
+  installment    LoanInstallment @relation(fields: [installmentId], references: [id])
+  createdAt      DateTime        @default(now())
 
   @@unique([transactionId, installmentId])
   @@index([installmentId])
 }
 
 model LoanCollateral {
-  id                    String   @id @default(uuid()) @db.Uuid
-  loanId                String   @db.Uuid
+  id                    String    @id @default(uuid()) @db.Uuid
+  loanId                String    @db.Uuid
   type                  String
   description           String?
   estimatedValueMinor   BigInt?
-  valuationCurrencyCode String   @default("UGX")
+  valuationCurrencyCode String    @default("UGX")
   valuationDate         DateTime? @db.Date
-  status                String   @default("ACTIVE")
+  status                String    @default("ACTIVE")
   metadata              Json?
-  loan                  Loan     @relation(fields: [loanId], references: [id], onDelete: Cascade)
-  createdAt             DateTime @default(now())
-  updatedAt             DateTime @updatedAt
+  loan                  Loan      @relation(fields: [loanId], references: [id], onDelete: Cascade)
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
 
   @@index([loanId, status])
   @@index([loanId, valuationDate])
 }
 
 model LoanServiceRequest {
-  id                  String    @id @default(uuid()) @db.Uuid
-  loanId              String    @db.Uuid
+  id                  String           @id @default(uuid()) @db.Uuid
+  loanId              String           @db.Uuid
   actionType          String
-  status              String    @default("PENDING")
+  status              String           @default("PENDING")
   reason              String?
   payload             Json?
-  idempotencyKey      String    @unique
+  idempotencyKey      String           @unique
   requestedById       String
-  requestedAt         DateTime  @default(now())
+  requestedAt         DateTime         @default(now())
   decidedById         String?
   decidedAt           DateTime?
   decisionNote        String?
-  resultTransactionId String?   @unique @db.Uuid
-  loan                Loan      @relation(fields: [loanId], references: [id], onDelete: Cascade)
-  requestedBy         User      @relation("LoanServiceRequestRequestedBy", fields: [requestedById], references: [id])
-  decidedBy           User?     @relation("LoanServiceRequestDecidedBy", fields: [decidedById], references: [id])
+  resultTransactionId String?          @unique @db.Uuid
+  loan                Loan             @relation(fields: [loanId], references: [id], onDelete: Cascade)
+  requestedBy         User             @relation("LoanServiceRequestRequestedBy", fields: [requestedById], references: [id])
+  decidedBy           User?            @relation("LoanServiceRequestDecidedBy", fields: [decidedById], references: [id])
   resultTransaction   LoanTransaction? @relation(fields: [resultTransactionId], references: [id])
-  createdAt           DateTime  @default(now())
-  updatedAt           DateTime  @updatedAt
+  createdAt           DateTime         @default(now())
+  updatedAt           DateTime         @updatedAt
 
   @@index([loanId, status])
   @@index([loanId, actionType])
 }
 
+model LoanExportJob {
+  id              String       @id @default(uuid()) @db.Uuid
+  organizationId  String       @db.Uuid
+  requestedById   String
+  scopeType       String
+  scopeParams     Json
+  format          String
+  status          String       @default("PENDING")
+  asOfDate        DateTime     @db.Date
+  idempotencyKey  String       @unique
+  manifest        Json?
+  resultObjectKey String?
+  resultByteSize  Int?
+  resultSha256    String?
+  errorMessage    String?
+  startedAt       DateTime?
+  completedAt     DateTime?
+  organization    Organization @relation(fields: [organizationId], references: [id])
+  requestedBy     User         @relation(fields: [requestedById], references: [id])
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  @@index([organizationId, status])
+  @@index([requestedById])
+}
+
 model SavingsAccount {
-  id             String   @id @default(uuid()) @db.Uuid
-  clientId       String   @db.Uuid
-  productId      String?  @db.Uuid
+  id             String               @id @default(uuid()) @db.Uuid
+  clientId       String               @db.Uuid
+  productId      String?              @db.Uuid
   fieldOfficerId String?
   submittedById  String?
   approvedById   String?
-  accountNumber  String   @unique
-  accountType    String   @default("SAVINGS")
+  accountNumber  String               @unique
+  accountType    String               @default("SAVINGS")
   externalId     String?
   currencyCode   String
   status         String
-  submittedOn    DateTime? @db.Date
-  approvedOn     DateTime? @db.Date
+  submittedOn    DateTime?            @db.Date
+  approvedOn     DateTime?            @db.Date
   termsSnapshot  Json?
-  client         Client   @relation(fields: [clientId], references: [id])
-  product        SavingsProduct? @relation(fields: [productId], references: [id])
-  fieldOfficer   User?    @relation("AssignedSavingsOfficer", fields: [fieldOfficerId], references: [id])
-  submittedBy    User?    @relation("SavingsAccountSubmittedBy", fields: [submittedById], references: [id])
-  approvedBy     User?    @relation("SavingsAccountApprovedBy", fields: [approvedById], references: [id])
+  client         Client               @relation(fields: [clientId], references: [id])
+  product        SavingsProduct?      @relation(fields: [productId], references: [id])
+  fieldOfficer   User?                @relation("AssignedSavingsOfficer", fields: [fieldOfficerId], references: [id])
+  submittedBy    User?                @relation("SavingsAccountSubmittedBy", fields: [submittedById], references: [id])
+  approvedBy     User?                @relation("SavingsAccountApprovedBy", fields: [approvedById], references: [id])
   transactions   SavingsTransaction[]
   charges        Charge[]
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
 
   @@index([clientId, status])
   @@index([productId])
 }
 
 model SavingsTransaction {
-  id                   String   @id @default(uuid()) @db.Uuid
-  savingsAccountId     String   @db.Uuid
-  transactionType      String
-  amountMinor          BigInt
-  externalReference    String?
-  idempotencyKey       String   @unique
-  savingsAccount       SavingsAccount @relation(fields: [savingsAccountId], references: [id])
-  createdAt            DateTime @default(now())
+  id                String         @id @default(uuid()) @db.Uuid
+  savingsAccountId  String         @db.Uuid
+  transactionType   String
+  amountMinor       BigInt
+  externalReference String?
+  idempotencyKey    String         @unique
+  savingsAccount    SavingsAccount @relation(fields: [savingsAccountId], references: [id])
+  createdAt         DateTime       @default(now())
 
   @@index([savingsAccountId, createdAt])
 }
 
 model OwnershipPool {
-  id             String        @id @default(uuid()) @db.Uuid
-  organizationId String        @db.Uuid
+  id             String          @id @default(uuid()) @db.Uuid
+  organizationId String          @db.Uuid
   name           String
   type           OwnershipType
-  organization   Organization  @relation(fields: [organizationId], references: [id])
+  organization   Organization    @relation(fields: [organizationId], references: [id])
   accounts       LedgerAccount[]
-  createdAt      DateTime      @default(now())
+  createdAt      DateTime        @default(now())
 
   @@unique([organizationId, name])
 }
 
 model LedgerAccount {
-  id              String      @id @default(uuid()) @db.Uuid
-  code            String
-  name            String
-  type            AccountType
-  currencyCode    String      @db.VarChar(10)
-  ownershipPoolId String?     @db.Uuid
-  active          Boolean     @default(true)
-  externalId      String?
-  usage           String      @default("DETAIL")
-  description     String?
-  manualEntriesAllowed Boolean @default(false)
-  currency        Currency    @relation(fields: [currencyCode], references: [code])
-  ownershipPool   OwnershipPool? @relation(fields: [ownershipPoolId], references: [id])
-  lines           JournalLine[]
-  principalMappings LoanProductAccountingMapping[] @relation("PrincipalReceivable")
+  id                         String                         @id @default(uuid()) @db.Uuid
+  code                       String
+  name                       String
+  type                       AccountType
+  currencyCode               String                         @db.VarChar(10)
+  ownershipPoolId            String?                        @db.Uuid
+  active                     Boolean                        @default(true)
+  externalId                 String?
+  usage                      String                         @default("DETAIL")
+  description                String?
+  manualEntriesAllowed       Boolean                        @default(false)
+  currency                   Currency                       @relation(fields: [currencyCode], references: [code])
+  ownershipPool              OwnershipPool?                 @relation(fields: [ownershipPoolId], references: [id])
+  lines                      JournalLine[]
+  principalMappings          LoanProductAccountingMapping[] @relation("PrincipalReceivable")
   interestReceivableMappings LoanProductAccountingMapping[] @relation("InterestReceivable")
-  interestIncomeMappings LoanProductAccountingMapping[] @relation("InterestIncome")
-  feeIncomeMappings LoanProductAccountingMapping[] @relation("FeeIncome")
-  penaltyIncomeMappings LoanProductAccountingMapping[] @relation("PenaltyIncome")
-  writeOffMappings LoanProductAccountingMapping[] @relation("WriteOffExpense")
-  overpaymentMappings LoanProductAccountingMapping[] @relation("OverpaymentLiability")
-  settlementAccounts SettlementAccount[]
-  defaultPrincipalFor LoanAccountingDefaults[] @relation("DefaultPrincipalReceivable")
-  defaultInterestFor LoanAccountingDefaults[] @relation("DefaultInterestIncome")
-  defaultFeeFor LoanAccountingDefaults[] @relation("DefaultFeeIncome")
-  defaultPenaltyFor LoanAccountingDefaults[] @relation("DefaultPenaltyIncome")
-  defaultWriteOffFor LoanAccountingDefaults[] @relation("DefaultWriteOffExpense")
-  defaultOverpaymentFor LoanAccountingDefaults[] @relation("DefaultOverpaymentLiability")
-  createdAt       DateTime    @default(now())
+  interestIncomeMappings     LoanProductAccountingMapping[] @relation("InterestIncome")
+  feeIncomeMappings          LoanProductAccountingMapping[] @relation("FeeIncome")
+  penaltyIncomeMappings      LoanProductAccountingMapping[] @relation("PenaltyIncome")
+  writeOffMappings           LoanProductAccountingMapping[] @relation("WriteOffExpense")
+  overpaymentMappings        LoanProductAccountingMapping[] @relation("OverpaymentLiability")
+  settlementAccounts         SettlementAccount[]
+  defaultPrincipalFor        LoanAccountingDefaults[]       @relation("DefaultPrincipalReceivable")
+  defaultInterestFor         LoanAccountingDefaults[]       @relation("DefaultInterestIncome")
+  defaultFeeFor              LoanAccountingDefaults[]       @relation("DefaultFeeIncome")
+  defaultPenaltyFor          LoanAccountingDefaults[]       @relation("DefaultPenaltyIncome")
+  defaultWriteOffFor         LoanAccountingDefaults[]       @relation("DefaultWriteOffExpense")
+  defaultOverpaymentFor      LoanAccountingDefaults[]       @relation("DefaultOverpaymentLiability")
+  createdAt                  DateTime                       @default(now())
 
   @@unique([code, currencyCode, ownershipPoolId])
   @@index([type, currencyCode])
 }
 
 model LoanProductAccountingMapping {
-  id                           String @id @default(uuid()) @db.Uuid
-  productId                    String @unique @db.Uuid
-  principalReceivableAccountId String @db.Uuid
-  interestReceivableAccountId  String? @db.Uuid
-  interestIncomeAccountId      String @db.Uuid
-  feeIncomeAccountId           String? @db.Uuid
-  penaltyIncomeAccountId       String? @db.Uuid
-  writeOffExpenseAccountId     String? @db.Uuid
-  overpaymentLiabilityAccountId String? @db.Uuid
-  product                      LoanProduct @relation(fields: [productId], references: [id], onDelete: Cascade)
-  principalReceivableAccount   LedgerAccount @relation("PrincipalReceivable", fields: [principalReceivableAccountId], references: [id])
-  interestReceivableAccount    LedgerAccount? @relation("InterestReceivable", fields: [interestReceivableAccountId], references: [id])
-  interestIncomeAccount        LedgerAccount @relation("InterestIncome", fields: [interestIncomeAccountId], references: [id])
-  feeIncomeAccount             LedgerAccount? @relation("FeeIncome", fields: [feeIncomeAccountId], references: [id])
-  penaltyIncomeAccount         LedgerAccount? @relation("PenaltyIncome", fields: [penaltyIncomeAccountId], references: [id])
-  writeOffExpenseAccount       LedgerAccount? @relation("WriteOffExpense", fields: [writeOffExpenseAccountId], references: [id])
-  overpaymentLiabilityAccount  LedgerAccount? @relation("OverpaymentLiability", fields: [overpaymentLiabilityAccountId], references: [id])
-  createdAt                    DateTime @default(now())
-  updatedAt                    DateTime @updatedAt
+  id                            String         @id @default(uuid()) @db.Uuid
+  productId                     String         @unique @db.Uuid
+  principalReceivableAccountId  String         @db.Uuid
+  interestReceivableAccountId   String?        @db.Uuid
+  interestIncomeAccountId       String         @db.Uuid
+  feeIncomeAccountId            String?        @db.Uuid
+  penaltyIncomeAccountId        String?        @db.Uuid
+  writeOffExpenseAccountId      String?        @db.Uuid
+  overpaymentLiabilityAccountId String?        @db.Uuid
+  product                       LoanProduct    @relation(fields: [productId], references: [id], onDelete: Cascade)
+  principalReceivableAccount    LedgerAccount  @relation("PrincipalReceivable", fields: [principalReceivableAccountId], references: [id])
+  interestReceivableAccount     LedgerAccount? @relation("InterestReceivable", fields: [interestReceivableAccountId], references: [id])
+  interestIncomeAccount         LedgerAccount  @relation("InterestIncome", fields: [interestIncomeAccountId], references: [id])
+  feeIncomeAccount              LedgerAccount? @relation("FeeIncome", fields: [feeIncomeAccountId], references: [id])
+  penaltyIncomeAccount          LedgerAccount? @relation("PenaltyIncome", fields: [penaltyIncomeAccountId], references: [id])
+  writeOffExpenseAccount        LedgerAccount? @relation("WriteOffExpense", fields: [writeOffExpenseAccountId], references: [id])
+  overpaymentLiabilityAccount   LedgerAccount? @relation("OverpaymentLiability", fields: [overpaymentLiabilityAccountId], references: [id])
+  createdAt                     DateTime       @default(now())
+  updatedAt                     DateTime       @updatedAt
 }
 
 // Organization-wide fallback accounts used to pre-fill new loan product mappings.
 model LoanAccountingDefaults {
-  id                            String   @id @default(uuid()) @db.Uuid
-  organizationId                String   @unique @db.Uuid
-  principalReceivableAccountId  String?  @db.Uuid
-  interestIncomeAccountId       String?  @db.Uuid
-  feeIncomeAccountId            String?  @db.Uuid
-  penaltyIncomeAccountId        String?  @db.Uuid
-  writeOffExpenseAccountId      String?  @db.Uuid
-  overpaymentLiabilityAccountId String?  @db.Uuid
+  id                            String         @id @default(uuid()) @db.Uuid
+  organizationId                String         @unique @db.Uuid
+  principalReceivableAccountId  String?        @db.Uuid
+  interestIncomeAccountId       String?        @db.Uuid
+  feeIncomeAccountId            String?        @db.Uuid
+  penaltyIncomeAccountId        String?        @db.Uuid
+  writeOffExpenseAccountId      String?        @db.Uuid
+  overpaymentLiabilityAccountId String?        @db.Uuid
   organization                  Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   principalReceivableAccount    LedgerAccount? @relation("DefaultPrincipalReceivable", fields: [principalReceivableAccountId], references: [id])
   interestIncomeAccount         LedgerAccount? @relation("DefaultInterestIncome", fields: [interestIncomeAccountId], references: [id])
@@ -957,25 +985,25 @@ model LoanAccountingDefaults {
   penaltyIncomeAccount          LedgerAccount? @relation("DefaultPenaltyIncome", fields: [penaltyIncomeAccountId], references: [id])
   writeOffExpenseAccount        LedgerAccount? @relation("DefaultWriteOffExpense", fields: [writeOffExpenseAccountId], references: [id])
   overpaymentLiabilityAccount   LedgerAccount? @relation("DefaultOverpaymentLiability", fields: [overpaymentLiabilityAccountId], references: [id])
-  createdAt                     DateTime @default(now())
-  updatedAt                     DateTime @updatedAt
+  createdAt                     DateTime       @default(now())
+  updatedAt                     DateTime       @updatedAt
 }
 
 model SettlementAccount {
-  id             String @id @default(uuid()) @db.Uuid
-  organizationId String @db.Uuid
-  name           String
-  type           String
-  provider       String?
+  id               String            @id @default(uuid()) @db.Uuid
+  organizationId   String            @db.Uuid
+  name             String
+  type             String
+  provider         String?
   accountReference String?
-  currencyCode   String @db.VarChar(10)
-  ledgerAccountId String @db.Uuid
-  active         Boolean @default(true)
-  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  ledgerAccount  LedgerAccount @relation(fields: [ledgerAccountId], references: [id])
+  currencyCode     String            @db.VarChar(10)
+  ledgerAccountId  String            @db.Uuid
+  active           Boolean           @default(true)
+  organization     Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  ledgerAccount    LedgerAccount     @relation(fields: [ledgerAccountId], references: [id])
   loanTransactions LoanTransaction[]
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
 
   @@unique([organizationId, name, currencyCode])
   @@index([organizationId, type, active])
@@ -984,83 +1012,83 @@ model SettlementAccount {
 }
 
 model Journal {
-  id              String        @id @default(uuid()) @db.Uuid
-  officeId        String        @db.Uuid
-  businessDate    DateTime      @db.Date
-  referenceType   String
-  referenceId     String?
-  narration       String
-  status          JournalStatus @default(PENDING)
-  reversalOfId    String?       @unique @db.Uuid
-  idempotencyKey  String        @unique
-  office          Office        @relation(fields: [officeId], references: [id])
-  lines           JournalLine[]
-  reversalOf      Journal?      @relation("JournalReversal", fields: [reversalOfId], references: [id])
-  reversedBy      Journal?      @relation("JournalReversal")
-  postedAt        DateTime?
-  createdAt       DateTime      @default(now())
+  id             String        @id @default(uuid()) @db.Uuid
+  officeId       String        @db.Uuid
+  businessDate   DateTime      @db.Date
+  referenceType  String
+  referenceId    String?
+  narration      String
+  status         JournalStatus @default(PENDING)
+  reversalOfId   String?       @unique @db.Uuid
+  idempotencyKey String        @unique
+  office         Office        @relation(fields: [officeId], references: [id])
+  lines          JournalLine[]
+  reversalOf     Journal?      @relation("JournalReversal", fields: [reversalOfId], references: [id])
+  reversedBy     Journal?      @relation("JournalReversal")
+  postedAt       DateTime?
+  createdAt      DateTime      @default(now())
 
   @@index([officeId, businessDate, status])
   @@index([referenceType, referenceId])
 }
 
 model JournalLine {
-  id              String         @id @default(uuid()) @db.Uuid
-  journalId       String         @db.Uuid
-  accountId       String         @db.Uuid
-  direction       EntryDirection
-  amountMinor     BigInt
-  memo            String?
-  journal         Journal        @relation(fields: [journalId], references: [id])
-  account         LedgerAccount  @relation(fields: [accountId], references: [id])
-  createdAt       DateTime       @default(now())
+  id          String         @id @default(uuid()) @db.Uuid
+  journalId   String         @db.Uuid
+  accountId   String         @db.Uuid
+  direction   EntryDirection
+  amountMinor BigInt
+  memo        String?
+  journal     Journal        @relation(fields: [journalId], references: [id])
+  account     LedgerAccount  @relation(fields: [accountId], references: [id])
+  createdAt   DateTime       @default(now())
 
   @@index([journalId])
   @@index([accountId, createdAt])
 }
 
 model PriceSnapshot {
-  id             String      @id @default(uuid()) @db.Uuid
-  baseCode       String      @db.VarChar(10)
-  quoteCode      String      @db.VarChar(10)
-  price          Decimal     @db.Decimal(38, 18)
-  status         PriceStatus
-  observedAt     DateTime
-  expiresAt      DateTime
-  sourceQuotes   Json
-  createdAt      DateTime    @default(now())
-  base           Currency    @relation("PriceBase", fields: [baseCode], references: [code])
-  quote          Currency    @relation("PriceQuote", fields: [quoteCode], references: [code])
+  id               String                 @id @default(uuid()) @db.Uuid
+  baseCode         String                 @db.VarChar(10)
+  quoteCode        String                 @db.VarChar(10)
+  price            Decimal                @db.Decimal(38, 18)
+  status           PriceStatus
+  observedAt       DateTime
+  expiresAt        DateTime
+  sourceQuotes     Json
+  createdAt        DateTime               @default(now())
+  base             Currency               @relation("PriceBase", fields: [baseCode], references: [code])
+  quote            Currency               @relation("PriceQuote", fields: [quoteCode], references: [code])
   loanTransactions LoanTransaction[]
-  investments InvestmentCommitment[]
+  investments      InvestmentCommitment[]
 
   @@index([baseCode, quoteCode, observedAt(sort: Desc)])
 }
 
 model InvestorProfile {
-  id            String    @id @default(uuid()) @db.Uuid
-  userId        String    @unique
+  id            String                       @id @default(uuid()) @db.Uuid
+  userId        String                       @unique
   displayName   String
-  kycStatus     KycStatus @default(INCOMPLETE)
+  kycStatus     KycStatus                    @default(INCOMPLETE)
   payoutAddress String?
-  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user          User                         @relation(fields: [userId], references: [id], onDelete: Cascade)
   accesses      InvestorOrganizationAccess[]
   commitments   InvestmentCommitment[]
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  createdAt     DateTime                     @default(now())
+  updatedAt     DateTime                     @updatedAt
 }
 
 model InvestorOrganizationAccess {
-  id             String               @id @default(uuid()) @db.Uuid
-  investorId     String               @db.Uuid
-  organizationId String               @db.Uuid
-  status         InvestorAccessStatus @default(REQUESTED)
+  id             String                 @id @default(uuid()) @db.Uuid
+  investorId     String                 @db.Uuid
+  organizationId String                 @db.Uuid
+  status         InvestorAccessStatus   @default(REQUESTED)
   approvedAt     DateTime?
-  investor       InvestorProfile      @relation(fields: [investorId], references: [id], onDelete: Cascade)
-  organization   Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  investor       InvestorProfile        @relation(fields: [investorId], references: [id], onDelete: Cascade)
+  organization   Organization           @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   commitments    InvestmentCommitment[]
-  createdAt      DateTime             @default(now())
-  updatedAt      DateTime             @updatedAt
+  createdAt      DateTime               @default(now())
+  updatedAt      DateTime               @updatedAt
 
   @@unique([investorId, organizationId])
   @@index([organizationId, status])
@@ -1098,53 +1126,53 @@ model InvestorAccessRequest {
 }
 
 model InvestmentCommitment {
-  id                 String           @id @default(uuid()) @db.Uuid
-  investorId         String           @db.Uuid
-  accessId           String           @db.Uuid
-  organizationId     String           @db.Uuid
-  contributionCurrency String
+  id                      String                     @id @default(uuid()) @db.Uuid
+  investorId              String                     @db.Uuid
+  accessId                String                     @db.Uuid
+  organizationId          String                     @db.Uuid
+  contributionCurrency    String
   contributionAmountMinor BigInt
-  amountSats         BigInt
-  priceSnapshotId    String           @db.Uuid
-  status             InvestmentStatus @default(AWAITING_INVOICE)
-  idempotencyKey     String           @unique
-  investor           InvestorProfile  @relation(fields: [investorId], references: [id])
-  access             InvestorOrganizationAccess @relation(fields: [accessId], references: [id])
-  organization       Organization     @relation(fields: [organizationId], references: [id])
-  priceSnapshot      PriceSnapshot    @relation(fields: [priceSnapshotId], references: [id])
-  invoice            LightningInvoice?
-  createdAt          DateTime         @default(now())
-  fundedAt           DateTime?
-  updatedAt          DateTime         @updatedAt
+  amountSats              BigInt
+  priceSnapshotId         String                     @db.Uuid
+  status                  InvestmentStatus           @default(AWAITING_INVOICE)
+  idempotencyKey          String                     @unique
+  investor                InvestorProfile            @relation(fields: [investorId], references: [id])
+  access                  InvestorOrganizationAccess @relation(fields: [accessId], references: [id])
+  organization            Organization               @relation(fields: [organizationId], references: [id])
+  priceSnapshot           PriceSnapshot              @relation(fields: [priceSnapshotId], references: [id])
+  invoice                 LightningInvoice?
+  createdAt               DateTime                   @default(now())
+  fundedAt                DateTime?
+  updatedAt               DateTime                   @updatedAt
 
   @@index([investorId, status, createdAt(sort: Desc)])
   @@index([organizationId, status])
 }
 
 model LightningInvoice {
-  id             String                 @id @default(uuid()) @db.Uuid
-  commitmentId   String                 @unique @db.Uuid
-  provider       String
-  providerInvoiceId String              @unique
-  bolt11         String                 @db.Text
-  paymentHash    String?                @unique
-  amountSats     BigInt
-  status         LightningInvoiceStatus @default(NEW)
-  expiresAt      DateTime
-  settledAt      DateTime?
-  commitment     InvestmentCommitment   @relation(fields: [commitmentId], references: [id], onDelete: Cascade)
-  createdAt      DateTime               @default(now())
-  updatedAt      DateTime               @updatedAt
+  id                String                 @id @default(uuid()) @db.Uuid
+  commitmentId      String                 @unique @db.Uuid
+  provider          String
+  providerInvoiceId String                 @unique
+  bolt11            String                 @db.Text
+  paymentHash       String?                @unique
+  amountSats        BigInt
+  status            LightningInvoiceStatus @default(NEW)
+  expiresAt         DateTime
+  settledAt         DateTime?
+  commitment        InvestmentCommitment   @relation(fields: [commitmentId], references: [id], onDelete: Cascade)
+  createdAt         DateTime               @default(now())
+  updatedAt         DateTime               @updatedAt
 
   @@index([status, expiresAt])
 }
 
 model MigrationRun {
-  id             String             @id @default(uuid()) @db.Uuid
+  id             String                @id @default(uuid()) @db.Uuid
   sourceSystem   String
   sourceTenant   String
-  organizationId String?            @db.Uuid
-  status         MigrationRunStatus @default(CREATED)
+  organizationId String?               @db.Uuid
+  status         MigrationRunStatus    @default(CREATED)
   manifestSha256 String?
   startedAt      DateTime?
   completedAt    DateTime?
@@ -1152,15 +1180,15 @@ model MigrationRun {
   artifacts      MigrationArtifact[]
   checkpoints    MigrationCheckpoint[]
   mappings       MigrationIdMap[]
-  createdAt      DateTime           @default(now())
-  updatedAt      DateTime           @updatedAt
+  createdAt      DateTime              @default(now())
+  updatedAt      DateTime              @updatedAt
 
   @@index([sourceSystem, sourceTenant, createdAt(sort: Desc)])
 }
 
 model MigrationArtifact {
-  id          String   @id @default(uuid()) @db.Uuid
-  runId       String   @db.Uuid
+  id          String       @id @default(uuid()) @db.Uuid
+  runId       String       @db.Uuid
   entityType  String
   sourcePath  String
   pageNumber  Int
@@ -1168,100 +1196,100 @@ model MigrationArtifact {
   sha256      String
   filePath    String
   run         MigrationRun @relation(fields: [runId], references: [id], onDelete: Cascade)
-  createdAt   DateTime @default(now())
+  createdAt   DateTime     @default(now())
 
   @@unique([runId, entityType, pageNumber])
   @@index([runId, entityType])
 }
 
 model MigrationCheckpoint {
-  id         String   @id @default(uuid()) @db.Uuid
-  runId      String   @db.Uuid
+  id         String       @id @default(uuid()) @db.Uuid
+  runId      String       @db.Uuid
   entityType String
   cursor     String
-  completed  Boolean  @default(false)
+  completed  Boolean      @default(false)
   run        MigrationRun @relation(fields: [runId], references: [id], onDelete: Cascade)
-  updatedAt  DateTime @updatedAt
+  updatedAt  DateTime     @updatedAt
 
   @@unique([runId, entityType])
 }
 
 model MigrationIdMap {
-  id         String   @id @default(uuid()) @db.Uuid
-  runId      String   @db.Uuid
+  id         String       @id @default(uuid()) @db.Uuid
+  runId      String       @db.Uuid
   entityType String
   legacyId   String
-  sovlendId  String   @db.Uuid
+  sovlendId  String       @db.Uuid
   run        MigrationRun @relation(fields: [runId], references: [id], onDelete: Cascade)
-  createdAt  DateTime @default(now())
+  createdAt  DateTime     @default(now())
 
   @@unique([runId, entityType, legacyId])
   @@index([entityType, sovlendId])
 }
 
 model SystemWallet {
-  id              String        @id @default(uuid()) @db.Uuid
-  name            String
-  kind            WalletKind
-  network         WalletNetwork
-  publicAddress   String
-  assetCode       String
-  active          Boolean       @default(true)
-  proposals       TransferProposal[]
-  createdAt       DateTime      @default(now())
+  id            String             @id @default(uuid()) @db.Uuid
+  name          String
+  kind          WalletKind
+  network       WalletNetwork
+  publicAddress String
+  assetCode     String
+  active        Boolean            @default(true)
+  proposals     TransferProposal[]
+  createdAt     DateTime           @default(now())
 
   @@unique([network, publicAddress])
 }
 
 model TransferProposal {
-  id                 String         @id @default(uuid()) @db.Uuid
-  walletId           String         @db.Uuid
+  id                 String             @id @default(uuid()) @db.Uuid
+  walletId           String             @db.Uuid
   destinationAddress String
   assetCode          String
   amountMinor        BigInt
   networkFeeMinor    BigInt?
-  status             ProposalStatus @default(DRAFT)
+  status             ProposalStatus     @default(DRAFT)
   threshold          Int
   unsignedPayload    Json?
   transactionHash    String?
-  idempotencyKey     String         @unique
-  wallet             SystemWallet   @relation(fields: [walletId], references: [id])
+  idempotencyKey     String             @unique
+  wallet             SystemWallet       @relation(fields: [walletId], references: [id])
   approvals          TransferApproval[]
-  createdAt          DateTime       @default(now())
-  updatedAt          DateTime       @updatedAt
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
 
   @@index([walletId, status])
 }
 
 model TransferApproval {
-  id           String   @id @default(uuid()) @db.Uuid
-  proposalId   String   @db.Uuid
+  id           String           @id @default(uuid()) @db.Uuid
+  proposalId   String           @db.Uuid
   signerRef    String
   signatureRef String
-  approvedAt   DateTime @default(now())
+  approvedAt   DateTime         @default(now())
   proposal     TransferProposal @relation(fields: [proposalId], references: [id])
 
   @@unique([proposalId, signerRef])
 }
 
 model Document {
-  id           String            @id @default(uuid()) @db.Uuid
-  clientId     String?           @db.Uuid
-  loanId       String?           @db.Uuid
-  identifierId String?           @db.Uuid
-  familyMemberId String?         @db.Uuid
-  name         String
-  description  String?
-  objectKey    String            @unique
-  sha256       String
-  mediaType    String
-  client       Client?           @relation(fields: [clientId], references: [id])
-  loan         Loan?             @relation(fields: [loanId], references: [id])
-  identifier   ClientIdentifier? @relation(fields: [identifierId], references: [id], onDelete: SetNull)
-  familyMember ClientFamilyMember? @relation(fields: [familyMemberId], references: [id], onDelete: SetNull)
-  clientPhotoFor Client?         @relation("ClientPhoto")
-  clientSignatureFor Client?     @relation("ClientSignature")
-  createdAt    DateTime          @default(now())
+  id                 String              @id @default(uuid()) @db.Uuid
+  clientId           String?             @db.Uuid
+  loanId             String?             @db.Uuid
+  identifierId       String?             @db.Uuid
+  familyMemberId     String?             @db.Uuid
+  name               String
+  description        String?
+  objectKey          String              @unique
+  sha256             String
+  mediaType          String
+  client             Client?             @relation(fields: [clientId], references: [id])
+  loan               Loan?               @relation(fields: [loanId], references: [id])
+  identifier         ClientIdentifier?   @relation(fields: [identifierId], references: [id], onDelete: SetNull)
+  familyMember       ClientFamilyMember? @relation(fields: [familyMemberId], references: [id], onDelete: SetNull)
+  clientPhotoFor     Client?             @relation("ClientPhoto")
+  clientSignatureFor Client?             @relation("ClientSignature")
+  createdAt          DateTime            @default(now())
 
   @@index([clientId])
   @@index([loanId])
@@ -1270,14 +1298,14 @@ model Document {
 }
 
 model OutboxEvent {
-  id            String   @id @default(uuid()) @db.Uuid
+  id            String    @id @default(uuid()) @db.Uuid
   aggregateType String
   aggregateId   String
   eventType     String
   payload       Json
-  occurredAt    DateTime @default(now())
+  occurredAt    DateTime  @default(now())
   publishedAt   DateTime?
-  attempts      Int      @default(0)
+  attempts      Int       @default(0)
   lastError     String?
 
   @@index([publishedAt, occurredAt])
@@ -1293,54 +1321,54 @@ model InboxEvent {
 }
 
 model AuditEvent {
-  id             String   @id @default(uuid()) @db.Uuid
-  actorId        String?
-  action         String
-  entityType     String
-  entityId       String
-  correlationId  String   @db.Uuid
-  metadata       Json
-  previousHash   String?
-  eventHash      String
-  actor          User?    @relation(fields: [actorId], references: [id])
-  occurredAt     DateTime @default(now())
+  id            String   @id @default(uuid()) @db.Uuid
+  actorId       String?
+  action        String
+  entityType    String
+  entityId      String
+  correlationId String   @db.Uuid
+  metadata      Json
+  previousHash  String?
+  eventHash     String
+  actor         User?    @relation(fields: [actorId], references: [id])
+  occurredAt    DateTime @default(now())
 
   @@index([entityType, entityId, occurredAt])
   @@index([correlationId])
 }
 
 model Notification {
-  id             String   @id @default(uuid()) @db.Uuid
-  audienceType   String
-  audienceId     String
-  title          String
-  body           String
-  channels       Json
-  deduplicationKey String @unique
-  readAt         DateTime?
-  createdAt      DateTime @default(now())
-  reminders      Reminder[]
+  id               String     @id @default(uuid()) @db.Uuid
+  audienceType     String
+  audienceId       String
+  title            String
+  body             String
+  channels         Json
+  deduplicationKey String     @unique
+  readAt           DateTime?
+  createdAt        DateTime   @default(now())
+  reminders        Reminder[]
 
   @@index([audienceType, audienceId, readAt, createdAt(sort: Desc)])
 }
 
 model Reminder {
-  id              String         @id @default(uuid()) @db.Uuid
-  loanId          String         @db.Uuid
-  installmentId   String         @db.Uuid
-  notificationId  String?        @db.Uuid
-  type            ReminderType
-  status          ReminderStatus @default(SCHEDULED)
-  scheduledFor    DateTime
-  deduplicationKey String        @unique
-  attempts        Int            @default(0)
-  lastError       String?
-  sentAt          DateTime?
-  loan            Loan           @relation(fields: [loanId], references: [id])
-  installment     LoanInstallment @relation(fields: [installmentId], references: [id])
-  notification    Notification?  @relation(fields: [notificationId], references: [id])
-  createdAt       DateTime       @default(now())
-  updatedAt       DateTime       @updatedAt
+  id               String          @id @default(uuid()) @db.Uuid
+  loanId           String          @db.Uuid
+  installmentId    String          @db.Uuid
+  notificationId   String?         @db.Uuid
+  type             ReminderType
+  status           ReminderStatus  @default(SCHEDULED)
+  scheduledFor     DateTime
+  deduplicationKey String          @unique
+  attempts         Int             @default(0)
+  lastError        String?
+  sentAt           DateTime?
+  loan             Loan            @relation(fields: [loanId], references: [id])
+  installment      LoanInstallment @relation(fields: [installmentId], references: [id])
+  notification     Notification?   @relation(fields: [notificationId], references: [id])
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
 
   @@index([status, scheduledFor])
   @@index([loanId, type])

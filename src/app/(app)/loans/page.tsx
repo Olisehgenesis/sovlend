@@ -126,6 +126,9 @@ export default async function LoansPage({ searchParams }: { searchParams: Promis
           <a className="secondary-action" href="/api/loans/export">
             <Download size={16} /> Export CSV
           </a>
+          <Link className="secondary-action" href="/loans/exports">
+            <Download size={16} /> Full export
+          </Link>
           <Link className="invest-button" href="/loans/new">
             <Plus size={16} /> New application
           </Link>
