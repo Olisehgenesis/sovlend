@@ -1,5 +1,6 @@
 import { rebuildManifest, verifyArchive } from "./archive";
 import { extractLegacy } from "./extract";
+import { extractLegacyLoanHistory } from "./extract-loans";
 import { ReadOnlyFineractClient } from "./fineract-client";
 import { importAllLegacyData } from "./import-all";
 import { importFoundation } from "./import-foundation";
@@ -10,6 +11,12 @@ async function main() {
   if (command === "extract") {
     const result = await extractLegacy(process.env);
     console.log(`Extracted ${result.manifest.artifacts.length} checksummed pages to ${result.root}`);
+    return;
+  }
+  if (command === "extract-loans") {
+    const result = await extractLegacyLoanHistory(process.env);
+    console.log(`Extracted loan history for ${result.ownersProcessed} clients/groups (${result.loansExtracted} loan records) into ${result.root}`);
+    if (result.errors.length > 0) console.log(`${result.errors.length} issues:\n${result.errors.join("\n")}`);
     return;
   }
   if (command === "verify") {
@@ -54,7 +61,7 @@ async function main() {
     if (result.errors.length > 0) console.log(`${result.errors.length} issues:\n${result.errors.join("\n")}`);
     return;
   }
-  throw new Error("Usage: migration:extract | migration:verify <archive-directory> | migration:manifest <archive-directory> | migration:import <archive-directory> | migration:import-all-clients");
+  throw new Error("Usage: migration:extract | migration:extract-loans | migration:verify <archive-directory> | migration:manifest <archive-directory> | migration:import <archive-directory> | migration:import-all-clients");
 }
 
 void main().catch((error) => { console.error(error instanceof Error ? error.message : error); process.exitCode = 1; });

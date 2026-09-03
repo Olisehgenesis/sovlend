@@ -14,6 +14,7 @@
     "db:validate": "prisma validate",
     "db:migrate": "prisma migrate deploy",
     "migration:extract": "tsx src/migration/cli.ts extract",
+    "migration:extract-loans": "tsx src/migration/cli.ts extract-loans",
     "migration:verify": "tsx src/migration/cli.ts verify",
     "migration:manifest": "tsx src/migration/cli.ts rebuild-manifest",
     "migration:import": "tsx src/migration/cli.ts import",
