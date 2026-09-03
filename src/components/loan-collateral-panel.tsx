@@ -1,6 +1,7 @@
 "use client";
 
 import { LoaderCircle, Plus, Trash2 } from "lucide-react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -67,7 +68,7 @@ export function LoanCollateralPanel({ loanId, canManage, items }: { loanId: stri
         </div>
       ) : (
         <div className="table-scroll">
-          <table>
+          <table className="clickable-rows">
             <thead>
               <tr>
                 <th>Type</th>
@@ -81,7 +82,10 @@ export function LoanCollateralPanel({ loanId, canManage, items }: { loanId: stri
             <tbody>
               {items.map((item) => (
                 <tr key={item.id}>
-                  <td>{item.type}</td>
+                  <td>
+                    <strong>{item.type}</strong>
+                    <Link className="row-link" href={`/loans/${loanId}/collateral/${item.id}`} aria-label={`Open collateral ${item.type}`} />
+                  </td>
                   <td>{item.description ?? "-"}</td>
                   <td className="mono">
                     {item.estimatedValueMinor ? formatMinor(BigInt(item.estimatedValueMinor), item.valuationCurrencyCode) : "-"}
@@ -90,7 +94,7 @@ export function LoanCollateralPanel({ loanId, canManage, items }: { loanId: stri
                   <td>
                     <span className={`status ${item.status === "ACTIVE" ? "up-to-date" : "review"}`}>{item.status}</span>
                   </td>
-                  <td>
+                  <td style={{ position: "relative", zIndex: 1 }}>
                     {canManage ? (
                       <button className="icon-action danger" disabled={pendingDelete === item.id} onClick={() => removeCollateral(item.id)} title="Remove collateral" type="button">
                         {pendingDelete === item.id ? <LoaderCircle className="spin" size={14} /> : <Trash2 size={14} />}

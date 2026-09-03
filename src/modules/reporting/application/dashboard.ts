@@ -1,10 +1,11 @@
-import type { AccountType, OwnershipType } from "@prisma/client";
+import type { AccountType, OwnershipType, PriceStatus } from "@prisma/client";
 
 import { prisma } from "@/lib/prisma";
 export { formatMinor } from "@/modules/money/domain/format-minor";
 import { getUserDataScope, officeWhere } from "@/modules/identity/application/data-scope";
 
 const activeStatuses = ["ACTIVE", "IN_ARREARS", "OVERPAID"] as const;
+const freshSnapshotWindowMs = 60 * 60 * 1_000;
 
 export async function loadDashboard(userId: string) {
   const [user, scope] = await Promise.all([
@@ -21,14 +22,15 @@ export async function loadDashboard(userId: string) {
   if (!user?.organizationId || !user.organization || !scope) return null;
 
   const now = new Date();
-  const today = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  const today = startOfUtcDay(now);
   const tomorrow = new Date(today.getTime() + 86_400_000);
+  const freshAfter = new Date(now.getTime() - freshSnapshotWindowMs);
   const loanScope = {
     office: { organizationId: user.organizationId },
     ...officeWhere(scope),
   };
 
-  const [portfolio, dueInstallments, repayments, attentionLoans, ownershipPools, btcPrice] = await Promise.all([
+  const [portfolio, dueInstallments, repayments, disbursements, attentionLoans, ownershipPools, btcUsdPrice, usdUgxPrice] = await Promise.all([
     prisma.loan.aggregate({
       where: { ...loanScope, status: { in: [...activeStatuses] } },
       _sum: { principalMinor: true },
@@ -36,6 +38,16 @@ export async function loadDashboard(userId: string) {
     }),
     prisma.loanInstallment.findMany({
       where: { dueOn: { gte: today, lt: tomorrow }, loan: loanScope },
+      select: {
+        principalDueMinor: true,
+        interestDueMinor: true,
+        feesDueMinor: true,
+        penaltiesDueMinor: true,
+        principalPaidMinor: true,
+        interestPaidMinor: true,
+        feesPaidMinor: true,
+        penaltiesPaidMinor: true,
+      },
     }),
     prisma.loanTransaction.aggregate({
       where: {
@@ -46,8 +58,16 @@ export async function loadDashboard(userId: string) {
       _sum: { denominationAmountMinor: true },
       _count: true,
     }),
+    prisma.loanTransaction.findMany({
+      where: {
+        businessDate: { gte: today, lt: tomorrow },
+        transactionType: "DISBURSEMENT",
+        loan: loanScope,
+      },
+      select: { loanId: true, denominationAmountMinor: true },
+    }),
     prisma.loan.findMany({
-      where: { ...loanScope, status: { in: ["ACTIVE", "IN_ARREARS", "OVERPAID"] } },
+      where: { ...loanScope, status: { in: [...activeStatuses] } },
       select: {
         id: true,
         accountNumber: true,
@@ -78,18 +98,39 @@ export async function loadDashboard(userId: string) {
       },
     }),
     prisma.priceSnapshot.findFirst({
-      where: { baseCode: "BTC", quoteCode: "USD", observedAt: { gt: new Date(now.getTime() - 60 * 60 * 1_000) } },
+      where: { baseCode: "BTC", quoteCode: "USD", observedAt: { gt: freshAfter } },
+      orderBy: { observedAt: "desc" },
+      select: { price: true, status: true, observedAt: true },
+    }),
+    prisma.priceSnapshot.findFirst({
+      where: { baseCode: "USD", quoteCode: "UGX", observedAt: { gt: freshAfter } },
       orderBy: { observedAt: "desc" },
       select: { price: true, status: true, observedAt: true },
     }),
   ]);
 
   const dueTodayMinor = dueInstallments.reduce((total, installment) => total + outstanding(installment), 0n);
+  const disbursedTodayMinor = disbursements.reduce(
+    (total, transaction) => total + transaction.denominationAmountMinor,
+    0n,
+  );
+  const disbursementCount = new Set(disbursements.map((transaction) => transaction.loanId)).size;
   const atRiskMinor = attentionLoans
     .filter((loan) => loan.status === "IN_ARREARS")
     .flatMap((loan) => loan.installments)
     .reduce((total, installment) => total + outstanding(installment), 0n);
   const portfolioMinor = portfolio._sum.principalMinor ?? 0n;
+  const btcPrice =
+    btcUsdPrice && usdUgxPrice
+      ? {
+          priceUgx: Number(btcUsdPrice.price) * Number(usdUgxPrice.price),
+          status: combinePriceStatus(btcUsdPrice.status, usdUgxPrice.status),
+          observedAt:
+            btcUsdPrice.observedAt < usdUgxPrice.observedAt
+              ? btcUsdPrice.observedAt
+              : usdUgxPrice.observedAt,
+        }
+      : null;
 
   return {
     organizationName: user.organization.name,
@@ -103,6 +144,8 @@ export async function loadDashboard(userId: string) {
       dueTodayCount: dueInstallments.length,
       collectedTodayMinor: repayments._sum.denominationAmountMinor ?? 0n,
       repaymentCount: repayments._count,
+      disbursedTodayMinor,
+      disbursementCount,
       portfolioAtRiskBps: portfolioMinor > 0n ? Number((atRiskMinor * 10_000n) / portfolioMinor) : 0,
     },
     attentionLoans: attentionLoans
@@ -120,10 +163,19 @@ export async function loadDashboard(userId: string) {
       .filter((loan) => loan.dueMinor > 0n || loan.state === "IN_ARREARS")
       .slice(0, 8),
     ownership: summarizeOwnership(ownershipPools, user.organization.baseCurrency),
-    btcPrice: btcPrice
-      ? { price: btcPrice.price.toFixed(2), status: btcPrice.status, observedAt: btcPrice.observedAt }
-      : null,
+    btcPrice,
   };
+}
+
+function startOfUtcDay(date: Date) {
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+}
+
+function combinePriceStatus(left: PriceStatus, right: PriceStatus): PriceStatus {
+  if (left === right) return left;
+  if (left === "DEGRADED" || right === "DEGRADED") return "DEGRADED";
+  if (left === "MANUAL" || right === "MANUAL") return "MANUAL";
+  return "QUORUM";
 }
 
 function outstanding(installment: {
@@ -137,8 +189,14 @@ function outstanding(installment: {
   penaltiesPaidMinor: bigint;
 }) {
   const amount =
-    installment.principalDueMinor + installment.interestDueMinor + installment.feesDueMinor + installment.penaltiesDueMinor -
-    installment.principalPaidMinor - installment.interestPaidMinor - installment.feesPaidMinor - installment.penaltiesPaidMinor;
+    installment.principalDueMinor +
+    installment.interestDueMinor +
+    installment.feesDueMinor +
+    installment.penaltiesDueMinor -
+    installment.principalPaidMinor -
+    installment.interestPaidMinor -
+    installment.feesPaidMinor -
+    installment.penaltiesPaidMinor;
   return amount > 0n ? amount : 0n;
 }
 

@@ -1,6 +1,7 @@
 "use client";
 
 import { AlertTriangle, Check, LoaderCircle, ShieldAlert, X } from "lucide-react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -126,7 +127,7 @@ export function LoanServiceActionsPanel({
         </div>
       ) : (
         <div className="table-scroll">
-          <table>
+          <table className="clickable-rows">
             <thead>
               <tr>
                 <th>Action</th>
@@ -140,15 +141,16 @@ export function LoanServiceActionsPanel({
               {requests.map((item) => (
                 <tr key={item.id}>
                   <td>
-                    {actionLabels[item.actionType] ?? item.actionType}
+                    <strong>{actionLabels[item.actionType] ?? item.actionType}</strong>
                     {item.reason ? <p className="muted-text">{item.reason}</p> : null}
+                    <Link className="row-link" href={`/loans/${loanId}/servicing/${item.id}`} aria-label={`Open ${actionLabels[item.actionType] ?? item.actionType} request`} />
                   </td>
                   <td>
                     <span className={`status ${item.status === "APPROVED" ? "up-to-date" : item.status === "REJECTED" ? "in-arrears" : "review"}`}>{item.status}</span>
                   </td>
                   <td>{item.requestedByName}</td>
                   <td>{item.decidedByName ?? "-"}</td>
-                  <td>
+                  <td style={{ position: "relative", zIndex: 1 }}>
                     {item.canDecide ? (
                       <div className="account-card-actions">
                         <button className="icon-action" disabled={decidingId === item.id} onClick={() => decide(item.id, "APPROVE")} title="Approve and execute" type="button">

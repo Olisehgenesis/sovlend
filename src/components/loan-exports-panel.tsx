@@ -1,6 +1,7 @@
 "use client";
 
-import { Download, LoaderCircle, RefreshCcw } from "lucide-react";
+import { LoaderCircle, RefreshCcw } from "lucide-react";
+import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
@@ -201,7 +202,7 @@ export function LoanExportsPanel({
           </div>
         ) : (
           <div className="table-scroll">
-            <table>
+            <table className="clickable-rows">
               <thead>
                 <tr>
                   <th>Requested</th>
@@ -216,7 +217,10 @@ export function LoanExportsPanel({
               <tbody>
                 {jobs.map((job) => (
                   <tr key={job.id}>
-                    <td>{new Date(job.createdAt).toLocaleString()}</td>
+                    <td>
+                      {new Date(job.createdAt).toLocaleString()}
+                      <Link className="row-link" href={`/loans/exports/${job.id}`} aria-label={`Open export job ${job.id.slice(0, 8)}`} />
+                    </td>
                     <td>{scopeLabels[job.scopeType] ?? job.scopeType}</td>
                     <td>{job.format === "CSV_ZIP" ? "CSV zip" : "JSON"}</td>
                     <td>
@@ -227,10 +231,10 @@ export function LoanExportsPanel({
                     </td>
                     <td>{job.manifest?.loanCount ?? "-"}</td>
                     <td>{formatBytes(job.resultByteSize)}</td>
-                    <td>
+                    <td style={{ position: "relative", zIndex: 1 }}>
                       {job.status === "COMPLETED" ? (
-                        <a className="icon-action" href={`/api/loans/export-jobs/${job.id}/download`} title="Download package">
-                          <Download size={14} />
+                        <a className="green-link" href={`/api/loans/export-jobs/${job.id}/download`} title="Download package">
+                          Download
                         </a>
                       ) : null}
                     </td>

@@ -215,7 +215,7 @@ export default async function LoanPage({
             </div>
           ) : (
             <div className="table-scroll">
-              <table>
+              <table className="clickable-rows">
                 <thead>
                   <tr>
                     <th>Charge</th>
@@ -227,7 +227,10 @@ export default async function LoanPage({
                 <tbody>
                   {overdueCharges.map((charge) => (
                     <tr key={charge.id}>
-                      <td>{charge.name}</td>
+                      <td>
+                        <strong>{charge.name}</strong>
+                        <Link className="row-link" href={`/loans/${loan.id}/charges/${charge.id}`} aria-label={`Open overdue charge ${charge.name}`} />
+                      </td>
                       <td>{charge.dueOn?.toLocaleDateString() ?? "-"}</td>
                       <td className="mono">{formatMinor(charge.amountMinor, charge.currencyCode)}</td>
                       <td>
@@ -438,7 +441,7 @@ export default async function LoanPage({
             </div>
           ) : (
             <div className="table-scroll">
-              <table>
+              <table className="clickable-rows">
                 <thead>
                   <tr>
                     <th>Date</th>
@@ -451,7 +454,10 @@ export default async function LoanPage({
                 <tbody>
                   {loan.transactions.map((item) => (
                     <tr key={item.id}>
-                      <td>{item.businessDate.toLocaleDateString()}</td>
+                      <td>
+                        {item.businessDate.toLocaleDateString()}
+                        <Link className="row-link" href={`/loans/${loan.id}/transactions/${item.id}`} aria-label={`Open ${item.transactionType.replaceAll("_", " ").toLowerCase()} transaction`} />
+                      </td>
                       <td>{item.transactionType}</td>
                       <td>{item.settlementChannel}</td>
                       <td>
