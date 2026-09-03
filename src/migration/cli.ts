@@ -3,6 +3,7 @@ import { extractLegacy } from "./extract";
 import { extractLegacyLoanHistory } from "./extract-loans";
 import { ReadOnlyFineractClient } from "./fineract-client";
 import { importAllLegacyData } from "./import-all";
+import { importArchiveGroupsAndLoans } from "./import-archive-loans";
 import { importFoundation } from "./import-foundation";
 import { prisma } from "@/lib/prisma";
 
@@ -61,7 +62,21 @@ async function main() {
     if (result.errors.length > 0) console.log(`${result.errors.length} issues:\n${result.errors.join("\n")}`);
     return;
   }
-  throw new Error("Usage: migration:extract | migration:extract-loans | migration:verify <archive-directory> | migration:manifest <archive-directory> | migration:import <archive-directory> | migration:import-all-clients");
+  if (command === "import-archive-loans") {
+    const root = process.argv[3];
+    const organizationName = process.env.MIGRATION_ORGANIZATION_NAME;
+    const actorEmail = process.env.MIGRATION_ACTOR_EMAIL;
+    if (!root || !organizationName || !actorEmail) {
+      throw new Error("Usage: MIGRATION_ORGANIZATION_NAME=... MIGRATION_ACTOR_EMAIL=... pnpm migration:import-archive-loans <archive-directory>");
+    }
+    const organization = await prisma.organization.findFirstOrThrow({ where: { name: organizationName } });
+    const actor = await prisma.user.findFirstOrThrow({ where: { email: actorEmail.toLowerCase() } });
+    const result = await importArchiveGroupsAndLoans(prisma, root, organization.id, actor.id);
+    console.log(`Imported ${result.groupsImported} groups, ${result.membersImported} group memberships, ${result.loansImported} loans from archive.`);
+    if (result.loansSkipped.length > 0) console.log(`${result.loansSkipped.length} loans skipped:\n${result.loansSkipped.join("\n")}`);
+    return;
+  }
+  throw new Error("Usage: migration:extract | migration:extract-loans | migration:verify <archive-directory> | migration:manifest <archive-directory> | migration:import <archive-directory> | migration:import-archive-loans <archive-directory> | migration:import-all-clients");
 }
 
 void main().catch((error) => { console.error(error instanceof Error ? error.message : error); process.exitCode = 1; });

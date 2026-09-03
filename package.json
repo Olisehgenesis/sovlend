@@ -18,6 +18,7 @@
     "migration:verify": "tsx src/migration/cli.ts verify",
     "migration:manifest": "tsx src/migration/cli.ts rebuild-manifest",
     "migration:import": "tsx src/migration/cli.ts import",
+    "migration:import-archive-loans": "tsx src/migration/cli.ts import-archive-loans",
     "migration:import-all-clients": "tsx src/migration/cli.ts import-all-clients",
     "admin:bootstrap": "tsx src/scripts/bootstrap-admin.ts"
   },
