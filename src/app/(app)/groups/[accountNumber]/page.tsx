@@ -13,6 +13,7 @@ import { formatMinor } from "@/modules/money/domain/format-minor";
 const tabs = [
   { key: "general", label: "General", icon: CircleUserRound },
   { key: "members", label: "Members", icon: Users },
+  { key: "savings", label: "Savings", icon: PiggyBank },
   { key: "loans", label: "Loans", icon: CircleDollarSign },
   { key: "notes", label: "Notes", icon: StickyNote },
 ] as const;
@@ -29,6 +30,18 @@ type NameRecord = {
 
 function fullName(person: NameRecord) {
   return [person.firstName, person.middleName, person.lastName].filter(Boolean).join(" ");
+}
+
+function savingsStatusTone(status: string) {
+  return status === "ACTIVE" ? "up-to-date" : "review";
+}
+
+function savingsStatusLabel(status: string) {
+  return status === "SUBMITTED" ? "Pending approval" : status.replaceAll("_", " ");
+}
+
+function savingsAccountTypeLabel(accountType: string) {
+  return accountType.replaceAll("_", " ");
 }
 
 function outstandingPrincipalMinor(installments: Array<{ principalDueMinor: bigint; principalPaidMinor: bigint; principalWaivedMinor: bigint }>) {
@@ -69,6 +82,13 @@ export default async function GroupDetailPage({ params, searchParams }: { params
       },
       notes: { orderBy: { createdAt: "desc" }, include: { author: { select: { name: true } } } },
       loans: { orderBy: { createdAt: "desc" }, include: { product: true } },
+      savingsAccounts: {
+        orderBy: { createdAt: "desc" },
+        include: {
+          product: { select: { name: true, shortName: true } },
+          transactions: { select: { amountMinor: true } },
+        },
+      },
       loanApplications: { where: { status: { in: ["SUBMITTED", "APPROVED"] } }, orderBy: { createdAt: "desc" }, include: { product: true } },
     },
   });
@@ -114,6 +134,7 @@ export default async function GroupDetailPage({ params, searchParams }: { params
 
   const memberSavingsSummary = new Map<string, { accountCount: number; totalBalanceMinor: bigint; currencyCode: string }>();
   for (const account of memberSavingsAccounts) {
+    if (!account.clientId) continue;
     const summary = memberSavingsSummary.get(account.clientId) ?? { accountCount: 0, totalBalanceMinor: 0n, currencyCode: account.currencyCode };
     summary.accountCount += 1;
     summary.totalBalanceMinor += account.transactions.reduce((sum, transaction) => sum + transaction.amountMinor, 0n);
@@ -150,7 +171,7 @@ export default async function GroupDetailPage({ params, searchParams }: { params
           <div className="panel-heading">
             <div>
               <h2>General information</h2>
-              <p>A group has no shared account balance &mdash; it only tracks who borrows or saves together</p>
+              <p>Groups mostly organize members, but they can also directly hold savings or loan accounts when needed.</p>
             </div>
           </div>
           <dl className="detail-grid">
@@ -243,6 +264,59 @@ export default async function GroupDetailPage({ params, searchParams }: { params
             </div>
           )}
           <AddGroupMemberForm groupId={group.id} />
+        </section>
+      ) : null}
+
+      {activeTab === "savings" ? (
+        <section className="panel">
+          <div className="panel-heading">
+            <div>
+              <h2>Group savings</h2>
+              <p>These are savings accounts owned by the group itself, separate from the members&apos; personal savings on the Members tab.</p>
+            </div>
+          </div>
+          {group.savingsAccounts.length === 0 ? (
+            <div className="empty-state compact-empty">
+              <PiggyBank size={26} />
+              <strong>No direct group-owned savings accounts yet</strong>
+              <p>Any savings account opened in the group&apos;s own name will appear here separately from members&apos; personal savings.</p>
+            </div>
+          ) : (
+            <div className="table-scroll">
+              <table className="clickable-rows">
+                <thead>
+                  <tr>
+                    <th>Account #</th>
+                    <th>Product</th>
+                    <th>Type</th>
+                    <th>Status</th>
+                    <th>Balance</th>
+                    <th>Currency</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {group.savingsAccounts.map((account) => {
+                    const balanceMinor = account.transactions.reduce((sum, transaction) => sum + transaction.amountMinor, 0n);
+                    return (
+                      <tr key={account.id}>
+                        <td className="mono">
+                          {account.accountNumber}
+                          <Link className="row-link" href={`/savings-accounts/${account.accountNumber}`} aria-label={`Open savings account ${account.accountNumber}`} />
+                        </td>
+                        <td>{account.product?.name ?? "Unlinked product"}</td>
+                        <td>{savingsAccountTypeLabel(account.accountType)}</td>
+                        <td>
+                          <span className={`status ${savingsStatusTone(account.status)}`}>{savingsStatusLabel(account.status)}</span>
+                        </td>
+                        <td className="mono">{formatMinor(balanceMinor, account.currencyCode)}</td>
+                        <td>{account.currencyCode}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
         </section>
       ) : null}
 

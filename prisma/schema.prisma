@@ -484,6 +484,7 @@ model Group {
   notes            GroupNote[]
   loanApplications LoanApplication[]
   loans            Loan[]
+  savingsAccounts  SavingsAccount[]
   charges          Charge[]
   createdAt        DateTime          @default(now())
   updatedAt        DateTime          @updatedAt
@@ -875,7 +876,8 @@ model LoanExportJob {
 
 model SavingsAccount {
   id             String               @id @default(uuid()) @db.Uuid
-  clientId       String               @db.Uuid
+  clientId       String?              @db.Uuid
+  groupId        String?              @db.Uuid
   productId      String?              @db.Uuid
   fieldOfficerId String?
   submittedById  String?
@@ -888,7 +890,8 @@ model SavingsAccount {
   submittedOn    DateTime?            @db.Date
   approvedOn     DateTime?            @db.Date
   termsSnapshot  Json?
-  client         Client               @relation(fields: [clientId], references: [id])
+  client         Client?              @relation(fields: [clientId], references: [id])
+  group          Group?               @relation(fields: [groupId], references: [id])
   product        SavingsProduct?      @relation(fields: [productId], references: [id])
   fieldOfficer   User?                @relation("AssignedSavingsOfficer", fields: [fieldOfficerId], references: [id])
   submittedBy    User?                @relation("SavingsAccountSubmittedBy", fields: [submittedById], references: [id])
@@ -899,6 +902,7 @@ model SavingsAccount {
   updatedAt      DateTime             @updatedAt
 
   @@index([clientId, status])
+  @@index([groupId, status])
   @@index([productId])
 }
 

@@ -70,12 +70,16 @@ export default async function SavingsAccountDetailPage({
     organizationId: scope.organizationId,
     ...officeWhere(scope),
   };
+  const groupScope: Prisma.GroupWhereInput = {
+    organizationId: scope.organizationId,
+    ...officeWhere(scope),
+  };
 
   const { accountNumber } = await params;
   const account = await prisma.savingsAccount.findFirst({
     where: {
       accountNumber,
-      client: { is: clientScope },
+      OR: [{ client: { is: clientScope } }, { group: { is: groupScope } }],
     },
     include: {
       client: {
@@ -84,6 +88,14 @@ export default async function SavingsAccountDetailPage({
           firstName: true,
           middleName: true,
           lastName: true,
+          assignedOfficer: { select: { name: true } },
+          office: { select: { name: true } },
+        },
+      },
+      group: {
+        select: {
+          accountNumber: true,
+          name: true,
           assignedOfficer: { select: { name: true } },
           office: { select: { name: true } },
         },
@@ -107,7 +119,26 @@ export default async function SavingsAccountDetailPage({
 
   if (!account) notFound();
 
-  const holderName = fullName(account.client);
+  const owner = account.client
+    ? {
+        kind: "client" as const,
+        name: fullName(account.client),
+        accountNumber: account.client.accountNumber,
+        href: `/clients/${account.client.accountNumber}`,
+        officeName: account.client.office.name,
+        assignedOfficerName: account.client.assignedOfficer?.name ?? null,
+      }
+    : account.group
+      ? {
+          kind: "group" as const,
+          name: account.group.name,
+          accountNumber: account.group.accountNumber,
+          href: `/groups/${account.group.accountNumber}`,
+          officeName: account.group.office.name,
+          assignedOfficerName: account.group.assignedOfficer?.name ?? null,
+        }
+      : notFound();
+
   const productName = account.product?.name ?? snapshotString(account.termsSnapshot, "name") ?? "Unlinked product";
   const productCode = account.product?.shortName ?? snapshotString(account.termsSnapshot, "shortName");
   const nominalAnnualRateBps = account.product?.nominalAnnualRateBps ?? snapshotNumber(account.termsSnapshot, "nominalAnnualRateBps");
@@ -126,7 +157,7 @@ export default async function SavingsAccountDetailPage({
     (sum, charge) => sum + (charge.status === "PENDING" ? charge.amountMinor : 0n),
     0n,
   );
-  const savingsOfficer = account.fieldOfficer?.name ?? account.client.assignedOfficer?.name ?? "Unassigned";
+  const savingsOfficer = account.fieldOfficer?.name ?? owner.assignedOfficerName ?? "Unassigned";
 
   return (
     <main className="directory-page">
@@ -149,10 +180,11 @@ export default async function SavingsAccountDetailPage({
           </h1>
           <p>
             Holder:{" "}
-            <Link className="green-link" href={`/clients/${account.client.accountNumber}`}>
-              {holderName}
+            <Link className="green-link" href={owner.href}>
+              {owner.name}
             </Link>{" "}
-            | Product: {productName} | Office: {account.client.office.name}
+            {owner.kind === "group" ? <span className="status review">Group</span> : null}
+            {" | "}Product: {productName} | Office: {owner.officeName}
           </p>
         </div>
         <span className={`status-dot ${statusTone(account.status)}`} />
@@ -182,21 +214,25 @@ export default async function SavingsAccountDetailPage({
           <div className="panel-heading">
             <div>
               <h2>General information</h2>
-              <p>Client-owned savings account within your scoped office portfolio</p>
+              <p>
+                {owner.kind === "group" ? "Group-owned" : "Client-owned"} savings account within your scoped office
+                portfolio
+              </p>
             </div>
           </div>
           <dl className="detail-grid">
             <div>
               <dt>Account holder</dt>
               <dd>
-                <Link className="green-link" href={`/clients/${account.client.accountNumber}`}>
-                  {holderName}
+                <Link className="green-link" href={owner.href}>
+                  {owner.name}
                 </Link>
+                {owner.kind === "group" ? <> <span className="status review">Group</span></> : null}
               </dd>
             </div>
             <div>
-              <dt>Client account</dt>
-              <dd className="mono">{account.client.accountNumber}</dd>
+              <dt>{owner.kind === "group" ? "Group account" : "Client account"}</dt>
+              <dd className="mono">{owner.accountNumber}</dd>
             </div>
             <div>
               <dt>Account type</dt>
@@ -222,7 +258,7 @@ export default async function SavingsAccountDetailPage({
             </div>
             <div>
               <dt>Office</dt>
-              <dd>{account.client.office.name}</dd>
+              <dd>{owner.officeName}</dd>
             </div>
             <div>
               <dt>Savings officer</dt>

@@ -80,6 +80,10 @@ export default async function SavingsAccountsPage({
     organizationId: userScope.organizationId,
     ...officeWhere(userScope),
   };
+  const groupScope: Prisma.GroupWhereInput = {
+    organizationId: userScope.organizationId,
+    ...officeWhere(userScope),
+  };
 
   const searchFilters: Prisma.SavingsAccountWhereInput[] = [];
   if (query) {
@@ -99,13 +103,16 @@ export default async function SavingsAccountsPage({
     searchFilters.push({ client: { is: { accountNumber: { contains: query, mode: "insensitive" } } } });
     searchFilters.push({ client: { is: { mobileNumber: { contains: query, mode: "insensitive" } } } });
     searchFilters.push({ client: { is: { office: { is: { name: { contains: query, mode: "insensitive" } } } } } });
+    searchFilters.push({ group: { is: { name: { contains: query, mode: "insensitive" } } } });
+    searchFilters.push({ group: { is: { accountNumber: { contains: query, mode: "insensitive" } } } });
+    searchFilters.push({ group: { is: { office: { is: { name: { contains: query, mode: "insensitive" } } } } } });
     searchFilters.push({ product: { is: { name: { contains: query, mode: "insensitive" } } } });
     searchFilters.push({ product: { is: { shortName: { contains: query, mode: "insensitive" } } } });
     searchFilters.push({ fieldOfficer: { is: { name: { contains: query, mode: "insensitive" } } } });
   }
 
   const where: Prisma.SavingsAccountWhereInput = {
-    client: { is: clientScope },
+    OR: [{ client: { is: clientScope } }, { group: { is: groupScope } }],
     ...(searchFilters.length > 0 ? { AND: [{ OR: searchFilters }] } : {}),
   };
 
@@ -122,6 +129,13 @@ export default async function SavingsAccountsPage({
           firstName: true,
           middleName: true,
           lastName: true,
+          office: { select: { name: true } },
+        },
+      },
+      group: {
+        select: {
+          accountNumber: true,
+          name: true,
           office: { select: { name: true } },
         },
       },
@@ -159,7 +173,7 @@ export default async function SavingsAccountsPage({
           </Link>
         </div>
       </header>
-      <LiveSearchInput placeholder="Search account, client, product, officer or office" />
+      <LiveSearchInput placeholder="Search account, client, group, product, officer or office" />
       <section className="panel">
         <div className="table-scroll">
           <table className="clickable-rows">
@@ -176,16 +190,33 @@ export default async function SavingsAccountsPage({
             </thead>
             <tbody>
               {accounts.map((account, index) => {
-                const holderName = fullName(account.client);
+                const owner = account.client
+                  ? {
+                      kind: "client" as const,
+                      name: fullName(account.client),
+                      accountNumber: account.client.accountNumber,
+                      officeName: account.client.office.name,
+                    }
+                  : account.group
+                    ? {
+                        kind: "group" as const,
+                        name: account.group.name,
+                        accountNumber: account.group.accountNumber,
+                        officeName: account.group.office.name,
+                      }
+                    : null;
+                const holderName = owner?.name ?? "Unknown owner";
                 const balanceMinor = account.transactions.reduce((sum, transaction) => sum + transaction.amountMinor, 0n);
                 const productName = account.product?.name ?? snapshotString(account.termsSnapshot, "name") ?? "Unlinked product";
                 return (
                   <tr key={account.id}>
                     <td className="mono muted-text">{(page - 1) * pageSize + index + 1}</td>
                     <td>
-                      <strong>{holderName}</strong>
+                      <strong>{holderName}</strong>{" "}
+                      {owner?.kind === "group" ? <span className="status review">Group</span> : null}
                       <small>
-                        Client #{account.client.accountNumber} · {accountTypeLabel(account.accountType)}
+                        {owner ? `${owner.kind === "group" ? "Group" : "Client"} #${owner.accountNumber}` : "Unlinked owner"} ·{" "}
+                        {accountTypeLabel(account.accountType)}
                         {account.fieldOfficer?.name ? ` · ${account.fieldOfficer.name}` : ""}
                       </small>
                       <Link
@@ -200,7 +231,7 @@ export default async function SavingsAccountsPage({
                       <span className={`status ${statusTone(account.status)}`}>{statusLabel(account.status)}</span>
                     </td>
                     <td className="mono">{formatMinor(balanceMinor, account.currencyCode)}</td>
-                    <td>{account.client.office.name}</td>
+                    <td>{owner?.officeName ?? "—"}</td>
                   </tr>
                 );
               })}

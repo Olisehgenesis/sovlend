@@ -103,8 +103,19 @@ export class ReadOnlyFineractClient {
     return response.json();
   }
 
+  async getLoanDocuments(loanId: number): Promise<unknown> {
+    const response = await this.fetchWithRetry(this.buildUrl(`loans/${loanId}/documents`), "application/json");
+    return response.json();
+  }
+
   async downloadClientDocument(clientId: number, documentId: number): Promise<{ bytes: Buffer; contentType: string }> {
     const response = await this.fetchWithRetry(this.buildUrl(`clients/${clientId}/documents/${documentId}/attachment`), "*/*");
+    const arrayBuffer = await response.arrayBuffer();
+    return { bytes: Buffer.from(arrayBuffer), contentType: response.headers.get("content-type") ?? "application/octet-stream" };
+  }
+
+  async downloadLoanDocument(loanId: number, documentId: number): Promise<{ bytes: Buffer; contentType: string }> {
+    const response = await this.fetchWithRetry(this.buildUrl(`loans/${loanId}/documents/${documentId}/attachment`), "*/*");
     const arrayBuffer = await response.arrayBuffer();
     return { bytes: Buffer.from(arrayBuffer), contentType: response.headers.get("content-type") ?? "application/octet-stream" };
   }
