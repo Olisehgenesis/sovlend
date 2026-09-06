@@ -103,8 +103,28 @@ export class ReadOnlyFineractClient {
     return response.json();
   }
 
+  async getLoanWithCharges(loanId: number): Promise<unknown> {
+    const response = await this.fetchWithRetry(this.buildUrl(`loans/${loanId}`, { associations: "charges" }), "application/json");
+    return response.json();
+  }
+
+  async getLoanGuarantors(loanId: number): Promise<unknown> {
+    const response = await this.fetchWithRetry(this.buildUrl(`loans/${loanId}`, { associations: "guarantors" }), "application/json");
+    return (await response.json()).guarantors;
+  }
+
   async getLoanDocuments(loanId: number): Promise<unknown> {
     const response = await this.fetchWithRetry(this.buildUrl(`loans/${loanId}/documents`), "application/json");
+    return response.json();
+  }
+
+  async getLoanNotes(loanId: number): Promise<unknown> {
+    const response = await this.fetchWithRetry(this.buildUrl(`loans/${loanId}/notes`), "application/json");
+    return response.json();
+  }
+
+  async getSavingsAccount(savingsAccountId: number): Promise<unknown> {
+    const response = await this.fetchWithRetry(this.buildUrl(`savingsaccounts/${savingsAccountId}`, { associations: "transactions" }), "application/json");
     return response.json();
   }
 

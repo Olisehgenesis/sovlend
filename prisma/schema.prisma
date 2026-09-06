@@ -725,6 +725,7 @@ model Loan {
   documents            Document[]
   notes                LoanNote[]
   collateralItems      LoanCollateral[]
+  guarantors           Guarantor[]
   reminders            Reminder[]
   serviceRequests      LoanServiceRequest[]
   createdAt            DateTime             @default(now())
@@ -821,6 +822,24 @@ model LoanCollateral {
 
   @@index([loanId, status])
   @@index([loanId, valuationDate])
+}
+
+model Guarantor {
+  id            String    @id @default(uuid()) @db.Uuid
+  loanId        String    @db.Uuid
+  externalId    Int?      @unique
+  guarantorType String    @default("EXTERNAL")
+  firstName     String?
+  lastName      String?
+  phone         String?
+  relationship  String?
+  dateOfBirth   DateTime? @db.Date
+  active        Boolean   @default(true)
+  loan          Loan      @relation(fields: [loanId], references: [id], onDelete: Cascade)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([loanId])
 }
 
 model LoanServiceRequest {

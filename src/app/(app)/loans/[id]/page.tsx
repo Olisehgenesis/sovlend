@@ -28,7 +28,16 @@ export default async function LoanPage({
   const scope = await getUserDataScope(prisma, session.user.id);
   if (!scope) redirect("/");
   const tab = (await searchParams).tab;
-  const activeTab = tab === "charges" || tab === "overdue-charges" || tab === "documents" || tab === "notes" || tab === "collateral" || tab === "servicing" ? tab : "schedule";
+  const activeTab =
+    tab === "charges" ||
+    tab === "overdue-charges" ||
+    tab === "documents" ||
+    tab === "notes" ||
+    tab === "collateral" ||
+    tab === "guarantors" ||
+    tab === "servicing"
+      ? tab
+      : "schedule";
   const loan = await prisma.loan.findFirst({
     where: {
       id: (await params).id,
@@ -40,6 +49,7 @@ export default async function LoanPage({
       product: true,
       charges: { orderBy: { createdAt: "desc" } },
       collateralItems: { orderBy: { createdAt: "desc" } },
+      guarantors: { orderBy: [{ createdAt: "asc" }, { id: "asc" }] },
       documents: { orderBy: { createdAt: "desc" } },
       notes: {
         include: { author: { select: { name: true } } },
@@ -162,6 +172,7 @@ export default async function LoanPage({
         <Link className={activeTab === "charges" ? "active" : ""} href={`/loans/${loan.id}?tab=charges`}>Charges</Link>
         <Link className={activeTab === "overdue-charges" ? "active" : ""} href={`/loans/${loan.id}?tab=overdue-charges`}>Overdue Charges</Link>
         <Link className={activeTab === "collateral" ? "active" : ""} href={`/loans/${loan.id}?tab=collateral`}>Loan Collateral</Link>
+        <Link className={activeTab === "guarantors" ? "active" : ""} href={`/loans/${loan.id}?tab=guarantors`}>Guarantors</Link>
         <Link className={activeTab === "documents" ? "active" : ""} href={`/loans/${loan.id}?tab=documents`}>Loan Documents</Link>
         <Link className={activeTab === "notes" ? "active" : ""} href={`/loans/${loan.id}?tab=notes`}>Notes</Link>
         <Link className={activeTab === "servicing" ? "active" : ""} href={`/loans/${loan.id}?tab=servicing`}>Servicing</Link>
@@ -267,6 +278,59 @@ export default async function LoanPage({
               status: item.status,
             }))}
           />
+        </section>
+      ) : null}
+      {activeTab === "guarantors" ? (
+        <section className="panel">
+          <div className="panel-heading">
+            <div>
+              <h2>Guarantors</h2>
+              <p>People recorded as vouching for this loan</p>
+            </div>
+          </div>
+          {loan.guarantors.length === 0 ? (
+            <div className="empty-state compact-empty">
+              <strong>No guarantors on record</strong>
+              <p>This loan has no guarantors recorded.</p>
+            </div>
+          ) : (
+            <div className="table-scroll">
+              <table className="clickable-rows">
+                <thead>
+                  <tr>
+                    <th>Name</th>
+                    <th>Type</th>
+                    <th>Relationship</th>
+                    <th>Phone</th>
+                    <th>Date of birth</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {loan.guarantors.map((guarantor) => (
+                    <tr key={guarantor.id}>
+                      <td>
+                        <strong>{[guarantor.firstName, guarantor.lastName].filter(Boolean).join(" ") || "Unnamed guarantor"}</strong>
+                      </td>
+                      <td>{guarantor.guarantorType}</td>
+                      <td>{guarantor.relationship ?? "-"}</td>
+                      <td>{guarantor.phone ?? "-"}</td>
+                      <td>
+                        {guarantor.dateOfBirth
+                          ? new Intl.DateTimeFormat("en-UG", { dateStyle: "medium" }).format(guarantor.dateOfBirth)
+                          : "-"}
+                      </td>
+                      <td>
+                        <span className={`status ${guarantor.active ? "up-to-date" : "review"}`}>
+                          {guarantor.active ? "Active" : "Inactive"}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </section>
       ) : null}
       {activeTab === "documents" ? (
