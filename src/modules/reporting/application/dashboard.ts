@@ -4,7 +4,10 @@ import { prisma } from "@/lib/prisma";
 export { formatMinor } from "@/modules/money/domain/format-minor";
 import { getUserDataScope, officeWhere } from "@/modules/identity/application/data-scope";
 
-const activeStatuses = ["ACTIVE", "IN_ARREARS", "OVERPAID"] as const;
+// Matches iLend's own "Active Loans" definition (Up To Date + In Arrears). Overpaid loans
+// have their own separate list/tab in iLend and should not inflate the active portfolio
+// count/value shown here — see the same fix applied to the /loans list page.
+const activeStatuses = ["ACTIVE", "IN_ARREARS"] as const;
 const freshSnapshotWindowMs = 60 * 60 * 1_000;
 
 export async function loadDashboard(userId: string) {
