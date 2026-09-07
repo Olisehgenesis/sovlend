@@ -1,4 +1,4 @@
-import { PiggyBank, Download } from "lucide-react";
+import { CircleDollarSign, Download } from "lucide-react";
 import { headers } from "next/headers";
 import Link from "next/link";
 import { redirect } from "next/navigation";
@@ -14,13 +14,13 @@ import { formatMinor } from "@/modules/money/domain/format-minor";
 import { loadReportPickerOptions } from "@/modules/reports/report-catalog";
 import {
   agingBucketTone,
-  formatBps,
-  loadProvisioningReport,
+  loadArrearsReport,
   loadRiskFilterOptions,
+  loanStatusTone,
   parseRiskFilters,
 } from "@/modules/reports/domain/risk-report";
 
-export default async function ProvisioningReportPage({
+export default async function ArrearsReportPage({
   searchParams,
 }: {
   searchParams: Promise<{ officeId?: string; loanOfficerId?: string }>;
@@ -34,16 +34,18 @@ export default async function ProvisioningReportPage({
   const allowed = await new AuthorizationService(prisma).isAllowedForOrganization(
     session.user.id,
     scope.organizationId,
-    permissions.reportProvisioning,
+    permissions.reportArrears,
   );
   if (!allowed) redirect("/reports");
 
   const filters = parseRiskFilters(await searchParams);
   const [report, options, pickerOptions] = await Promise.all([
-    loadProvisioningReport(prisma, scope, filters),
+    loadArrearsReport(prisma, scope, filters),
     loadRiskFilterOptions(prisma, scope),
     loadReportPickerOptions(prisma, session.user.id, scope.organizationId),
   ]);
+  const generatedAt = formatDateTime(report.generatedAt);
+  const exportHref = `/api/reports/risk/arrears${querySuffix(filters)}${querySuffix(filters) ? "&" : "?"}format=csv`;
 
   return (
     <main className="directory-page">
@@ -51,47 +53,47 @@ export default async function ProvisioningReportPage({
         items={[
           { label: "Reports", href: "/reports" },
           { label: "Risk", href: "/reports" },
-          { label: "Provisioning" },
+          { label: "Arrears Report" },
         ]}
       />
       <header className="directory-header">
         <div>
           <p className="eyebrow">Portfolio risk</p>
-          <h1>Provisioning</h1>
+          <h1>Arrears Report</h1>
           <p>
-            {report.totals.loanCount.toLocaleString()} loans · {formatMinor(report.totals.totalOutstandingPrincipalMinor, "UGX")} exposure · {formatMinor(report.totals.totalProvisionMinor, "UGX")} required provision
+            {report.totals.loanCount.toLocaleString()} loans in arrears · {formatMinor(report.totals.overdueTotalMinor, "UGX")} overdue total · snapshot {generatedAt}
           </p>
         </div>
-        <ReportPicker current="/reports/risk/provisioning" options={pickerOptions} />
+        <ReportPicker current="/reports/risk/arrears" options={pickerOptions} />
         <div className="header-actions">
-          <a className="secondary-action" href={`/api/reports/risk/provisioning${querySuffix(filters)}&format=csv`}>
+          <a className="secondary-action" href={exportHref}>
             <Download size={16} /> Export CSV
           </a>
-          <Link className="secondary-action" href={`/api/reports/risk/provisioning${querySuffix(filters)}`}>
+          <Link className="secondary-action" href={`/api/reports/risk/arrears${querySuffix(filters)}`}>
             API JSON
           </Link>
-          <Link className="secondary-action" href="/reports/risk/aging">
-            Aging report
+          <Link className="secondary-action" href="/loans?status=IN_ARREARS">
+            In-arrears loans
           </Link>
         </div>
       </header>
 
       <section className="loan-summary-metrics">
         <article>
-          <span>Outstanding principal</span>
-          <strong>{formatMinor(report.totals.totalOutstandingPrincipalMinor, "UGX")}</strong>
+          <span>Overdue principal</span>
+          <strong>{formatMinor(report.totals.overduePrincipalMinor, "UGX")}</strong>
         </article>
         <article>
-          <span>Required provision</span>
-          <strong>{formatMinor(report.totals.totalProvisionMinor, "UGX")}</strong>
+          <span>Overdue interest</span>
+          <strong>{formatMinor(report.totals.overdueInterestMinor, "UGX")}</strong>
         </article>
         <article>
-          <span>Coverage ratio</span>
-          <strong>{formatBps(report.totals.coverageBps)}</strong>
+          <span>Overdue fees</span>
+          <strong>{formatMinor(report.totals.overdueFeesMinor, "UGX")}</strong>
         </article>
         <article>
-          <span>Loans covered</span>
-          <strong>{report.totals.loanCount.toLocaleString()}</strong>
+          <span>Overdue penalties</span>
+          <strong>{formatMinor(report.totals.overduePenaltiesMinor, "UGX")}</strong>
         </article>
       </section>
 
@@ -122,7 +124,7 @@ export default async function ProvisioningReportPage({
             </label>
           </div>
           <div className="form-actions">
-            <Link className="secondary-action" href="/reports/risk/provisioning">
+            <Link className="secondary-action" href="/reports/risk/arrears">
               Clear
             </Link>
             <button className="invest-button" type="submit">
@@ -135,50 +137,14 @@ export default async function ProvisioningReportPage({
       <section className="panel">
         <div className="panel-heading">
           <div>
-            <h2>Provision ladder</h2>
-            <p>Policy assumption: Current 0%, 1-30 10%, 31-60 25%, 61-90 50%, 90+ 100%.</p>
-          </div>
-          <PiggyBank size={19} />
-        </div>
-        <div className="table-scroll">
-          <table>
-            <thead>
-              <tr>
-                <th>Bucket</th>
-                <th>Rate</th>
-                <th>Loans</th>
-                <th>Outstanding principal</th>
-                <th>Required provision</th>
-              </tr>
-            </thead>
-            <tbody>
-              {report.buckets.map((bucket) => (
-                <tr key={bucket.key}>
-                  <td>
-                    <span className={`status ${agingBucketTone(bucket.key)}`}>{bucket.label}</span>
-                  </td>
-                  <td>{bucket.provisionRatePercent}%</td>
-                  <td>{bucket.loanCount.toLocaleString()}</td>
-                  <td>{formatMinor(bucket.outstandingPrincipalMinor, "UGX")}</td>
-                  <td>{formatMinor(bucket.provisionMinor, "UGX")}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </section>
-
-      <section className="panel">
-        <div className="panel-heading">
-          <div>
-            <h2>Loan-level provision requirement</h2>
-            <p>Largest required provisions first.</p>
+            <h2>Loans currently in arrears</h2>
+            <p>Overdue amounts include only unpaid installment components with due dates before today.</p>
           </div>
         </div>
         {report.loans.length === 0 ? (
           <div className="empty-state">
-            <PiggyBank size={28} />
-            <strong>No loans in scope</strong>
+            <CircleDollarSign size={28} />
+            <strong>No arrears in scope</strong>
             <p>Change the filter and try again.</p>
           </div>
         ) : (
@@ -187,13 +153,17 @@ export default async function ProvisioningReportPage({
               <thead>
                 <tr>
                   <th>Borrower</th>
+                  <th>Product</th>
                   <th>Office</th>
                   <th>Officer</th>
+                  <th>Status</th>
                   <th>Bucket</th>
                   <th>Days overdue</th>
-                  <th>Outstanding principal</th>
-                  <th>Rate</th>
-                  <th>Provision</th>
+                  <th>Principal overdue</th>
+                  <th>Interest overdue</th>
+                  <th>Fees overdue</th>
+                  <th>Penalties overdue</th>
+                  <th>Total overdue</th>
                 </tr>
               </thead>
               <tbody>
@@ -204,15 +174,21 @@ export default async function ProvisioningReportPage({
                       <small className="mono">{loan.accountNumber}</small>
                       <Link className="row-link" href={`/loans/${loan.id}`} aria-label={`Open ${loan.accountNumber}`} />
                     </td>
+                    <td>{loan.productName}</td>
                     <td>{loan.officeName}</td>
                     <td>{loan.loanOfficerName}</td>
+                    <td>
+                      <span className={`status ${loanStatusTone(loan.status)}`}>{loan.status.replaceAll("_", " ")}</span>
+                    </td>
                     <td>
                       <span className={`status ${agingBucketTone(loan.agingBucket)}`}>{bucketLabel(loan.agingBucket)}</span>
                     </td>
                     <td>{loan.daysOverdue.toLocaleString()}</td>
-                    <td>{formatMinor(loan.outstandingPrincipalMinor, loan.currencyCode)}</td>
-                    <td>{loan.provisionRatePercent}%</td>
-                    <td>{formatMinor(loan.provisionMinor, loan.currencyCode)}</td>
+                    <td>{formatMinor(loan.overduePrincipalMinor, loan.currencyCode)}</td>
+                    <td>{formatMinor(loan.overdueInterestMinor, loan.currencyCode)}</td>
+                    <td>{formatMinor(loan.overdueFeesMinor, loan.currencyCode)}</td>
+                    <td>{formatMinor(loan.overduePenaltiesMinor, loan.currencyCode)}</td>
+                    <td>{formatMinor(loan.overdueTotalMinor, loan.currencyCode)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -237,6 +213,14 @@ function bucketLabel(bucket: string) {
     default:
       return "90+ days";
   }
+}
+
+function formatDateTime(date: Date) {
+  return new Intl.DateTimeFormat("en-UG", {
+    dateStyle: "medium",
+    timeStyle: "short",
+    timeZone: "Africa/Kampala",
+  }).format(date);
 }
 
 function querySuffix(filters: { officeId?: string; loanOfficerId?: string }) {

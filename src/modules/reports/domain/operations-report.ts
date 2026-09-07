@@ -8,6 +8,7 @@ import {
 } from "@/modules/identity/application/data-scope";
 import type { PermissionCode } from "@/modules/identity/domain/permissions";
 import { rowsToCsv } from "@/modules/lending/domain/loan-export";
+import { loadPortfolioLoans, type AgingBucketKey } from "@/modules/reports/domain/risk-report";
 
 const reportableLoanStatuses: LoanStatus[] = ["ACTIVE", "IN_ARREARS"];
 const ugDateFormatter = new Intl.DateTimeFormat("en-UG", {
@@ -135,6 +136,72 @@ export type DisbursalCohortReport = {
   loanOfficerId: string | null;
   rows: DisbursalCohortRow[];
   totals: DisbursalCohortTotal[];
+};
+
+export type ActiveLoanRow = {
+  loanId: string;
+  accountNumber: string;
+  borrowerName: string;
+  officeId: string;
+  officeName: string;
+  loanOfficerId: string | null;
+  loanOfficerName: string;
+  productName: string;
+  currencyCode: string;
+  status: LoanStatus;
+  principalMinor: bigint;
+  disbursedOn: Date | null;
+  maturesOn: Date | null;
+  outstandingPrincipalMinor: bigint;
+  outstandingTotalMinor: bigint;
+  daysOverdue: number;
+  overdueSince: Date | null;
+  agingBucket: AgingBucketKey;
+};
+
+export type ActiveLoanTotal = {
+  currencyCode: string;
+  loanCount: number;
+  principalMinor: bigint;
+  outstandingPrincipalMinor: bigint;
+  outstandingTotalMinor: bigint;
+};
+
+export type ActiveLoansReport = {
+  officeId: string | null;
+  loanOfficerId: string | null;
+  rows: ActiveLoanRow[];
+  totals: ActiveLoanTotal[];
+};
+
+export type DisbursalReportRow = {
+  loanId: string;
+  accountNumber: string;
+  borrowerName: string;
+  officeId: string;
+  officeName: string;
+  loanOfficerId: string | null;
+  loanOfficerName: string;
+  productName: string;
+  currencyCode: string;
+  status: LoanStatus;
+  principalMinor: bigint;
+  disbursedOn: Date;
+};
+
+export type DisbursalReportTotal = {
+  currencyCode: string;
+  loanCount: number;
+  principalMinor: bigint;
+};
+
+export type DisbursalReport = {
+  officeId: string | null;
+  loanOfficerId: string | null;
+  startDate: Date | null;
+  endDate: Date | null;
+  rows: DisbursalReportRow[];
+  totals: DisbursalReportTotal[];
 };
 
 export type OutstandingBalanceRow = {
@@ -635,6 +702,171 @@ export async function loadDisbursalCohortReport(
   };
 }
 
+export async function loadActiveLoansReport(
+  prisma: PrismaClient,
+  scope: UserDataScope,
+  params: {
+    officeId?: string | null;
+    loanOfficerId?: string | null;
+  },
+): Promise<ActiveLoansReport> {
+  const officeId = normalizeString(params.officeId);
+  const loanOfficerId = normalizeString(params.loanOfficerId);
+  const loans = await loadPortfolioLoans(
+    prisma,
+    scope,
+    {
+      ...(officeId ? { officeId } : {}),
+      ...(loanOfficerId ? { loanOfficerId } : {}),
+    },
+    { statuses: reportableLoanStatuses },
+    startOfUtcDay(new Date()),
+  );
+
+  const rows = loans
+    .map<ActiveLoanRow>((loan) => ({
+      loanId: loan.id,
+      accountNumber: loan.accountNumber,
+      borrowerName: loan.borrowerName,
+      officeId: loan.officeId,
+      officeName: loan.officeName,
+      loanOfficerId: loan.loanOfficerId,
+      loanOfficerName: loan.loanOfficerName,
+      productName: loan.productName,
+      currencyCode: loan.denominationCurrency,
+      status: loan.status,
+      principalMinor: loan.principalMinor,
+      disbursedOn: loan.disbursedOn,
+      maturesOn: loan.maturesOn,
+      outstandingPrincipalMinor: loan.outstandingPrincipalMinor,
+      outstandingTotalMinor: loan.outstandingTotalMinor,
+      daysOverdue: loan.daysOverdue,
+      overdueSince: loan.overdueSince,
+      agingBucket: loan.agingBucket,
+    }))
+    .sort(
+      (left, right) =>
+        left.officeName.localeCompare(right.officeName) ||
+        left.borrowerName.localeCompare(right.borrowerName) ||
+        left.accountNumber.localeCompare(right.accountNumber),
+    );
+
+  const totalsMap = new Map<string, ActiveLoanTotal>();
+  for (const row of rows) {
+    const total =
+      totalsMap.get(row.currencyCode) ?? {
+        currencyCode: row.currencyCode,
+        loanCount: 0,
+        principalMinor: 0n,
+        outstandingPrincipalMinor: 0n,
+        outstandingTotalMinor: 0n,
+      };
+    total.loanCount += 1;
+    total.principalMinor += row.principalMinor;
+    total.outstandingPrincipalMinor += row.outstandingPrincipalMinor;
+    total.outstandingTotalMinor += row.outstandingTotalMinor;
+    totalsMap.set(row.currencyCode, total);
+  }
+
+  return {
+    officeId,
+    loanOfficerId,
+    rows,
+    totals: [...totalsMap.values()].sort((left, right) => left.currencyCode.localeCompare(right.currencyCode)),
+  };
+}
+
+export async function loadDisbursalReport(
+  prisma: PrismaClient,
+  scope: UserDataScope,
+  params: {
+    officeId?: string | null;
+    loanOfficerId?: string | null;
+    startDate?: string | null;
+    endDate?: string | null;
+  },
+): Promise<DisbursalReport> {
+  const officeId = normalizeString(params.officeId);
+  const loanOfficerId = normalizeString(params.loanOfficerId);
+  const range = normalizeDateRange(
+    parseOptionalDateInput(params.startDate),
+    parseOptionalDateInput(params.endDate),
+  );
+
+  const loans = await prisma.loan.findMany({
+    where: {
+      office: { organizationId: scope.organizationId },
+      ...officeWhere(scope),
+      ...(officeId ? { officeId } : {}),
+      ...(loanOfficerId ? { loanOfficerId } : {}),
+      disbursedOn: {
+        not: null,
+        ...(range.startDate ? { gte: range.startDate } : {}),
+        ...(range.endDate ? { lte: range.endDate } : {}),
+      },
+    },
+    select: {
+      id: true,
+      accountNumber: true,
+      officeId: true,
+      denominationCurrency: true,
+      status: true,
+      principalMinor: true,
+      disbursedOn: true,
+      office: { select: { name: true } },
+      loanOfficerId: true,
+      loanOfficer: { select: { name: true } },
+      product: { select: { name: true } },
+      client: { select: { firstName: true, middleName: true, lastName: true } },
+      group: { select: { name: true } },
+    },
+    orderBy: [{ disbursedOn: "desc" }, { createdAt: "desc" }],
+  });
+
+  const rows: DisbursalReportRow[] = [];
+  for (const loan of loans) {
+    if (!loan.disbursedOn) continue;
+    rows.push({
+      loanId: loan.id,
+      accountNumber: loan.accountNumber,
+      borrowerName: loan.client
+        ? formatHumanName(loan.client.firstName, loan.client.middleName, loan.client.lastName)
+        : loan.group?.name ?? "Unknown group",
+      officeId: loan.officeId,
+      officeName: loan.office.name,
+      loanOfficerId: loan.loanOfficerId,
+      loanOfficerName: loan.loanOfficer?.name ?? "Unassigned",
+      productName: loan.product.name,
+      currencyCode: loan.denominationCurrency,
+      status: loan.status,
+      principalMinor: loan.principalMinor,
+      disbursedOn: loan.disbursedOn,
+    });
+  }
+
+  const totalsMap = new Map<string, DisbursalReportTotal>();
+  for (const row of rows) {
+    const total =
+      totalsMap.get(row.currencyCode) ?? {
+        currencyCode: row.currencyCode,
+        loanCount: 0,
+        principalMinor: 0n,
+      };
+    total.loanCount += 1;
+    total.principalMinor += row.principalMinor;
+    totalsMap.set(row.currencyCode, total);
+  }
+
+  return {
+    officeId,
+    loanOfficerId,
+    startDate: range.startDate,
+    endDate: range.endDate,
+    rows,
+    totals: [...totalsMap.values()].sort((left, right) => left.currencyCode.localeCompare(right.currencyCode)),
+  };
+}
+
 export async function loadOutstandingBalancesReport(
   prisma: PrismaClient,
   scope: UserDataScope,
@@ -824,6 +1056,182 @@ export async function loadClientListingReport(
       joinedOn: client.activatedOn ?? client.submittedOn ?? client.createdAt,
     })),
   };
+}
+
+export function collectionByOfficerReportCsv(report: CollectionByOfficerReport) {
+  return rowsToCsv(
+    report.rows.map((row) => ({
+      officerName: row.officerName,
+      currencyCode: row.currencyCode,
+      loanCount: String(row.loanCount),
+      dueTodayMinor: row.dueTodayMinor.toString(),
+      overdueArrearsMinor: row.overdueArrearsMinor.toString(),
+      expectedTotalMinor: row.expectedTotalMinor.toString(),
+    })),
+    [
+      "officerName",
+      "currencyCode",
+      "loanCount",
+      "dueTodayMinor",
+      "overdueArrearsMinor",
+      "expectedTotalMinor",
+    ],
+  );
+}
+
+export function unassignedLoansReportCsv(report: UnassignedLoansReport) {
+  return rowsToCsv(
+    report.rows.map((row) => ({
+      borrowerName: row.borrowerName,
+      accountNumber: row.accountNumber,
+      borrowerType: row.borrowerType,
+      officeName: row.officeName,
+      status: formatLoanStatus(row.status),
+      principalMinor: row.principalMinor.toString(),
+      disbursedOn: row.disbursedOn ? isoDate(row.disbursedOn) : "",
+    })),
+    [
+      "borrowerName",
+      "accountNumber",
+      "borrowerType",
+      "officeName",
+      "status",
+      "principalMinor",
+      "disbursedOn",
+    ],
+  );
+}
+
+export function branchPortfolioReportCsv(report: BranchPortfolioReport) {
+  return rowsToCsv(
+    report.rows.map((row) => ({
+      officeName: row.officeName,
+      currencyCode: row.currencyCode,
+      activeLoanCount: String(row.activeLoanCount),
+      atRiskLoanCount: String(row.atRiskLoanCount),
+      parPercent: formatPercent(row.parPercent),
+      outstandingPrincipalMinor: row.outstandingPrincipalMinor.toString(),
+      disbursedThisMonthMinor: row.disbursedThisMonthMinor.toString(),
+    })),
+    [
+      "officeName",
+      "currencyCode",
+      "activeLoanCount",
+      "atRiskLoanCount",
+      "parPercent",
+      "outstandingPrincipalMinor",
+      "disbursedThisMonthMinor",
+    ],
+  );
+}
+
+export function disbursalCohortReportCsv(report: DisbursalCohortReport) {
+  return rowsToCsv(
+    report.rows.map((row) => ({
+      period: row.period,
+      currencyCode: row.currencyCode,
+      loanCount: String(row.loanCount),
+      principalMinor: row.principalMinor.toString(),
+    })),
+    ["period", "currencyCode", "loanCount", "principalMinor"],
+  );
+}
+
+export function activeLoansReportCsv(report: ActiveLoansReport) {
+  return rowsToCsv(
+    report.rows.map((row) => ({
+      borrowerName: row.borrowerName,
+      accountNumber: row.accountNumber,
+      officeName: row.officeName,
+      loanOfficerName: row.loanOfficerName,
+      productName: row.productName,
+      status: formatLoanStatus(row.status),
+      currencyCode: row.currencyCode,
+      principalMinor: row.principalMinor.toString(),
+      outstandingPrincipalMinor: row.outstandingPrincipalMinor.toString(),
+      outstandingTotalMinor: row.outstandingTotalMinor.toString(),
+      daysOverdue: String(row.daysOverdue),
+      overdueSince: row.overdueSince ? isoDate(row.overdueSince) : "",
+      agingBucket: row.agingBucket,
+      disbursedOn: row.disbursedOn ? isoDate(row.disbursedOn) : "",
+      maturesOn: row.maturesOn ? isoDate(row.maturesOn) : "",
+    })),
+    [
+      "borrowerName",
+      "accountNumber",
+      "officeName",
+      "loanOfficerName",
+      "productName",
+      "status",
+      "currencyCode",
+      "principalMinor",
+      "outstandingPrincipalMinor",
+      "outstandingTotalMinor",
+      "daysOverdue",
+      "overdueSince",
+      "agingBucket",
+      "disbursedOn",
+      "maturesOn",
+    ],
+  );
+}
+
+export function disbursalReportCsv(report: DisbursalReport) {
+  return rowsToCsv(
+    report.rows.map((row) => ({
+      disbursedOn: isoDate(row.disbursedOn),
+      borrowerName: row.borrowerName,
+      accountNumber: row.accountNumber,
+      officeName: row.officeName,
+      loanOfficerName: row.loanOfficerName,
+      productName: row.productName,
+      status: formatLoanStatus(row.status),
+      currencyCode: row.currencyCode,
+      principalMinor: row.principalMinor.toString(),
+    })),
+    [
+      "disbursedOn",
+      "borrowerName",
+      "accountNumber",
+      "officeName",
+      "loanOfficerName",
+      "productName",
+      "status",
+      "currencyCode",
+      "principalMinor",
+    ],
+  );
+}
+
+export function outstandingBalancesReportCsv(report: OutstandingBalancesReport) {
+  return rowsToCsv(
+    report.rows.map((row) => ({
+      borrowerName: row.borrowerName,
+      accountNumber: row.accountNumber,
+      officeName: row.officeName,
+      loanOfficerName: row.loanOfficerName,
+      status: formatLoanStatus(row.status),
+      principalOutstandingMinor: row.principalOutstandingMinor.toString(),
+      interestOutstandingMinor: row.interestOutstandingMinor.toString(),
+      feesOutstandingMinor: row.feesOutstandingMinor.toString(),
+      penaltiesOutstandingMinor: row.penaltiesOutstandingMinor.toString(),
+      totalOutstandingMinor: row.totalOutstandingMinor.toString(),
+      disbursedOn: row.disbursedOn ? isoDate(row.disbursedOn) : "",
+    })),
+    [
+      "borrowerName",
+      "accountNumber",
+      "officeName",
+      "loanOfficerName",
+      "status",
+      "principalOutstandingMinor",
+      "interestOutstandingMinor",
+      "feesOutstandingMinor",
+      "penaltiesOutstandingMinor",
+      "totalOutstandingMinor",
+      "disbursedOn",
+    ],
+  );
 }
 
 export function clientListingCsv(report: ClientListingReport) {

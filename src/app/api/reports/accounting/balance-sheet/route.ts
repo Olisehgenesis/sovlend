@@ -7,6 +7,7 @@ import { AuthorizationService } from "@/modules/identity/application/authorizati
 import { getUserDataScope } from "@/modules/identity/application/data-scope";
 import { permissions } from "@/modules/identity/domain/permissions";
 import {
+  balanceSheetReportCsv,
   getBalanceSheetReport,
   listAccountingReportOffices,
   parseDateInput,
@@ -41,6 +42,16 @@ export async function GET(request: Request) {
     endDate: parseDateInput(url.searchParams.get("endDate"), todayDate()),
     officeId,
   });
+
+  if (url.searchParams.get("format")?.toLowerCase() === "csv") {
+    return new NextResponse(balanceSheetReportCsv(report), {
+      headers: {
+        "Content-Type": "text/csv; charset=utf-8",
+        "Content-Disposition": `attachment; filename="sovlend-balance-sheet-${new Date().toISOString().slice(0, 10)}.csv"`,
+        "Cache-Control": "no-store",
+      },
+    });
+  }
 
   return NextResponse.json(serializeBalanceSheetReport(report), { headers: { "Cache-Control": "no-store" } });
 }

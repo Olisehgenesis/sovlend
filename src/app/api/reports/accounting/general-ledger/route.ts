@@ -8,6 +8,7 @@ import { getUserDataScope } from "@/modules/identity/application/data-scope";
 import { permissions } from "@/modules/identity/domain/permissions";
 import {
   currentMonthDateRange,
+  generalLedgerReportCsv,
   getGeneralLedgerReport,
   listAccountingReportAccounts,
   listAccountingReportOffices,
@@ -60,6 +61,16 @@ export async function GET(request: Request) {
     officeId,
     accountId: validAccountId ?? accounts[0]?.id ?? null,
   });
+
+  if (url.searchParams.get("format")?.toLowerCase() === "csv") {
+    return new NextResponse(generalLedgerReportCsv(report), {
+      headers: {
+        "Content-Type": "text/csv; charset=utf-8",
+        "Content-Disposition": `attachment; filename="sovlend-general-ledger-${new Date().toISOString().slice(0, 10)}.csv"`,
+        "Cache-Control": "no-store",
+      },
+    });
+  }
 
   return NextResponse.json(serializeGeneralLedgerReport(report), { headers: { "Cache-Control": "no-store" } });
 }

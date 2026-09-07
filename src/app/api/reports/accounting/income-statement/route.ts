@@ -9,6 +9,7 @@ import { permissions } from "@/modules/identity/domain/permissions";
 import {
   currentMonthDateRange,
   getIncomeStatementReport,
+  incomeStatementReportCsv,
   listAccountingReportOffices,
   normalizeDateRange,
   parseDateInput,
@@ -44,6 +45,16 @@ export async function GET(request: Request) {
     parseDateInput(url.searchParams.get("endDate"), defaults.endDate),
   );
   const report = await getIncomeStatementReport(prisma, scope, { startDate, endDate, officeId });
+
+  if (url.searchParams.get("format")?.toLowerCase() === "csv") {
+    return new NextResponse(incomeStatementReportCsv(report), {
+      headers: {
+        "Content-Type": "text/csv; charset=utf-8",
+        "Content-Disposition": `attachment; filename="sovlend-income-statement-${new Date().toISOString().slice(0, 10)}.csv"`,
+        "Cache-Control": "no-store",
+      },
+    });
+  }
 
   return NextResponse.json(serializeIncomeStatementReport(report), { headers: { "Cache-Control": "no-store" } });
 }

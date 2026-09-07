@@ -16,6 +16,7 @@ import {
   LockKeyhole,
   PiggyBank,
   ShieldCheck,
+  Table2,
   UserPlus,
   Users,
   UsersRound,
@@ -98,11 +99,13 @@ export function AppSidebar({
   canManageProducts = false,
   workspaceName,
   officeName,
+  reportSections = [],
 }: {
   admin?: boolean;
   canManageProducts?: boolean;
   workspaceName?: string | null;
   officeName?: string | null;
+  reportSections?: { id: string; title: string; reports: { href: string; title: string }[] }[];
 }) {
   const pathname = usePathname();
   const activeSection = sectionForPath(pathname);
@@ -159,7 +162,19 @@ export function AppSidebar({
     {
       id: "insights",
       label: "Insights",
-      items: [{ href: "/reports", icon: BarChart3, label: "Reports" }],
+      items: [
+        {
+          href: "/reports",
+          icon: BarChart3,
+          label: "Reports",
+          children: [
+            { exact: true, href: "/reports/all", icon: Table2, label: "All reports" },
+            ...reportSections.flatMap((section) =>
+              section.reports.map((report) => ({ exact: true, href: report.href, icon: BarChart3, label: report.title })),
+            ),
+          ],
+        },
+      ],
     },
     {
       id: "administration",

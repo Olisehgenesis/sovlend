@@ -8,6 +8,7 @@ import { getUserDataScope } from "@/modules/identity/application/data-scope";
 import { permissions } from "@/modules/identity/domain/permissions";
 import {
   loadNonPerformingLoansReport,
+  nonPerformingLoansReportCsv,
   parseBoundedInteger,
   parseRiskFilters,
   serializeRiskReport,
@@ -36,6 +37,16 @@ export async function GET(request: Request) {
     }),
     parseBoundedInteger(url.searchParams.get("thresholdDays") ?? undefined, 90, { min: 1, max: 3650 }),
   );
+
+  if (url.searchParams.get("format")?.toLowerCase() === "csv") {
+    return new NextResponse(nonPerformingLoansReportCsv(report), {
+      headers: {
+        "Content-Type": "text/csv; charset=utf-8",
+        "Content-Disposition": `attachment; filename="sovlend-non-performing-loans-${new Date().toISOString().slice(0, 10)}.csv"`,
+        "Cache-Control": "no-store",
+      },
+    });
+  }
 
   return NextResponse.json(serializeRiskReport(report));
 }

@@ -6,7 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { AuthorizationService } from "@/modules/identity/application/authorization-service";
 import { getUserDataScope } from "@/modules/identity/application/data-scope";
 import { permissions } from "@/modules/identity/domain/permissions";
-import { loadAgingReport, parseRiskFilters, serializeRiskReport } from "@/modules/reports/domain/risk-report";
+import { agingReportCsv, loadAgingReport, parseRiskFilters, serializeRiskReport } from "@/modules/reports/domain/risk-report";
 
 export async function GET(request: Request) {
   const session = await auth.api.getSession({ headers: await headers() });
@@ -30,6 +30,16 @@ export async function GET(request: Request) {
       loanOfficerId: url.searchParams.get("loanOfficerId") ?? undefined,
     }),
   );
+
+  if (url.searchParams.get("format")?.toLowerCase() === "csv") {
+    return new NextResponse(agingReportCsv(report), {
+      headers: {
+        "Content-Type": "text/csv; charset=utf-8",
+        "Content-Disposition": `attachment; filename="sovlend-aging-${new Date().toISOString().slice(0, 10)}.csv"`,
+        "Cache-Control": "no-store",
+      },
+    });
+  }
 
   return NextResponse.json(serializeRiskReport(report));
 }

@@ -1,15 +1,17 @@
-import { RefreshCcw } from "lucide-react";
+import { RefreshCcw, Download } from "lucide-react";
 import { headers } from "next/headers";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { Breadcrumbs } from "@/components/breadcrumbs";
+import { ReportPicker } from "@/components/report-picker";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { AuthorizationService } from "@/modules/identity/application/authorization-service";
 import { getUserDataScope } from "@/modules/identity/application/data-scope";
 import { permissions } from "@/modules/identity/domain/permissions";
 import { formatMinor } from "@/modules/money/domain/format-minor";
+import { loadReportPickerOptions } from "@/modules/reports/report-catalog";
 import { loadRecoveriesReport, loadRiskFilterOptions, parseRiskFilters } from "@/modules/reports/domain/risk-report";
 
 export default async function RecoveriesReportPage({
@@ -31,9 +33,10 @@ export default async function RecoveriesReportPage({
   if (!allowed) redirect("/reports");
 
   const filters = parseRiskFilters(await searchParams);
-  const [report, options] = await Promise.all([
+  const [report, options, pickerOptions] = await Promise.all([
     loadRecoveriesReport(prisma, scope, filters),
     loadRiskFilterOptions(prisma, scope),
+    loadReportPickerOptions(prisma, session.user.id, scope.organizationId),
   ]);
 
   return (
@@ -53,7 +56,11 @@ export default async function RecoveriesReportPage({
             {report.totals.writtenOffLoanCount.toLocaleString()} written-off loans · {report.totals.loansWithRecoveriesCount.toLocaleString()} with recoveries · {formatMinor(report.totals.totalRecoveredMinor, "UGX")} recovered
           </p>
         </div>
+        <ReportPicker current="/reports/risk/recoveries" options={pickerOptions} />
         <div className="header-actions">
+          <a className="secondary-action" href={`/api/reports/risk/recoveries${querySuffix(filters)}&format=csv`}>
+            <Download size={16} /> Export CSV
+          </a>
           <Link className="secondary-action" href={`/api/reports/risk/recoveries${querySuffix(filters)}`}>
             API JSON
           </Link>

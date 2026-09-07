@@ -1,15 +1,17 @@
-import { Search } from "lucide-react";
+import { Download, Search } from "lucide-react";
 import { headers } from "next/headers";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { Breadcrumbs } from "@/components/breadcrumbs";
+import { ReportPicker } from "@/components/report-picker";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { AuthorizationService } from "@/modules/identity/application/authorization-service";
 import { getUserDataScope } from "@/modules/identity/application/data-scope";
 import { permissions } from "@/modules/identity/domain/permissions";
 import { formatDisplayDateTime, getAuditTrailFilters, loadAuditTrailReport } from "@/modules/reports/domain/insights-report";
+import { loadReportPickerOptions } from "@/modules/reports/report-catalog";
 
 export default async function AuditTrailReportPage({
   searchParams,
@@ -29,7 +31,12 @@ export default async function AuditTrailReportPage({
   if (!allowed) redirect("/reports");
 
   const filters = getAuditTrailFilters(await searchParams);
-  const report = await loadAuditTrailReport(prisma, scope, filters);
+  const [report, pickerOptions] = await Promise.all([
+    loadAuditTrailReport(prisma, scope, filters),
+    loadReportPickerOptions(prisma, session.user.id, scope.organizationId),
+  ]);
+  const query = reportQuerySuffix(report.filters);
+  const exportHref = `/api/reports/insights/audit-trail${query}${query ? "&" : "?"}format=csv`;
 
   return (
     <main className="directory-page">
@@ -40,7 +47,11 @@ export default async function AuditTrailReportPage({
           <h1>Audit trail report</h1>
           <p>{report.totalRows.toLocaleString()} events in scope · page {report.filters.page} of {report.totalPages}</p>
         </div>
+        <ReportPicker current="/reports/insights/audit-trail" options={pickerOptions} />
         <div className="header-actions">
+          <a className="secondary-action" href={exportHref}>
+            <Download size={16} /> Export CSV
+          </a>
           <Link className="secondary-action" href="/reports">All reports</Link>
           <Link className="secondary-action" href="/loans">Loans</Link>
         </div>
@@ -177,4 +188,25 @@ function pageHref(
   params.set("pageSize", String(report.filters.pageSize));
   params.set("page", String(page));
   return `/reports/insights/audit-trail?${params.toString()}`;
+}
+
+function reportQuerySuffix(filters: {
+  action: string;
+  entityType: string;
+  actorId: string;
+  startDate: string;
+  endDate: string;
+  page: number;
+  pageSize: number;
+}) {
+  const params = new URLSearchParams();
+  if (filters.entityType) params.set("entityType", filters.entityType);
+  if (filters.action) params.set("action", filters.action);
+  if (filters.actorId) params.set("actorId", filters.actorId);
+  params.set("startDate", filters.startDate);
+  params.set("endDate", filters.endDate);
+  params.set("pageSize", String(filters.pageSize));
+  params.set("page", String(filters.page));
+  const query = params.toString();
+  return query ? `?${query}` : "";
 }

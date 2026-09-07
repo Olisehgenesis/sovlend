@@ -1,15 +1,17 @@
-import { CircleDollarSign } from "lucide-react";
+import { CircleDollarSign, Download } from "lucide-react";
 import { headers } from "next/headers";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { Breadcrumbs } from "@/components/breadcrumbs";
+import { ReportPicker } from "@/components/report-picker";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { AuthorizationService } from "@/modules/identity/application/authorization-service";
 import { getUserDataScope } from "@/modules/identity/application/data-scope";
 import { permissions } from "@/modules/identity/domain/permissions";
 import { formatMinor } from "@/modules/money/domain/format-minor";
+import { loadReportPickerOptions } from "@/modules/reports/report-catalog";
 import {
   agingBucketTone,
   formatBps,
@@ -38,11 +40,13 @@ export default async function AgingReportPage({
   if (!allowed) redirect("/reports");
 
   const filters = parseRiskFilters(await searchParams);
-  const [report, options] = await Promise.all([
+  const [report, options, pickerOptions] = await Promise.all([
     loadAgingReport(prisma, scope, filters),
     loadRiskFilterOptions(prisma, scope),
+    loadReportPickerOptions(prisma, session.user.id, scope.organizationId),
   ]);
   const generatedAt = formatDateTime(report.generatedAt);
+  const exportHref = `/api/reports/risk/aging${querySuffix(filters)}${querySuffix(filters) ? "&" : "?"}format=csv`;
 
   return (
     <main className="directory-page">
@@ -61,7 +65,11 @@ export default async function AgingReportPage({
             {report.totals.loanCount.toLocaleString()} open loans · {formatMinor(report.totals.totalOutstandingPrincipalMinor, "UGX")} outstanding principal · snapshot {generatedAt}
           </p>
         </div>
+        <ReportPicker current="/reports/risk/aging" options={pickerOptions} />
         <div className="header-actions">
+          <a className="secondary-action" href={exportHref}>
+            <Download size={16} /> Export CSV
+          </a>
           <Link className="secondary-action" href={`/api/reports/risk/aging${querySuffix(filters)}`}>
             API JSON
           </Link>

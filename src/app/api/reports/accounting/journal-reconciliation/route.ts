@@ -9,6 +9,7 @@ import { permissions } from "@/modules/identity/domain/permissions";
 import {
   currentMonthDateRange,
   getJournalReconciliationReport,
+  journalReconciliationReportCsv,
   listAccountingReportAccounts,
   listAccountingReportOffices,
   normalizeDateRange,
@@ -55,6 +56,16 @@ export async function GET(request: Request) {
     parseDateInput(url.searchParams.get("endDate"), defaults.endDate),
   );
   const report = await getJournalReconciliationReport(prisma, scope, { startDate, endDate, officeId, accountId });
+
+  if (url.searchParams.get("format")?.toLowerCase() === "csv") {
+    return new NextResponse(journalReconciliationReportCsv(report), {
+      headers: {
+        "Content-Type": "text/csv; charset=utf-8",
+        "Content-Disposition": `attachment; filename="sovlend-journal-reconciliation-${new Date().toISOString().slice(0, 10)}.csv"`,
+        "Cache-Control": "no-store",
+      },
+    });
+  }
 
   return NextResponse.json(serializeJournalReconciliationReport(report), { headers: { "Cache-Control": "no-store" } });
 }

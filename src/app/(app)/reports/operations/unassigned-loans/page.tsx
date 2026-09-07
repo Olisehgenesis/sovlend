@@ -1,13 +1,15 @@
-import { CircleDollarSign } from "lucide-react";
+import { CircleDollarSign, Download } from "lucide-react";
 import { headers } from "next/headers";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { Breadcrumbs } from "@/components/breadcrumbs";
+import { ReportPicker } from "@/components/report-picker";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { permissions } from "@/modules/identity/domain/permissions";
 import { formatMinor } from "@/modules/money/domain/format-minor";
+import { loadReportPickerOptions } from "@/modules/reports/report-catalog";
 import {
   formatLoanStatus,
   formatReportDate,
@@ -28,7 +30,12 @@ export default async function UnassignedLoansPage() {
   if (!context) redirect("/");
   if (!context.allowed) redirect("/reports");
 
-  const report = await loadUnassignedLoansReport(prisma, context.scope);
+  const [report, pickerOptions] = await Promise.all([
+    loadUnassignedLoansReport(prisma, context.scope),
+    loadReportPickerOptions(prisma, session.user.id, context.scope.organizationId),
+  ]);
+  const apiHref = "/api/reports/operations/unassigned-loans";
+  const exportHref = `${apiHref}?format=csv`;
 
   return (
     <main className="directory-page">
@@ -45,7 +52,14 @@ export default async function UnassignedLoansPage() {
           <h1>Active loans with no assigned officer</h1>
           <p>Data-hygiene queue for operational accounts that still need a staff owner.</p>
         </div>
+        <ReportPicker current="/reports/operations/unassigned-loans" options={pickerOptions} />
         <div className="header-actions">
+          <a className="secondary-action" href={exportHref}>
+            <Download size={16} /> Export CSV
+          </a>
+          <Link className="secondary-action" href={apiHref}>
+            API JSON
+          </Link>
           <Link className="secondary-action" href="/reports">
             Reports
           </Link>

@@ -14,6 +14,7 @@ import {
   parseDateInput,
   resolveOfficeFilter,
   serializeTrialBalanceReport,
+  trialBalanceReportCsv,
 } from "@/modules/reports/domain/accounting-report";
 
 export async function GET(request: Request) {
@@ -44,6 +45,16 @@ export async function GET(request: Request) {
     parseDateInput(url.searchParams.get("endDate"), defaults.endDate),
   );
   const report = await getTrialBalanceReport(prisma, scope, { startDate, endDate, officeId });
+
+  if (url.searchParams.get("format")?.toLowerCase() === "csv") {
+    return new NextResponse(trialBalanceReportCsv(report), {
+      headers: {
+        "Content-Type": "text/csv; charset=utf-8",
+        "Content-Disposition": `attachment; filename="sovlend-trial-balance-${new Date().toISOString().slice(0, 10)}.csv"`,
+        "Cache-Control": "no-store",
+      },
+    });
+  }
 
   return NextResponse.json(serializeTrialBalanceReport(report), { headers: { "Cache-Control": "no-store" } });
 }

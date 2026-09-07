@@ -1,6 +1,7 @@
 import type { AccountType, EntryDirection, Prisma, PrismaClient } from "@prisma/client";
 
 import { officeWhere, type UserDataScope } from "@/modules/identity/application/data-scope";
+import { rowsToCsv } from "@/modules/lending/domain/loan-export";
 
 export const reportDateFormatter = new Intl.DateTimeFormat("en-UG", { dateStyle: "medium" });
 
@@ -639,6 +640,25 @@ export async function getJournalReconciliationReport(
   };
 }
 
+export function balanceSheetReportCsv(report: BalanceSheetReport) {
+  return rowsToCsv(
+    [
+      ...report.sections.flatMap((section) => [
+        { account: section.label, balanceMinor: "" },
+        ...section.rows.map((row) => ({
+          account: `${row.code} · ${row.name}`,
+          balanceMinor: row.balanceMinor.toString(),
+        })),
+        { account: `Total ${section.label}`, balanceMinor: section.totalMinor.toString() },
+      ]),
+      { account: "Assets", balanceMinor: report.assetsTotalMinor.toString() },
+      { account: "Liabilities + Equity", balanceMinor: report.liabilitiesAndEquityTotalMinor.toString() },
+      { account: "Difference", balanceMinor: report.differenceMinor.toString() },
+    ],
+    ["account", "balanceMinor"],
+  );
+}
+
 export function serializeBalanceSheetReport(report: BalanceSheetReport) {
   return {
     asOfDate: dateToString(report.asOfDate),
@@ -668,6 +688,27 @@ export function serializeBalanceSheetReport(report: BalanceSheetReport) {
   };
 }
 
+export function incomeStatementReportCsv(report: IncomeStatementReport) {
+  return rowsToCsv(
+    [
+      { account: report.revenue.label, amountMinor: "" },
+      ...report.revenue.rows.map((row) => ({
+        account: `${row.code} · ${row.name}`,
+        amountMinor: row.balanceMinor.toString(),
+      })),
+      { account: `Total ${report.revenue.label}`, amountMinor: report.revenue.totalMinor.toString() },
+      { account: report.expenses.label, amountMinor: "" },
+      ...report.expenses.rows.map((row) => ({
+        account: `${row.code} · ${row.name}`,
+        amountMinor: row.balanceMinor.toString(),
+      })),
+      { account: `Total ${report.expenses.label}`, amountMinor: report.expenses.totalMinor.toString() },
+      { account: "Net income", amountMinor: report.netIncomeMinor.toString() },
+    ],
+    ["account", "amountMinor"],
+  );
+}
+
 export function serializeIncomeStatementReport(report: IncomeStatementReport) {
   return {
     startDate: dateToString(report.startDate),
@@ -680,6 +721,21 @@ export function serializeIncomeStatementReport(report: IncomeStatementReport) {
     expenses: serializeSection(report.expenses),
     netIncomeMinor: minorToString(report.netIncomeMinor),
   };
+}
+
+export function trialBalanceReportCsv(report: TrialBalanceReport) {
+  return rowsToCsv(
+    report.rows.map((row) => ({
+      accountCode: row.code,
+      accountName: row.name,
+      accountType: row.type,
+      debitTotalMinor: row.debitTotalMinor.toString(),
+      creditTotalMinor: row.creditTotalMinor.toString(),
+      balanceMinor: row.balanceMinor.toString(),
+      balanceSide: row.balanceSide,
+    })),
+    ["accountCode", "accountName", "accountType", "debitTotalMinor", "creditTotalMinor", "balanceMinor", "balanceSide"],
+  );
 }
 
 export function serializeTrialBalanceReport(report: TrialBalanceReport) {
@@ -705,6 +761,35 @@ export function serializeTrialBalanceReport(report: TrialBalanceReport) {
       balanceSide: row.balanceSide,
     })),
   };
+}
+
+export function generalLedgerReportCsv(report: GeneralLedgerReport) {
+  return rowsToCsv(
+    report.entries.map((entry) => ({
+      businessDate: dateToString(entry.businessDate),
+      referenceType: entry.referenceType,
+      referenceId: entry.referenceId ?? "",
+      journalId: entry.journalId,
+      officeName: entry.officeName,
+      memo: entry.memo ?? entry.narration,
+      debitMinor: entry.direction === "DEBIT" ? entry.amountMinor.toString() : "",
+      creditMinor: entry.direction === "CREDIT" ? entry.amountMinor.toString() : "",
+      runningBalanceMinor: entry.runningBalanceMinor.toString(),
+      runningBalanceSide: entry.runningBalanceSide,
+    })),
+    [
+      "businessDate",
+      "referenceType",
+      "referenceId",
+      "journalId",
+      "officeName",
+      "memo",
+      "debitMinor",
+      "creditMinor",
+      "runningBalanceMinor",
+      "runningBalanceSide",
+    ],
+  );
 }
 
 export function serializeGeneralLedgerReport(report: GeneralLedgerReport) {
@@ -743,6 +828,41 @@ export function serializeGeneralLedgerReport(report: GeneralLedgerReport) {
       runningBalanceSide: entry.runningBalanceSide,
     })),
   };
+}
+
+export function journalReconciliationReportCsv(report: JournalReconciliationReport) {
+  return rowsToCsv(
+    report.journals.flatMap((journal) =>
+      journal.lines.map((line) => ({
+        businessDate: dateToString(journal.businessDate),
+        officeName: journal.officeName,
+        referenceType: journal.referenceType,
+        referenceId: journal.referenceId ?? "",
+        journalId: journal.id,
+        status: journal.status,
+        accountCode: line.code,
+        accountName: line.name,
+        accountType: line.type,
+        debitMinor: line.direction === "DEBIT" ? line.amountMinor.toString() : "",
+        creditMinor: line.direction === "CREDIT" ? line.amountMinor.toString() : "",
+        memo: line.memo ?? "",
+      })),
+    ),
+    [
+      "businessDate",
+      "officeName",
+      "referenceType",
+      "referenceId",
+      "journalId",
+      "status",
+      "accountCode",
+      "accountName",
+      "accountType",
+      "debitMinor",
+      "creditMinor",
+      "memo",
+    ],
+  );
 }
 
 export function serializeJournalReconciliationReport(report: JournalReconciliationReport) {

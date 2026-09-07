@@ -34,15 +34,18 @@ const descriptions: Record<string, string> = {
   [permissions.reportJournalReconciliation]: "View the Journal Entries Reconciliation report",
 
   [permissions.reportAging]: "View the portfolio-at-risk aging report",
+  [permissions.reportArrears]: "View the Arrears report",
   [permissions.reportNonPerformingLoans]: "View the Non-Performing Loans report",
   [permissions.reportProvisioning]: "View the loan-loss Provisioning report",
   [permissions.reportRecoveries]: "View the Recoveries on Written-Off Loans report",
   [permissions.reportParRollRate]: "View the PAR roll-rate / vintage report",
 
+  [permissions.reportActiveLoans]: "View the Active Loans register report",
   [permissions.reportCollectionByOfficer]: "View expected daily collection per loan officer",
   [permissions.reportUnassignedLoans]: "View active loans with no assigned loan officer",
   [permissions.reportBranchPortfolio]: "View branch/office portfolio breakdown",
   [permissions.reportDisbursalCohort]: "View loans grouped by disbursal period",
+  [permissions.reportDisbursalLedger]: "View the Disbursal Report ledger",
   [permissions.reportOutstandingBalances]: "View outstanding loan balances (OLB) report",
   [permissions.reportClientListing]: "View the exportable client listing report",
 

@@ -7,16 +7,20 @@ import { useEffect, useRef, useState } from "react";
 
 import { AccountMenu } from "./account-menu";
 
+export type ReportNavSection = { id: string; title: string; reports: { href: string; title: string }[] };
+
 export function AppHeader({
   admin = false,
   canManageProducts = false,
   workspaceName,
   officeName,
+  reportSections = [],
 }: {
   admin?: boolean;
   canManageProducts?: boolean;
   workspaceName?: string | null;
   officeName?: string | null;
+  reportSections?: ReportNavSection[];
 }) {
   const pathname = usePathname();
   const navRef = useRef<HTMLElement>(null);
@@ -154,9 +158,36 @@ export function AppHeader({
             </div>
           </details>
         ) : null}
-        <Link className="header-nav-link" href="/reports">
-          Reports
-        </Link>
+        <details open={openMenu === "reports"}>
+          <summary
+            onClick={(event) => {
+              event.preventDefault();
+              toggleMenu("reports");
+            }}
+          >
+            Reports
+            <ChevronDown size={13} />
+          </summary>
+          <div className="header-dropdown header-dropdown-reports">
+            <Link href="/reports" onClick={closeMenus}>
+              Reports home
+            </Link>
+            <Link href="/reports/all" onClick={closeMenus}>
+              All reports
+            </Link>
+            {reportSections.map((section) => (
+              <div key={section.id}>
+                <hr className="header-dropdown-divider" />
+                <p className="header-dropdown-group">{section.title}</p>
+                {section.reports.map((report) => (
+                  <Link href={report.href} key={report.href} onClick={closeMenus}>
+                    {report.title}
+                  </Link>
+                ))}
+              </div>
+            ))}
+          </div>
+        </details>
         {admin ? (
           <details open={openMenu === "admin"}>
             <summary

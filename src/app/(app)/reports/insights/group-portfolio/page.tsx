@@ -1,9 +1,10 @@
-import { Network } from "lucide-react";
+import { Download, Network } from "lucide-react";
 import { headers } from "next/headers";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { Breadcrumbs } from "@/components/breadcrumbs";
+import { ReportPicker } from "@/components/report-picker";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { AuthorizationService } from "@/modules/identity/application/authorization-service";
@@ -11,6 +12,7 @@ import { getUserDataScope } from "@/modules/identity/application/data-scope";
 import { permissions } from "@/modules/identity/domain/permissions";
 import { formatMinor } from "@/modules/money/domain/format-minor";
 import { formatDisplayDateTime, loadGroupPortfolioReport } from "@/modules/reports/domain/insights-report";
+import { loadReportPickerOptions } from "@/modules/reports/report-catalog";
 
 export default async function GroupPortfolioReportPage() {
   const session = await auth.api.getSession({ headers: await headers() });
@@ -25,7 +27,11 @@ export default async function GroupPortfolioReportPage() {
   );
   if (!allowed) redirect("/reports");
 
-  const report = await loadGroupPortfolioReport(prisma, scope);
+  const [report, pickerOptions] = await Promise.all([
+    loadGroupPortfolioReport(prisma, scope),
+    loadReportPickerOptions(prisma, session.user.id, scope.organizationId),
+  ]);
+  const exportHref = "/api/reports/insights/group-portfolio?format=csv";
 
   return (
     <main className="directory-page">
@@ -38,7 +44,11 @@ export default async function GroupPortfolioReportPage() {
             {report.totals.groupCount.toLocaleString()} groups · {report.totals.memberCount.toLocaleString()} members · {formatMinor(report.totals.savingsBalanceMinor, report.totals.currencyCode)} in group-owned savings
           </p>
         </div>
+        <ReportPicker current="/reports/insights/group-portfolio" options={pickerOptions} />
         <div className="header-actions">
+          <a className="secondary-action" href={exportHref}>
+            <Download size={16} /> Export CSV
+          </a>
           <Link className="secondary-action" href="/reports">All reports</Link>
           <Link className="secondary-action" href="/groups">Groups</Link>
         </div>

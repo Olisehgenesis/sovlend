@@ -1,15 +1,17 @@
-import { FileWarning } from "lucide-react";
+import { Download, FileWarning } from "lucide-react";
 import { headers } from "next/headers";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { Breadcrumbs } from "@/components/breadcrumbs";
+import { ReportPicker } from "@/components/report-picker";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { AuthorizationService } from "@/modules/identity/application/authorization-service";
 import { getUserDataScope } from "@/modules/identity/application/data-scope";
 import { permissions } from "@/modules/identity/domain/permissions";
 import { formatDisplayDateTime, loadDocumentCompletenessReport } from "@/modules/reports/domain/insights-report";
+import { loadReportPickerOptions } from "@/modules/reports/report-catalog";
 
 export default async function DocumentCompletenessReportPage() {
   const session = await auth.api.getSession({ headers: await headers() });
@@ -24,8 +26,12 @@ export default async function DocumentCompletenessReportPage() {
   );
   if (!allowed) redirect("/reports");
 
-  const report = await loadDocumentCompletenessReport(prisma, scope);
+  const [report, pickerOptions] = await Promise.all([
+    loadDocumentCompletenessReport(prisma, scope),
+    loadReportPickerOptions(prisma, session.user.id, scope.organizationId),
+  ]);
   const highestPriorityRows = report.rows.filter((row) => row.missingAllDocuments).slice(0, 25);
+  const exportHref = "/api/reports/insights/document-completeness?format=csv";
 
   return (
     <main className="directory-page">
@@ -36,7 +42,11 @@ export default async function DocumentCompletenessReportPage() {
           <h1>KYC / document completeness report</h1>
           <p>{report.summary.loanCount.toLocaleString()} active or in-arrears loans · {report.summary.missingAllDocumentsCount.toLocaleString()} with no documents at all</p>
         </div>
+        <ReportPicker current="/reports/insights/document-completeness" options={pickerOptions} />
         <div className="header-actions">
+          <a className="secondary-action" href={exportHref}>
+            <Download size={16} /> Export CSV
+          </a>
           <Link className="secondary-action" href="/reports">All reports</Link>
           <Link className="secondary-action" href="/loans?status=IN_ARREARS">Loans in arrears</Link>
         </div>

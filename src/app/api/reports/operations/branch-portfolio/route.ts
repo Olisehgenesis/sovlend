@@ -5,6 +5,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { permissions } from "@/modules/identity/domain/permissions";
 import {
+  branchPortfolioReportCsv,
   isoDate,
   loadBranchPortfolioReport,
   loadOperationsReportContext,
@@ -32,6 +33,16 @@ export async function GET(request: Request) {
     parType: searchParams.get("parType"),
     date: searchParams.get("date"),
   });
+
+  if (searchParams.get("format")?.toLowerCase() === "csv") {
+    return new NextResponse(branchPortfolioReportCsv(report), {
+      headers: {
+        "Content-Type": "text/csv; charset=utf-8",
+        "Content-Disposition": `attachment; filename="sovlend-branch-portfolio-${new Date().toISOString().slice(0, 10)}.csv"`,
+        "Cache-Control": "no-store",
+      },
+    });
+  }
 
   return NextResponse.json({
     asOfDate: isoDate(report.asOfDate),
