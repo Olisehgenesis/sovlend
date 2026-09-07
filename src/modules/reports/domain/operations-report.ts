@@ -204,6 +204,47 @@ export type DisbursalReport = {
   totals: DisbursalReportTotal[];
 };
 
+export type CollectionsReportRow = {
+  transactionId: string;
+  loanId: string;
+  accountNumber: string;
+  borrowerName: string;
+  borrowerType: "Client" | "Group";
+  officeId: string;
+  officeName: string;
+  groupName: string | null;
+  productName: string;
+  currencyCode: string;
+  principalMinor: bigint;
+  interestMinor: bigint;
+  feesMinor: bigint;
+  penaltiesMinor: bigint;
+  othersMinor: bigint;
+  totalMinor: bigint;
+  receiptNumber: string | null;
+  businessDate: Date;
+  createdAt: Date;
+};
+
+export type CollectionsReportTotal = {
+  currencyCode: string;
+  transactionCount: number;
+  principalMinor: bigint;
+  interestMinor: bigint;
+  feesMinor: bigint;
+  penaltiesMinor: bigint;
+  othersMinor: bigint;
+  totalMinor: bigint;
+};
+
+export type CollectionsReport = {
+  officeId: string | null;
+  startDate: Date | null;
+  endDate: Date | null;
+  rows: CollectionsReportRow[];
+  totals: CollectionsReportTotal[];
+};
+
 export type OutstandingBalanceRow = {
   loanId: string;
   accountNumber: string;
@@ -865,6 +906,165 @@ export async function loadDisbursalReport(
     rows,
     totals: [...totalsMap.values()].sort((left, right) => left.currencyCode.localeCompare(right.currencyCode)),
   };
+}
+
+/**
+ * Actual collections/receipts ledger — matches iLend's "Jumpstart Collection Report" (a log
+ * of every repayment transaction posted, with its principal/interest/fees/penalties
+ * breakdown, receipt reference, and posting date). This is distinct from the
+ * "Collection by Officer" report, which is forward-looking (expected/due amounts, matching
+ * iLend's separate "Expected daily collection per officer" report).
+ */
+export async function loadCollectionsReport(
+  prisma: PrismaClient,
+  scope: UserDataScope,
+  params: { officeId?: string | null; startDate?: string | null; endDate?: string | null },
+): Promise<CollectionsReport> {
+  const officeId = normalizeString(params.officeId);
+  const range = normalizeDateRange(
+    parseOptionalDateInput(params.startDate),
+    parseOptionalDateInput(params.endDate),
+  );
+
+  const transactions = await prisma.loanTransaction.findMany({
+    where: {
+      transactionType: "REPAYMENT",
+      loan: {
+        office: { organizationId: scope.organizationId },
+        ...officeWhere(scope),
+        ...(officeId ? { officeId } : {}),
+      },
+      ...(range.startDate ? { businessDate: { gte: range.startDate } } : {}),
+      ...(range.endDate ? { businessDate: { lte: range.endDate } } : {}),
+    },
+    select: {
+      id: true,
+      businessDate: true,
+      createdAt: true,
+      externalReference: true,
+      denominationAmountMinor: true,
+      allocations: { select: { principalMinor: true, interestMinor: true, feesMinor: true, penaltiesMinor: true } },
+      loan: {
+        select: {
+          id: true,
+          accountNumber: true,
+          officeId: true,
+          denominationCurrency: true,
+          office: { select: { name: true } },
+          product: { select: { name: true } },
+          client: { select: { firstName: true, middleName: true, lastName: true } },
+          group: { select: { name: true } },
+        },
+      },
+    },
+    orderBy: [{ businessDate: "desc" }, { createdAt: "desc" }],
+  });
+
+  const rows: CollectionsReportRow[] = transactions.map((transaction) => {
+    const principalMinor = sumBigIntField(transaction.allocations, "principalMinor");
+    const interestMinor = sumBigIntField(transaction.allocations, "interestMinor");
+    const feesMinor = sumBigIntField(transaction.allocations, "feesMinor");
+    const penaltiesMinor = sumBigIntField(transaction.allocations, "penaltiesMinor");
+    const allocatedMinor = principalMinor + interestMinor + feesMinor + penaltiesMinor;
+    const othersMinor = transaction.denominationAmountMinor > allocatedMinor ? transaction.denominationAmountMinor - allocatedMinor : 0n;
+    return {
+      transactionId: transaction.id,
+      loanId: transaction.loan.id,
+      accountNumber: transaction.loan.accountNumber,
+      borrowerName: transaction.loan.client
+        ? formatHumanName(transaction.loan.client.firstName, transaction.loan.client.middleName, transaction.loan.client.lastName)
+        : transaction.loan.group?.name ?? "Unknown group",
+      borrowerType: transaction.loan.client ? "Client" : "Group",
+      officeId: transaction.loan.officeId,
+      officeName: transaction.loan.office.name,
+      groupName: transaction.loan.group?.name ?? null,
+      productName: transaction.loan.product.name,
+      currencyCode: transaction.loan.denominationCurrency,
+      principalMinor,
+      interestMinor,
+      feesMinor,
+      penaltiesMinor,
+      othersMinor,
+      totalMinor: transaction.denominationAmountMinor,
+      receiptNumber: transaction.externalReference,
+      businessDate: transaction.businessDate,
+      createdAt: transaction.createdAt,
+    };
+  });
+
+  const totalsMap = new Map<string, CollectionsReportTotal>();
+  for (const row of rows) {
+    const total =
+      totalsMap.get(row.currencyCode) ?? {
+        currencyCode: row.currencyCode,
+        transactionCount: 0,
+        principalMinor: 0n,
+        interestMinor: 0n,
+        feesMinor: 0n,
+        penaltiesMinor: 0n,
+        othersMinor: 0n,
+        totalMinor: 0n,
+      };
+    total.transactionCount += 1;
+    total.principalMinor += row.principalMinor;
+    total.interestMinor += row.interestMinor;
+    total.feesMinor += row.feesMinor;
+    total.penaltiesMinor += row.penaltiesMinor;
+    total.othersMinor += row.othersMinor;
+    total.totalMinor += row.totalMinor;
+    totalsMap.set(row.currencyCode, total);
+  }
+
+  return {
+    officeId,
+    startDate: range.startDate,
+    endDate: range.endDate,
+    rows,
+    totals: [...totalsMap.values()].sort((left, right) => left.currencyCode.localeCompare(right.currencyCode)),
+  };
+}
+
+function sumBigIntField<K extends string>(items: Array<Record<K, bigint>>, key: K): bigint {
+  return items.reduce((sum, item) => sum + item[key], 0n);
+}
+
+export function collectionsReportCsv(report: CollectionsReport) {
+  return rowsToCsv(
+    report.rows.map((row) => ({
+      businessDate: isoDate(row.businessDate),
+      receiptNumber: row.receiptNumber ?? "",
+      borrowerName: row.borrowerName,
+      borrowerType: row.borrowerType,
+      accountNumber: row.accountNumber,
+      officeName: row.officeName,
+      groupName: row.groupName ?? "",
+      productName: row.productName,
+      currencyCode: row.currencyCode,
+      principalMinor: row.principalMinor.toString(),
+      interestMinor: row.interestMinor.toString(),
+      feesMinor: row.feesMinor.toString(),
+      penaltiesMinor: row.penaltiesMinor.toString(),
+      othersMinor: row.othersMinor.toString(),
+      totalMinor: row.totalMinor.toString(),
+    })),
+    [
+      "businessDate",
+      "receiptNumber",
+      "borrowerName",
+      "borrowerType",
+      "accountNumber",
+      "officeName",
+      "groupName",
+      "productName",
+      "currencyCode",
+      "principalMinor",
+      "interestMinor",
+      "feesMinor",
+      "penaltiesMinor",
+      "othersMinor",
+      "totalMinor",
+    ],
+  );
 }
 
 export async function loadOutstandingBalancesReport(
