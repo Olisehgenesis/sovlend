@@ -18,6 +18,7 @@ import {
   ShieldCheck,
   UserPlus,
   Users,
+  UsersRound,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -168,6 +169,7 @@ export function AppSidebar({
         ...(admin ? [{ exact: true, href: "/backoffice/accounting", icon: Calculator, label: "Accounting" }] : []),
         ...(admin || canManageProducts ? [{ exact: true, href: "/backoffice/products", icon: Boxes, label: "Products" }] : []),
         ...(admin ? [{ exact: true, href: "/admin/users", icon: ShieldCheck, label: "Users & access" }] : []),
+        ...(admin ? [{ exact: true, href: "/settings/team", icon: UsersRound, label: "Team & permissions" }] : []),
         { href: "/settings/security", icon: LockKeyhole, label: "Security" },
       ],
     },

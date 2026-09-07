@@ -178,6 +178,9 @@ export function AppHeader({
               <Link href="/admin/users" onClick={closeMenus}>
                 Users &amp; access
               </Link>
+              <Link href="/settings/team" onClick={closeMenus}>
+                Team &amp; permissions
+              </Link>
               <Link href="/settings/security" onClick={closeMenus}>
                 Settings
               </Link>
