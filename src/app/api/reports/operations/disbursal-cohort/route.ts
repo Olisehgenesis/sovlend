@@ -5,6 +5,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { permissions } from "@/modules/identity/domain/permissions";
 import {
+  disbursalCohortReportCsv,
   isoDate,
   loadDisbursalCohortReport,
   loadOperationsReportContext,
@@ -33,6 +34,16 @@ export async function GET(request: Request) {
     endDate: searchParams.get("endDate"),
     loanOfficerId: searchParams.get("loanOfficerId"),
   });
+
+  if (searchParams.get("format")?.toLowerCase() === "csv") {
+    return new NextResponse(disbursalCohortReportCsv(report), {
+      headers: {
+        "Content-Type": "text/csv; charset=utf-8",
+        "Content-Disposition": `attachment; filename="sovlend-disbursal-cohort-${new Date().toISOString().slice(0, 10)}.csv"`,
+        "Cache-Control": "no-store",
+      },
+    });
+  }
 
   return NextResponse.json({
     startDate: report.startDate ? isoDate(report.startDate) : null,

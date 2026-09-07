@@ -1,13 +1,15 @@
-import { CircleDollarSign } from "lucide-react";
+import { CircleDollarSign, Download } from "lucide-react";
 import { headers } from "next/headers";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { Breadcrumbs } from "@/components/breadcrumbs";
+import { ReportPicker } from "@/components/report-picker";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { permissions } from "@/modules/identity/domain/permissions";
 import { formatMinor } from "@/modules/money/domain/format-minor";
+import { loadReportPickerOptions } from "@/modules/reports/report-catalog";
 import {
   formatReportDate,
   isoDate,
@@ -32,9 +34,15 @@ export default async function CollectionByOfficerPage({
   if (!context.allowed) redirect("/reports");
 
   const params = await searchParams;
-  const report = await loadCollectionByOfficerReport(prisma, context.scope, {
-    date: params.date,
-  });
+  const query = querySuffix(params);
+  const [report, pickerOptions] = await Promise.all([
+    loadCollectionByOfficerReport(prisma, context.scope, {
+      date: params.date,
+    }),
+    loadReportPickerOptions(prisma, session.user.id, context.scope.organizationId),
+  ]);
+  const apiHref = `/api/reports/operations/collection-by-officer${query}`;
+  const exportHref = `${apiHref}${query ? "&" : "?"}format=csv`;
 
   return (
     <main className="directory-page">
@@ -53,7 +61,14 @@ export default async function CollectionByOfficerPage({
             Scheduled collections for {formatReportDate(report.businessDate)}, with overdue arrears kept separate for recovery follow-up.
           </p>
         </div>
+        <ReportPicker current="/reports/operations/collection-by-officer" options={pickerOptions} />
         <div className="header-actions">
+          <a className="secondary-action" href={exportHref}>
+            <Download size={16} /> Export CSV
+          </a>
+          <Link className="secondary-action" href={apiHref}>
+            API JSON
+          </Link>
           <Link className="secondary-action" href="/reports">
             Reports
           </Link>
@@ -147,4 +162,11 @@ export default async function CollectionByOfficerPage({
       </section>
     </main>
   );
+}
+
+function querySuffix(filters: { date?: string }) {
+  const params = new URLSearchParams();
+  if (filters.date) params.set("date", filters.date);
+  const query = params.toString();
+  return query ? `?${query}` : "";
 }

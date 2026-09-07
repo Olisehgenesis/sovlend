@@ -4,9 +4,11 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { Breadcrumbs } from "@/components/breadcrumbs";
+import { ReportPicker } from "@/components/report-picker";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { permissions } from "@/modules/identity/domain/permissions";
+import { loadReportPickerOptions } from "@/modules/reports/report-catalog";
 import {
   clientStatusTone,
   formatReportDate,
@@ -33,9 +35,12 @@ export default async function ClientListingPage({
   if (!context.allowed) redirect("/reports");
 
   const params = await searchParams;
-  const report = await loadClientListingReport(prisma, context.scope, {
-    officeId: params.officeId,
-  });
+  const [report, pickerOptions] = await Promise.all([
+    loadClientListingReport(prisma, context.scope, {
+      officeId: params.officeId,
+    }),
+    loadReportPickerOptions(prisma, session.user.id, context.scope.organizationId),
+  ]);
   const exportHref = params.officeId
     ? `/api/reports/operations/client-listing?officeId=${encodeURIComponent(params.officeId)}&format=csv`
     : "/api/reports/operations/client-listing?format=csv";
@@ -55,6 +60,7 @@ export default async function ClientListingPage({
           <h1>Client listing</h1>
           <p>Exportable client directory for onboarding, servicing, and branch-level reviews.</p>
         </div>
+        <ReportPicker current="/reports/operations/client-listing" options={pickerOptions} />
         <div className="header-actions">
           <Link className="secondary-action" href="/reports">
             Reports

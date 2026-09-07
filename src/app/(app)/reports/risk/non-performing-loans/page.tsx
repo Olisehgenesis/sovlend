@@ -1,15 +1,17 @@
-import { ShieldAlert } from "lucide-react";
+import { ShieldAlert, Download } from "lucide-react";
 import { headers } from "next/headers";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { Breadcrumbs } from "@/components/breadcrumbs";
+import { ReportPicker } from "@/components/report-picker";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { AuthorizationService } from "@/modules/identity/application/authorization-service";
 import { getUserDataScope } from "@/modules/identity/application/data-scope";
 import { permissions } from "@/modules/identity/domain/permissions";
 import { formatMinor } from "@/modules/money/domain/format-minor";
+import { loadReportPickerOptions } from "@/modules/reports/report-catalog";
 import {
   agingBucketTone,
   formatBps,
@@ -41,9 +43,10 @@ export default async function NonPerformingLoansReportPage({
   const params = await searchParams;
   const filters = parseRiskFilters(params);
   const thresholdDays = parseBoundedInteger(params.thresholdDays, 90, { min: 1, max: 3650 });
-  const [report, options] = await Promise.all([
+  const [report, options, pickerOptions] = await Promise.all([
     loadNonPerformingLoansReport(prisma, scope, filters, thresholdDays),
     loadRiskFilterOptions(prisma, scope),
+    loadReportPickerOptions(prisma, session.user.id, scope.organizationId),
   ]);
 
   return (
@@ -63,7 +66,11 @@ export default async function NonPerformingLoansReportPage({
             Threshold {thresholdDays} days · {report.totals.loanCount.toLocaleString()} loans · {formatMinor(report.totals.totalOutstandingPrincipalMinor, "UGX")} outstanding principal
           </p>
         </div>
+        <ReportPicker current="/reports/risk/non-performing-loans" options={pickerOptions} />
         <div className="header-actions">
+          <a className="secondary-action" href={`/api/reports/risk/non-performing-loans${querySuffix(filters, thresholdDays)}&format=csv`}>
+            <Download size={16} /> Export CSV
+          </a>
           <Link className="secondary-action" href={`/api/reports/risk/non-performing-loans${querySuffix(filters, thresholdDays)}`}>
             API JSON
           </Link>

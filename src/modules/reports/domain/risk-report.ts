@@ -1,6 +1,7 @@
 import type { LoanStatus, PrismaClient } from "@prisma/client";
 
 import { officeWhere, type UserDataScope } from "@/modules/identity/application/data-scope";
+import { rowsToCsv } from "@/modules/lending/domain/loan-export";
 
 export type RiskFilters = Readonly<{
   officeId?: string;
@@ -78,12 +79,18 @@ type PortfolioLoanSnapshot = {
   maturesOn: Date | null;
   outstandingPrincipalMinor: bigint;
   outstandingTotalMinor: bigint;
+  overduePrincipalMinor: bigint;
+  overdueInterestMinor: bigint;
+  overdueFeesMinor: bigint;
+  overduePenaltiesMinor: bigint;
+  overdueTotalMinor: bigint;
   daysOverdue: number;
   overdueSince: Date | null;
   agingBucket: AgingBucketKey;
 };
 
 export type AgingReport = Awaited<ReturnType<typeof loadAgingReport>>;
+export type ArrearsReport = Awaited<ReturnType<typeof loadArrearsReport>>;
 export type NonPerformingLoansReport = Awaited<ReturnType<typeof loadNonPerformingLoansReport>>;
 export type ProvisioningReport = Awaited<ReturnType<typeof loadProvisioningReport>>;
 export type RecoveriesReport = Awaited<ReturnType<typeof loadRecoveriesReport>>;
@@ -197,6 +204,49 @@ export async function loadAgingReport(prisma: PrismaClient, scope: UserDataScope
         agingBucket: loan.agingBucket,
       }))
       .sort(compareRiskLoans),
+  };
+}
+
+export async function loadArrearsReport(prisma: PrismaClient, scope: UserDataScope, filters: RiskFilters, now = new Date()) {
+  const today = startOfUtcDay(now);
+  const loans = (await loadPortfolioLoans(prisma, scope, filters, { statuses: openRiskStatuses }, today))
+    .filter((loan) => loan.daysOverdue > 0 || (loan.status === "IN_ARREARS" && loan.overdueTotalMinor > 0n))
+    .map((loan) => ({
+      id: loan.id,
+      accountNumber: loan.accountNumber,
+      borrowerName: loan.borrowerName,
+      officeName: loan.officeName,
+      loanOfficerName: loan.loanOfficerName,
+      productName: loan.productName,
+      status: loan.status,
+      currencyCode: loan.denominationCurrency,
+      outstandingPrincipalMinor: loan.outstandingPrincipalMinor,
+      outstandingTotalMinor: loan.outstandingTotalMinor,
+      overduePrincipalMinor: loan.overduePrincipalMinor,
+      overdueInterestMinor: loan.overdueInterestMinor,
+      overdueFeesMinor: loan.overdueFeesMinor,
+      overduePenaltiesMinor: loan.overduePenaltiesMinor,
+      overdueTotalMinor: loan.overdueTotalMinor,
+      daysOverdue: loan.daysOverdue,
+      overdueSince: loan.overdueSince,
+      agingBucket: loan.agingBucket,
+    }))
+    .sort(compareArrearsLoans);
+
+  return {
+    generatedAt: now,
+    filters,
+    totals: {
+      loanCount: loans.length,
+      totalOutstandingPrincipalMinor: sumBigInt(loans.map((loan) => loan.outstandingPrincipalMinor)),
+      totalOutstandingMinor: sumBigInt(loans.map((loan) => loan.outstandingTotalMinor)),
+      overduePrincipalMinor: sumBigInt(loans.map((loan) => loan.overduePrincipalMinor)),
+      overdueInterestMinor: sumBigInt(loans.map((loan) => loan.overdueInterestMinor)),
+      overdueFeesMinor: sumBigInt(loans.map((loan) => loan.overdueFeesMinor)),
+      overduePenaltiesMinor: sumBigInt(loans.map((loan) => loan.overduePenaltiesMinor)),
+      overdueTotalMinor: sumBigInt(loans.map((loan) => loan.overdueTotalMinor)),
+    },
+    loans,
   };
 }
 
@@ -526,6 +576,184 @@ export async function loadParRollRateReport(
   };
 }
 
+const agingLoanColumns = [
+  "accountNumber",
+  "borrowerName",
+  "officeName",
+  "loanOfficerName",
+  "productName",
+  "status",
+  "currencyCode",
+  "outstandingPrincipalMinor",
+  "daysOverdue",
+  "agingBucket",
+] as const;
+
+function agingLoanRow(loan: AgingReport["loans"][number]) {
+  return {
+    accountNumber: loan.accountNumber,
+    borrowerName: loan.borrowerName,
+    officeName: loan.officeName,
+    loanOfficerName: loan.loanOfficerName,
+    productName: loan.productName,
+    status: loan.status,
+    currencyCode: loan.currencyCode,
+    outstandingPrincipalMinor: loan.outstandingPrincipalMinor.toString(),
+    daysOverdue: String(loan.daysOverdue),
+    agingBucket: loan.agingBucket,
+  };
+}
+
+export function agingReportCsv(report: AgingReport) {
+  return rowsToCsv(report.loans.map(agingLoanRow), [...agingLoanColumns]);
+}
+
+const arrearsLoanColumns = [
+  "accountNumber",
+  "borrowerName",
+  "officeName",
+  "loanOfficerName",
+  "productName",
+  "status",
+  "currencyCode",
+  "overduePrincipalMinor",
+  "overdueInterestMinor",
+  "overdueFeesMinor",
+  "overduePenaltiesMinor",
+  "overdueTotalMinor",
+  "outstandingPrincipalMinor",
+  "outstandingTotalMinor",
+  "daysOverdue",
+  "overdueSince",
+  "agingBucket",
+] as const;
+
+export function arrearsReportCsv(report: ArrearsReport) {
+  return rowsToCsv(
+    report.loans.map((loan) => ({
+      accountNumber: loan.accountNumber,
+      borrowerName: loan.borrowerName,
+      officeName: loan.officeName,
+      loanOfficerName: loan.loanOfficerName,
+      productName: loan.productName,
+      status: loan.status,
+      currencyCode: loan.currencyCode,
+      overduePrincipalMinor: loan.overduePrincipalMinor.toString(),
+      overdueInterestMinor: loan.overdueInterestMinor.toString(),
+      overdueFeesMinor: loan.overdueFeesMinor.toString(),
+      overduePenaltiesMinor: loan.overduePenaltiesMinor.toString(),
+      overdueTotalMinor: loan.overdueTotalMinor.toString(),
+      outstandingPrincipalMinor: loan.outstandingPrincipalMinor.toString(),
+      outstandingTotalMinor: loan.outstandingTotalMinor.toString(),
+      daysOverdue: String(loan.daysOverdue),
+      overdueSince: loan.overdueSince ? isoDate(loan.overdueSince) : "",
+      agingBucket: loan.agingBucket,
+    })),
+    [...arrearsLoanColumns],
+  );
+}
+
+export function nonPerformingLoansReportCsv(report: NonPerformingLoansReport) {
+  return rowsToCsv(report.loans.map(agingLoanRow), [...agingLoanColumns]);
+}
+
+export function provisioningReportCsv(report: ProvisioningReport) {
+  return rowsToCsv(
+    report.loans.map((loan) => ({
+      accountNumber: loan.accountNumber,
+      borrowerName: loan.borrowerName,
+      officeName: loan.officeName,
+      loanOfficerName: loan.loanOfficerName,
+      productName: loan.productName,
+      status: loan.status,
+      currencyCode: loan.currencyCode,
+      outstandingPrincipalMinor: loan.outstandingPrincipalMinor.toString(),
+      daysOverdue: String(loan.daysOverdue),
+      agingBucket: loan.agingBucket,
+      provisionRatePercent: String(loan.provisionRatePercent),
+      provisionMinor: loan.provisionMinor.toString(),
+    })),
+    [
+      "accountNumber",
+      "borrowerName",
+      "officeName",
+      "loanOfficerName",
+      "productName",
+      "status",
+      "currencyCode",
+      "outstandingPrincipalMinor",
+      "daysOverdue",
+      "agingBucket",
+      "provisionRatePercent",
+      "provisionMinor",
+    ],
+  );
+}
+
+export function recoveriesReportCsv(report: RecoveriesReport) {
+  return rowsToCsv(
+    report.loans.map((loan) => ({
+      accountNumber: loan.accountNumber,
+      borrowerName: loan.borrowerName,
+      officeName: loan.officeName,
+      loanOfficerName: loan.loanOfficerName,
+      productName: loan.productName,
+      currencyCode: loan.currencyCode,
+      originalPrincipalMinor: loan.originalPrincipalMinor.toString(),
+      writeOffDate: isoDate(loan.writeOffDate),
+      writeOffAmountMinor: loan.writeOffAmountMinor.toString(),
+      recoveredAmountMinor: loan.recoveredAmountMinor.toString(),
+      recoveryCount: String(loan.recoveryCount),
+      latestRecoveryOn: loan.latestRecoveryOn ? isoDate(loan.latestRecoveryOn) : "",
+    })),
+    [
+      "accountNumber",
+      "borrowerName",
+      "officeName",
+      "loanOfficerName",
+      "productName",
+      "currencyCode",
+      "originalPrincipalMinor",
+      "writeOffDate",
+      "writeOffAmountMinor",
+      "recoveredAmountMinor",
+      "recoveryCount",
+      "latestRecoveryOn",
+    ],
+  );
+}
+
+export function parRollRateReportCsv(report: ParRollRateReport) {
+  return rowsToCsv(
+    report.rows.map((row) => ({
+      cohortLabel: row.cohortLabel,
+      loanCount: String(row.loanCount),
+      originalPrincipalMinor: row.originalPrincipalMinor.toString(),
+      current: row.distribution.CURRENT.principalMinor.toString(),
+      days1to30: row.distribution["1_30"].principalMinor.toString(),
+      days31to60: row.distribution["31_60"].principalMinor.toString(),
+      days61to90: row.distribution["61_90"].principalMinor.toString(),
+      days90plus: row.distribution["90_PLUS"].principalMinor.toString(),
+      writtenOff: row.distribution.WRITTEN_OFF.principalMinor.toString(),
+    })),
+    [
+      "cohortLabel",
+      "loanCount",
+      "originalPrincipalMinor",
+      "current",
+      "days1to30",
+      "days31to60",
+      "days61to90",
+      "days90plus",
+      "writtenOff",
+    ],
+  );
+}
+
+function isoDate(date: Date) {
+  return date.toISOString().slice(0, 10);
+}
+
 export function serializeRiskReport<T>(value: T): T {
   return JSON.parse(
     JSON.stringify(value, (_key, current) => (typeof current === "bigint" ? current.toString() : current)),
@@ -557,7 +785,7 @@ export function agingBucketTone(bucket: AgingBucketKey | VintageBucketKey) {
   return "in-arrears";
 }
 
-async function loadPortfolioLoans(
+export async function loadPortfolioLoans(
   prisma: PrismaClient,
   scope: UserDataScope,
   filters: RiskFilters,
@@ -611,12 +839,19 @@ async function loadPortfolioLoans(
   });
 
   return loans.map((loan) => {
+    const overdueInstallments = loan.installments.filter(
+      (installment) => startOfUtcDay(installment.dueOn) < today && outstandingTotalMinor(installment) > 0n,
+    );
     const overdueInstallment = loan.installments.find(
       (installment) => startOfUtcDay(installment.dueOn) < today && outstandingTotalMinor(installment) > 0n,
     );
     const daysOverdue = overdueInstallment ? dayDiff(today, overdueInstallment.dueOn) : 0;
     const loanOutstandingPrincipalMinor = sumBigInt(loan.installments.map(outstandingPrincipalMinor));
     const loanOutstandingTotalMinor = sumBigInt(loan.installments.map(outstandingTotalMinor));
+    const overduePrincipalMinor = sumBigInt(overdueInstallments.map(outstandingPrincipalMinor));
+    const overdueInterestMinor = sumBigInt(overdueInstallments.map(outstandingInterestMinor));
+    const overdueFeesMinor = sumBigInt(overdueInstallments.map(outstandingFeesMinor));
+    const overduePenaltiesMinor = sumBigInt(overdueInstallments.map(outstandingPenaltiesMinor));
 
     return {
       id: loan.id,
@@ -634,6 +869,15 @@ async function loadPortfolioLoans(
       maturesOn: loan.maturesOn,
       outstandingPrincipalMinor: loanOutstandingPrincipalMinor,
       outstandingTotalMinor: loanOutstandingTotalMinor,
+      overduePrincipalMinor,
+      overdueInterestMinor,
+      overdueFeesMinor,
+      overduePenaltiesMinor,
+      overdueTotalMinor:
+        overduePrincipalMinor +
+        overdueInterestMinor +
+        overdueFeesMinor +
+        overduePenaltiesMinor,
       daysOverdue,
       overdueSince: overdueInstallment?.dueOn ?? null,
       agingBucket: agingBucket(daysOverdue),
@@ -658,6 +902,18 @@ function borrowerLabel(
 
 function outstandingPrincipalMinor(installment: InstallmentSnapshot) {
   return positive(installment.principalDueMinor - installment.principalPaidMinor - installment.principalWaivedMinor);
+}
+
+function outstandingInterestMinor(installment: InstallmentSnapshot) {
+  return positive(installment.interestDueMinor - installment.interestPaidMinor - installment.interestWaivedMinor);
+}
+
+function outstandingFeesMinor(installment: InstallmentSnapshot) {
+  return positive(installment.feesDueMinor - installment.feesPaidMinor - installment.feesWaivedMinor);
+}
+
+function outstandingPenaltiesMinor(installment: InstallmentSnapshot) {
+  return positive(installment.penaltiesDueMinor - installment.penaltiesPaidMinor - installment.penaltiesWaivedMinor);
 }
 
 function outstandingTotalMinor(installment: InstallmentSnapshot) {
@@ -750,6 +1006,17 @@ function compareRiskLoans(
   if (left.daysOverdue !== right.daysOverdue) return right.daysOverdue - left.daysOverdue;
   if (left.outstandingPrincipalMinor !== right.outstandingPrincipalMinor) {
     return left.outstandingPrincipalMinor > right.outstandingPrincipalMinor ? -1 : 1;
+  }
+  return left.borrowerName.localeCompare(right.borrowerName);
+}
+
+function compareArrearsLoans(
+  left: { daysOverdue: number; overdueTotalMinor: bigint; borrowerName: string },
+  right: { daysOverdue: number; overdueTotalMinor: bigint; borrowerName: string },
+) {
+  if (left.daysOverdue !== right.daysOverdue) return right.daysOverdue - left.daysOverdue;
+  if (left.overdueTotalMinor !== right.overdueTotalMinor) {
+    return left.overdueTotalMinor > right.overdueTotalMinor ? -1 : 1;
   }
   return left.borrowerName.localeCompare(right.borrowerName);
 }

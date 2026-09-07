@@ -1,15 +1,17 @@
-import { BarChart3 } from "lucide-react";
+import { BarChart3, Download } from "lucide-react";
 import { headers } from "next/headers";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { Breadcrumbs } from "@/components/breadcrumbs";
+import { ReportPicker } from "@/components/report-picker";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { AuthorizationService } from "@/modules/identity/application/authorization-service";
 import { getUserDataScope } from "@/modules/identity/application/data-scope";
 import { permissions } from "@/modules/identity/domain/permissions";
 import { formatMinor } from "@/modules/money/domain/format-minor";
+import { loadReportPickerOptions } from "@/modules/reports/report-catalog";
 import {
   formatBps,
   loadParRollRateReport,
@@ -40,9 +42,10 @@ export default async function ParRollRateReportPage({
   const params = await searchParams;
   const filters = parseRiskFilters(params);
   const cohortMonths = parseBoundedInteger(params.cohortMonths, 18, { min: 3, max: 60 });
-  const [report, options] = await Promise.all([
+  const [report, options, pickerOptions] = await Promise.all([
     loadParRollRateReport(prisma, scope, filters, cohortMonths),
     loadRiskFilterOptions(prisma, scope),
+    loadReportPickerOptions(prisma, session.user.id, scope.organizationId),
   ]);
 
   return (
@@ -62,7 +65,11 @@ export default async function ParRollRateReportPage({
             Last {cohortMonths} cohort months · {report.totals.cohortCount.toLocaleString()} cohorts · {formatMinor(report.totals.totalOriginalPrincipalMinor, "UGX")} original principal
           </p>
         </div>
+        <ReportPicker current="/reports/risk/par-rollrate" options={pickerOptions} />
         <div className="header-actions">
+          <a className="secondary-action" href={`/api/reports/risk/par-rollrate${querySuffix(filters, cohortMonths)}&format=csv`}>
+            <Download size={16} /> Export CSV
+          </a>
           <Link className="secondary-action" href={`/api/reports/risk/par-rollrate${querySuffix(filters, cohortMonths)}`}>
             API JSON
           </Link>

@@ -1,6 +1,7 @@
 import { Prisma, type PrismaClient, type LoanStatus } from "@prisma/client";
 
 import { officeWhere, type UserDataScope } from "@/modules/identity/application/data-scope";
+import { rowsToCsv } from "@/modules/lending/domain/loan-export";
 
 const DAY_MS = 86_400_000;
 const feeStatuses = ["PAID", "PENDING", "WAIVED"] as const;
@@ -246,6 +247,154 @@ export function formatDisplayDateTime(date: Date) {
 
 export function serializeReportPayload<T>(value: T): T {
   return deepSerialize(value) as T;
+}
+
+export function groupPortfolioReportCsv(report: GroupPortfolioReport) {
+  return rowsToCsv(
+    report.rows.map((row) => ({
+      groupName: row.name,
+      accountNumber: row.accountNumber,
+      officerName: row.officerName ?? "Unassigned",
+      memberCount: String(row.memberCount),
+      savingsBalanceMinor: row.savingsBalanceMinor.toString(),
+      savingsAccountCount: String(row.savingsAccountCount),
+      loanPrincipalMinor: row.loanPrincipalMinor.toString(),
+      loanCount: String(row.loanCount),
+      activeLoanCount: String(row.activeLoanCount),
+      arrearsLoanCount: String(row.arrearsLoanCount),
+      closedLoanCount: String(row.closedLoanCount),
+      otherLoanCount: String(row.otherLoanCount),
+      outstandingPrincipalMinor: row.outstandingPrincipalMinor.toString(),
+      currencyCode: row.currencyCode,
+      status: row.status,
+    })),
+    [
+      "groupName",
+      "accountNumber",
+      "officerName",
+      "memberCount",
+      "savingsBalanceMinor",
+      "savingsAccountCount",
+      "loanPrincipalMinor",
+      "loanCount",
+      "activeLoanCount",
+      "arrearsLoanCount",
+      "closedLoanCount",
+      "otherLoanCount",
+      "outstandingPrincipalMinor",
+      "currencyCode",
+      "status",
+    ],
+  );
+}
+
+export function guarantorExposureReportCsv(report: GuarantorExposureReport) {
+  return rowsToCsv(
+    report.rows.map((row) => ({
+      guarantorName: row.displayName,
+      phone: row.phone,
+      loanCount: String(row.loanCount),
+      arrearsLoanCount: String(row.arrearsLoanCount),
+      concentrationRisk: String(row.concentrationRisk),
+      totalOutstandingMinor: row.totalOutstandingMinor.toString(),
+      currencyCode: row.currencyCode,
+      backedLoans: row.loans
+        .map(
+          (loan) =>
+            `${loan.accountNumber} · ${loan.borrowerName} · ${loan.status.replaceAll("_", " ")} · ${loan.outstandingPrincipalMinor.toString()} ${loan.currencyCode}`,
+        )
+        .join(" | "),
+    })),
+    [
+      "guarantorName",
+      "phone",
+      "loanCount",
+      "arrearsLoanCount",
+      "concentrationRisk",
+      "totalOutstandingMinor",
+      "currencyCode",
+      "backedLoans",
+    ],
+  );
+}
+
+export function feeRevenueReportCsv(report: FeeRevenueReport) {
+  return rowsToCsv(
+    report.rows.map((row) => ({
+      chargeType: row.name,
+      currencyCode: row.currencyCode,
+      collectedMinor: row.amounts.PAID.toString(),
+      collectedChargeCount: String(row.counts.PAID),
+      outstandingMinor: row.amounts.PENDING.toString(),
+      outstandingChargeCount: String(row.counts.PENDING),
+      waivedMinor: row.amounts.WAIVED.toString(),
+      waivedChargeCount: String(row.counts.WAIVED),
+      totalValueMinor: row.totalMinor.toString(),
+    })),
+    [
+      "chargeType",
+      "currencyCode",
+      "collectedMinor",
+      "collectedChargeCount",
+      "outstandingMinor",
+      "outstandingChargeCount",
+      "waivedMinor",
+      "waivedChargeCount",
+      "totalValueMinor",
+    ],
+  );
+}
+
+export function documentCompletenessReportCsv(report: DocumentCompletenessReport) {
+  return rowsToCsv(
+    report.rows.map((row) => ({
+      loanAccountNumber: row.accountNumber,
+      borrowerName: row.borrowerName,
+      borrowerAccountNumber: row.borrowerAccountNumber ?? "",
+      status: row.status,
+      documentCount: String(row.documentCount),
+      documentNames: row.documentNames.join(" | "),
+      presentCoreDocs: row.presentCategories.join(", "),
+      missingCoreDocs: row.missingCategories.join(", "),
+    })),
+    [
+      "loanAccountNumber",
+      "borrowerName",
+      "borrowerAccountNumber",
+      "status",
+      "documentCount",
+      "documentNames",
+      "presentCoreDocs",
+      "missingCoreDocs",
+    ],
+  );
+}
+
+export function auditTrailReportCsv(report: AuditTrailReport) {
+  return rowsToCsv(
+    report.rows.map((row) => ({
+      occurredAt: row.occurredAt,
+      auditEventId: row.id,
+      actorName: row.actorName,
+      actorId: row.actorId ?? "SYSTEM",
+      action: row.action,
+      entityType: row.entityType,
+      entityId: row.entityId,
+      correlationId: row.correlationId,
+      metadata: JSON.stringify(row.metadata ?? null),
+    })),
+    [
+      "occurredAt",
+      "auditEventId",
+      "actorName",
+      "actorId",
+      "action",
+      "entityType",
+      "entityId",
+      "correlationId",
+      "metadata",
+    ],
+  );
 }
 
 export function getFeeRevenueFilters(source: SearchParamSource, now = new Date()) {

@@ -1,15 +1,17 @@
-import { Scale } from "lucide-react";
+import { Download, Scale } from "lucide-react";
 import { headers } from "next/headers";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { Breadcrumbs } from "@/components/breadcrumbs";
+import { ReportPicker } from "@/components/report-picker";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { AuthorizationService } from "@/modules/identity/application/authorization-service";
 import { getUserDataScope } from "@/modules/identity/application/data-scope";
 import { permissions } from "@/modules/identity/domain/permissions";
 import { formatMinor } from "@/modules/money/domain/format-minor";
+import { loadReportPickerOptions } from "@/modules/reports/report-catalog";
 import {
   buildReportQueryString,
   formatDateInputValue,
@@ -39,15 +41,20 @@ export default async function BalanceSheetPage({
   if (!allowed) redirect("/reports");
 
   const params = await searchParams;
-  const offices = await listAccountingReportOffices(prisma, scope);
+  const [offices, pickerOptions] = await Promise.all([
+    listAccountingReportOffices(prisma, scope),
+    loadReportPickerOptions(prisma, session.user.id, scope.organizationId),
+  ]);
   const endDate = parseDateInput(params.endDate, new Date());
   const officeId = resolveOfficeFilter(offices, params.officeId ?? null);
   const report = await getBalanceSheetReport(prisma, scope, { endDate, officeId });
   const activeOfficeName = offices.find((office) => office.id === officeId)?.name ?? "All offices";
-  const apiHref = `/api/reports/accounting/balance-sheet?${buildReportQueryString({
+  const queryString = buildReportQueryString({
     endDate: formatDateInputValue(endDate),
     officeId,
-  })}`;
+  });
+  const apiHref = `/api/reports/accounting/balance-sheet${queryString ? `?${queryString}` : ""}`;
+  const exportHref = `${apiHref}${queryString ? "&" : "?"}format=csv`;
 
   return (
     <main className="directory-page">
@@ -60,13 +67,17 @@ export default async function BalanceSheetPage({
             Statement of financial position as of {formatReportDate(report.asOfDate)} · {activeOfficeName}
           </p>
         </div>
+        <ReportPicker current="/reports/accounting/balance-sheet" options={pickerOptions} />
         <div className="header-actions">
+          <a className="secondary-action" href={exportHref}>
+            <Download size={16} /> Export CSV
+          </a>
+          <a className="secondary-action" href={apiHref}>
+            API JSON
+          </a>
           <Link className="secondary-action" href="/reports">
             Reports
           </Link>
-          <a className="secondary-action" href={apiHref}>
-            JSON API
-          </a>
         </div>
       </header>
 

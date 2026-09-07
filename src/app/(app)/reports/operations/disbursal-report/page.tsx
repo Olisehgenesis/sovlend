@@ -10,12 +10,17 @@ import { prisma } from "@/lib/prisma";
 import { permissions } from "@/modules/identity/domain/permissions";
 import { formatMinor } from "@/modules/money/domain/format-minor";
 import { loadReportPickerOptions } from "@/modules/reports/report-catalog";
-import { loadDisbursalCohortReport, loadOperationsReportContext } from "@/modules/reports/domain/operations-report";
+import {
+  formatLoanStatus,
+  formatReportDate,
+  loadDisbursalReport,
+  loadOperationsReportContext,
+} from "@/modules/reports/domain/operations-report";
 
-export default async function DisbursalCohortPage({
+export default async function DisbursalReportPage({
   searchParams,
 }: {
-  searchParams: Promise<{ startDate?: string; endDate?: string; loanOfficerId?: string }>;
+  searchParams: Promise<{ officeId?: string; loanOfficerId?: string; startDate?: string; endDate?: string }>;
 }) {
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session) redirect("/sign-in");
@@ -23,7 +28,7 @@ export default async function DisbursalCohortPage({
   const context = await loadOperationsReportContext(
     prisma,
     session.user.id,
-    permissions.reportDisbursalCohort,
+    permissions.reportDisbursalLedger,
     { includeReferenceData: true },
   );
   if (!context) redirect("/");
@@ -32,14 +37,15 @@ export default async function DisbursalCohortPage({
   const params = await searchParams;
   const query = querySuffix(params);
   const [report, pickerOptions] = await Promise.all([
-    loadDisbursalCohortReport(prisma, context.scope, {
+    loadDisbursalReport(prisma, context.scope, {
+      officeId: params.officeId,
+      loanOfficerId: params.loanOfficerId,
       startDate: params.startDate,
       endDate: params.endDate,
-      loanOfficerId: params.loanOfficerId,
     }),
     loadReportPickerOptions(prisma, session.user.id, context.scope.organizationId),
   ]);
-  const apiHref = `/api/reports/operations/disbursal-cohort${query}`;
+  const apiHref = `/api/reports/operations/disbursal-report${query}`;
   const exportHref = `${apiHref}${query ? "&" : "?"}format=csv`;
 
   return (
@@ -48,16 +54,16 @@ export default async function DisbursalCohortPage({
         items={[
           { label: "Reports", href: "/reports" },
           { label: "Operations" },
-          { label: "All Loans by Disbursal Period" },
+          { label: "Disbursal Report" },
         ]}
       />
       <header className="directory-header">
         <div>
           <p className="eyebrow">Operations report</p>
-          <h1>All loans by disbursal period</h1>
-          <p>Monthly disbursal cohorts across your visible portfolio, newest month first.</p>
+          <h1>Disbursal Report</h1>
+          <p>Chronological ledger of individual loan disbursements, newest loans first.</p>
         </div>
-        <ReportPicker current="/reports/operations/disbursal-cohort" options={pickerOptions} />
+        <ReportPicker current="/reports/operations/disbursal-report" options={pickerOptions} />
         <div className="header-actions">
           <a className="secondary-action" href={exportHref}>
             <Download size={16} /> Export CSV
@@ -75,13 +81,13 @@ export default async function DisbursalCohortPage({
         <div className="panel-heading">
           <div>
             <h2>Filters</h2>
-            <p>Narrow cohorts by date range or a single loan officer.</p>
+            <p>Narrow the disbursal ledger by date range, office, or responsible loan officer.</p>
           </div>
         </div>
         <form className="entity-form compact-mapping" method="GET">
           <fieldset>
-            <legend>Disbursal window</legend>
-            <div className="form-row three">
+            <legend>Disbursal filters</legend>
+            <div className="form-row">
               <label>
                 Start date
                 <input defaultValue={params.startDate ?? ""} name="startDate" type="date" />
@@ -89,6 +95,19 @@ export default async function DisbursalCohortPage({
               <label>
                 End date
                 <input defaultValue={params.endDate ?? ""} name="endDate" type="date" />
+              </label>
+            </div>
+            <div className="form-row">
+              <label>
+                Office
+                <select defaultValue={params.officeId ?? ""} name="officeId">
+                  <option value="">All offices</option>
+                  {context.offices.map((office) => (
+                    <option key={office.id} value={office.id}>
+                      {office.name}
+                    </option>
+                  ))}
+                </select>
               </label>
               <label>
                 Loan officer
@@ -107,7 +126,7 @@ export default async function DisbursalCohortPage({
             <button className="invest-button" type="submit">
               Apply filters
             </button>
-            <Link className="secondary-action" href="/reports/operations/disbursal-cohort">
+            <Link className="secondary-action" href="/reports/operations/disbursal-report">
               Reset
             </Link>
           </div>
@@ -117,8 +136,8 @@ export default async function DisbursalCohortPage({
       <section className="panel loan-table">
         <div className="panel-heading">
           <div>
-            <h2>Monthly disbursal cohorts</h2>
-            <p>{report.rows.length.toLocaleString()} cohort row(s)</p>
+            <h2>Loan disbursal ledger</h2>
+            <p>{report.rows.length.toLocaleString()} disbursed loan row(s)</p>
           </div>
           <CircleDollarSign size={19} />
         </div>
@@ -126,27 +145,36 @@ export default async function DisbursalCohortPage({
           <div className="empty-state">
             <CircleDollarSign size={28} />
             <strong>No disbursals match these filters</strong>
-            <p>Try widening the dates or removing the officer filter.</p>
+            <p>Try widening the dates or removing the office or officer filter.</p>
           </div>
         ) : (
           <div className="table-scroll">
-            <table>
+            <table className="clickable-rows">
               <thead>
                 <tr>
-                  <th>Period</th>
-                  <th>Currency</th>
-                  <th>Loans disbursed</th>
-                  <th>Total principal</th>
+                  <th>Disbursed</th>
+                  <th>Borrower</th>
+                  <th>Loan account</th>
+                  <th>Office</th>
+                  <th>Officer</th>
+                  <th>Product</th>
+                  <th>Status</th>
+                  <th>Principal</th>
                 </tr>
               </thead>
               <tbody>
                 {report.rows.map((row) => (
-                  <tr key={`${row.period}-${row.currencyCode}`}>
+                  <tr key={row.loanId}>
+                    <td>{formatReportDate(row.disbursedOn)}</td>
                     <td>
-                      <strong>{row.period}</strong>
+                      <strong>{row.borrowerName}</strong>
+                      <Link aria-label={`Open loan ${row.accountNumber}`} className="row-link" href={`/loans/${row.loanId}`} />
                     </td>
-                    <td>{row.currencyCode}</td>
-                    <td>{row.loanCount.toLocaleString()}</td>
+                    <td className="mono">{row.accountNumber}</td>
+                    <td>{row.officeName}</td>
+                    <td>{row.loanOfficerName}</td>
+                    <td>{row.productName}</td>
+                    <td>{formatLoanStatus(row.status)}</td>
                     <td>{formatMinor(row.principalMinor, row.currencyCode)}</td>
                   </tr>
                 ))}
@@ -154,9 +182,8 @@ export default async function DisbursalCohortPage({
               <tfoot>
                 {report.totals.map((row) => (
                   <tr key={`total-${row.currencyCode}`}>
-                    <th>Grand total</th>
+                    <th colSpan={6}>Grand total ({row.loanCount.toLocaleString()} disbursals)</th>
                     <th>{row.currencyCode}</th>
-                    <th>{row.loanCount.toLocaleString()}</th>
                     <th>{formatMinor(row.principalMinor, row.currencyCode)}</th>
                   </tr>
                 ))}
@@ -169,11 +196,12 @@ export default async function DisbursalCohortPage({
   );
 }
 
-function querySuffix(filters: { startDate?: string; endDate?: string; loanOfficerId?: string }) {
+function querySuffix(filters: { officeId?: string; loanOfficerId?: string; startDate?: string; endDate?: string }) {
   const params = new URLSearchParams();
+  if (filters.officeId) params.set("officeId", filters.officeId);
+  if (filters.loanOfficerId) params.set("loanOfficerId", filters.loanOfficerId);
   if (filters.startDate) params.set("startDate", filters.startDate);
   if (filters.endDate) params.set("endDate", filters.endDate);
-  if (filters.loanOfficerId) params.set("loanOfficerId", filters.loanOfficerId);
   const query = params.toString();
   return query ? `?${query}` : "";
 }

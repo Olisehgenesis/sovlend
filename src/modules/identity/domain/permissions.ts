@@ -33,15 +33,18 @@ export const permissions = {
   reportJournalReconciliation: "REPORT_VIEW_JOURNAL_RECONCILIATION",
 
   reportAging: "REPORT_VIEW_AGING",
+  reportArrears: "REPORT_VIEW_ARREARS",
   reportNonPerformingLoans: "REPORT_VIEW_NON_PERFORMING_LOANS",
   reportProvisioning: "REPORT_VIEW_PROVISIONING",
   reportRecoveries: "REPORT_VIEW_RECOVERIES",
   reportParRollRate: "REPORT_VIEW_PAR_ROLLRATE",
 
+  reportActiveLoans: "REPORT_VIEW_ACTIVE_LOANS",
   reportCollectionByOfficer: "REPORT_VIEW_COLLECTION_BY_OFFICER",
   reportUnassignedLoans: "REPORT_VIEW_UNASSIGNED_LOANS",
   reportBranchPortfolio: "REPORT_VIEW_BRANCH_PORTFOLIO",
   reportDisbursalCohort: "REPORT_VIEW_DISBURSAL_COHORT",
+  reportDisbursalLedger: "REPORT_VIEW_DISBURSAL_REPORT",
   reportOutstandingBalances: "REPORT_VIEW_OUTSTANDING_BALANCES",
   reportClientListing: "REPORT_VIEW_CLIENT_LISTING",
 
@@ -55,8 +58,8 @@ export const permissions = {
 export type PermissionCode = (typeof permissions)[keyof typeof permissions];
 
 const accountingReportPermissions = [permissions.reportBalanceSheet, permissions.reportIncomeStatement, permissions.reportTrialBalance, permissions.reportGeneralLedger, permissions.reportJournalReconciliation] as const;
-const riskReportPermissions = [permissions.reportAging, permissions.reportNonPerformingLoans, permissions.reportProvisioning, permissions.reportRecoveries, permissions.reportParRollRate] as const;
-const operationsReportPermissions = [permissions.reportCollectionByOfficer, permissions.reportUnassignedLoans, permissions.reportBranchPortfolio, permissions.reportDisbursalCohort, permissions.reportOutstandingBalances, permissions.reportClientListing] as const;
+const riskReportPermissions = [permissions.reportAging, permissions.reportArrears, permissions.reportNonPerformingLoans, permissions.reportProvisioning, permissions.reportRecoveries, permissions.reportParRollRate] as const;
+const operationsReportPermissions = [permissions.reportActiveLoans, permissions.reportCollectionByOfficer, permissions.reportUnassignedLoans, permissions.reportBranchPortfolio, permissions.reportDisbursalCohort, permissions.reportDisbursalLedger, permissions.reportOutstandingBalances, permissions.reportClientListing] as const;
 const insightsReportPermissions = [permissions.reportGroupPortfolio, permissions.reportGuarantorExposure, permissions.reportFeeRevenue, permissions.reportDocumentCompleteness, permissions.reportAuditTrail] as const;
 
 export const reportPermissionGroups = {

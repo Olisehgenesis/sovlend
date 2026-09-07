@@ -1,13 +1,15 @@
-import { Wallet } from "lucide-react";
+import { Download, Wallet } from "lucide-react";
 import { headers } from "next/headers";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { Breadcrumbs } from "@/components/breadcrumbs";
+import { ReportPicker } from "@/components/report-picker";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { permissions } from "@/modules/identity/domain/permissions";
 import { formatMinor } from "@/modules/money/domain/format-minor";
+import { loadReportPickerOptions } from "@/modules/reports/report-catalog";
 import {
   formatLoanStatus,
   formatReportDate,
@@ -34,12 +36,18 @@ export default async function OutstandingBalancesPage({
   if (!context.allowed) redirect("/reports");
 
   const params = await searchParams;
-  const report = await loadOutstandingBalancesReport(prisma, context.scope, {
-    officeId: params.officeId,
-    loanOfficerId: params.loanOfficerId,
-    currencyCode: params.currencyCode,
-  });
+  const query = querySuffix(params);
+  const [report, pickerOptions] = await Promise.all([
+    loadOutstandingBalancesReport(prisma, context.scope, {
+      officeId: params.officeId,
+      loanOfficerId: params.loanOfficerId,
+      currencyCode: params.currencyCode,
+    }),
+    loadReportPickerOptions(prisma, session.user.id, context.scope.organizationId),
+  ]);
   const currencyOptions = [...new Set(report.rows.map((row) => row.currencyCode))].sort();
+  const apiHref = `/api/reports/operations/outstanding-balances${query}`;
+  const exportHref = `${apiHref}${query ? "&" : "?"}format=csv`;
 
   return (
     <main className="directory-page">
@@ -56,7 +64,14 @@ export default async function OutstandingBalancesPage({
           <h1>Outstanding balances (OLB)</h1>
           <p>Current outstanding principal, interest, fees, and penalties for every active or in-arrears loan.</p>
         </div>
+        <ReportPicker current="/reports/operations/outstanding-balances" options={pickerOptions} />
         <div className="header-actions">
+          <a className="secondary-action" href={exportHref}>
+            <Download size={16} /> Export CSV
+          </a>
+          <Link className="secondary-action" href={apiHref}>
+            API JSON
+          </Link>
           <Link className="secondary-action" href="/reports">
             Reports
           </Link>
@@ -199,4 +214,13 @@ export default async function OutstandingBalancesPage({
       </section>
     </main>
   );
+}
+
+function querySuffix(filters: { officeId?: string; loanOfficerId?: string; currencyCode?: string }) {
+  const params = new URLSearchParams();
+  if (filters.officeId) params.set("officeId", filters.officeId);
+  if (filters.loanOfficerId) params.set("loanOfficerId", filters.loanOfficerId);
+  if (filters.currencyCode) params.set("currencyCode", filters.currencyCode);
+  const query = params.toString();
+  return query ? `?${query}` : "";
 }

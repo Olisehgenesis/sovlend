@@ -1,15 +1,17 @@
-import { Scale } from "lucide-react";
+import { Download, Scale } from "lucide-react";
 import { headers } from "next/headers";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { Breadcrumbs } from "@/components/breadcrumbs";
+import { ReportPicker } from "@/components/report-picker";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { AuthorizationService } from "@/modules/identity/application/authorization-service";
 import { getUserDataScope } from "@/modules/identity/application/data-scope";
 import { permissions } from "@/modules/identity/domain/permissions";
 import { formatMinor } from "@/modules/money/domain/format-minor";
+import { loadReportPickerOptions } from "@/modules/reports/report-catalog";
 import {
   accountTypeLabel,
   buildReportQueryString,
@@ -45,7 +47,10 @@ export default async function TrialBalancePage({
 
   const params = await searchParams;
   const defaults = currentMonthDateRange();
-  const offices = await listAccountingReportOffices(prisma, scope);
+  const [offices, pickerOptions] = await Promise.all([
+    listAccountingReportOffices(prisma, scope),
+    loadReportPickerOptions(prisma, session.user.id, scope.organizationId),
+  ]);
   const { startDate, endDate } = normalizeDateRange(
     parseDateInput(params.startDate, defaults.startDate),
     parseDateInput(params.endDate, defaults.endDate),
@@ -53,11 +58,13 @@ export default async function TrialBalancePage({
   const officeId = resolveOfficeFilter(offices, params.officeId ?? null);
   const report = await getTrialBalanceReport(prisma, scope, { startDate, endDate, officeId });
   const activeOfficeName = offices.find((office) => office.id === officeId)?.name ?? "All offices";
-  const apiHref = `/api/reports/accounting/trial-balance?${buildReportQueryString({
+  const queryString = buildReportQueryString({
     startDate: formatDateInputValue(startDate),
     endDate: formatDateInputValue(endDate),
     officeId,
-  })}`;
+  });
+  const apiHref = `/api/reports/accounting/trial-balance${queryString ? `?${queryString}` : ""}`;
+  const exportHref = `${apiHref}${queryString ? "&" : "?"}format=csv`;
 
   return (
     <main className="directory-page">
@@ -70,13 +77,17 @@ export default async function TrialBalancePage({
             Ledger debits and credits from {formatReportDate(report.startDate)} to {formatReportDate(report.endDate)} · {activeOfficeName}
           </p>
         </div>
+        <ReportPicker current="/reports/accounting/trial-balance" options={pickerOptions} />
         <div className="header-actions">
+          <a className="secondary-action" href={exportHref}>
+            <Download size={16} /> Export CSV
+          </a>
+          <a className="secondary-action" href={apiHref}>
+            API JSON
+          </a>
           <Link className="secondary-action" href="/reports">
             Reports
           </Link>
-          <a className="secondary-action" href={apiHref}>
-            JSON API
-          </a>
         </div>
       </header>
 

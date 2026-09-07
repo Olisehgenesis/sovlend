@@ -1,15 +1,17 @@
-import { BookOpenText } from "lucide-react";
+import { BookOpenText, Download } from "lucide-react";
 import { headers } from "next/headers";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { Breadcrumbs } from "@/components/breadcrumbs";
+import { ReportPicker } from "@/components/report-picker";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { AuthorizationService } from "@/modules/identity/application/authorization-service";
 import { getUserDataScope } from "@/modules/identity/application/data-scope";
 import { permissions } from "@/modules/identity/domain/permissions";
 import { formatMinor } from "@/modules/money/domain/format-minor";
+import { loadReportPickerOptions } from "@/modules/reports/report-catalog";
 import {
   buildReportQueryString,
   currentMonthDateRange,
@@ -46,9 +48,10 @@ export default async function GeneralLedgerPage({
 
   const params = await searchParams;
   const defaults = currentMonthDateRange();
-  const [offices, accounts] = await Promise.all([
+  const [offices, accounts, pickerOptions] = await Promise.all([
     listAccountingReportOffices(prisma, scope),
     listAccountingReportAccounts(prisma),
+    loadReportPickerOptions(prisma, session.user.id, scope.organizationId),
   ]);
   const { startDate, endDate } = normalizeDateRange(
     parseDateInput(params.startDate, defaults.startDate),
@@ -59,12 +62,14 @@ export default async function GeneralLedgerPage({
   const accountId = requestedAccountId ?? accounts[0]?.id ?? null;
   const report = await getGeneralLedgerReport(prisma, scope, { startDate, endDate, officeId, accountId });
   const activeOfficeName = offices.find((office) => office.id === officeId)?.name ?? "All offices";
-  const apiHref = `/api/reports/accounting/general-ledger?${buildReportQueryString({
+  const queryString = buildReportQueryString({
     startDate: formatDateInputValue(startDate),
     endDate: formatDateInputValue(endDate),
     officeId,
     accountId: report.account?.id ?? null,
-  })}`;
+  });
+  const apiHref = `/api/reports/accounting/general-ledger${queryString ? `?${queryString}` : ""}`;
+  const exportHref = `${apiHref}${queryString ? "&" : "?"}format=csv`;
   const closingBalance = report.account ? summarizeBalance(report.account.type, report.closingBalanceMinor) : null;
 
   return (
@@ -78,13 +83,17 @@ export default async function GeneralLedgerPage({
             Account movement from {formatReportDate(report.startDate)} to {formatReportDate(report.endDate)} · {activeOfficeName}
           </p>
         </div>
+        <ReportPicker current="/reports/accounting/general-ledger" options={pickerOptions} />
         <div className="header-actions">
+          <a className="secondary-action" href={exportHref}>
+            <Download size={16} /> Export CSV
+          </a>
+          <a className="secondary-action" href={apiHref}>
+            API JSON
+          </a>
           <Link className="secondary-action" href="/reports">
             Reports
           </Link>
-          <a className="secondary-action" href={apiHref}>
-            JSON API
-          </a>
         </div>
       </header>
 

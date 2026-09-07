@@ -5,6 +5,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { permissions } from "@/modules/identity/domain/permissions";
 import {
+  collectionByOfficerReportCsv,
   isoDate,
   loadCollectionByOfficerReport,
   loadOperationsReportContext,
@@ -31,6 +32,16 @@ export async function GET(request: Request) {
   const report = await loadCollectionByOfficerReport(prisma, context.scope, {
     date: searchParams.get("date"),
   });
+
+  if (searchParams.get("format")?.toLowerCase() === "csv") {
+    return new NextResponse(collectionByOfficerReportCsv(report), {
+      headers: {
+        "Content-Type": "text/csv; charset=utf-8",
+        "Content-Disposition": `attachment; filename="sovlend-collection-by-officer-${new Date().toISOString().slice(0, 10)}.csv"`,
+        "Cache-Control": "no-store",
+      },
+    });
+  }
 
   return NextResponse.json({
     date: isoDate(report.businessDate),

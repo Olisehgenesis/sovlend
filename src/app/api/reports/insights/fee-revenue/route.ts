@@ -6,7 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { AuthorizationService } from "@/modules/identity/application/authorization-service";
 import { getUserDataScope } from "@/modules/identity/application/data-scope";
 import { permissions } from "@/modules/identity/domain/permissions";
-import { getFeeRevenueFilters, loadFeeRevenueReport, serializeReportPayload } from "@/modules/reports/domain/insights-report";
+import { feeRevenueReportCsv, getFeeRevenueFilters, loadFeeRevenueReport, serializeReportPayload } from "@/modules/reports/domain/insights-report";
 
 export async function GET(request: Request) {
   const session = await auth.api.getSession({ headers: await headers() });
@@ -21,6 +21,19 @@ export async function GET(request: Request) {
   );
   if (!allowed) return NextResponse.json({ error: "You cannot view the fee and charges revenue report" }, { status: 403 });
 
-  const filters = getFeeRevenueFilters(new URL(request.url).searchParams);
-  return NextResponse.json(serializeReportPayload(await loadFeeRevenueReport(prisma, scope, filters)));
+  const url = new URL(request.url);
+  const filters = getFeeRevenueFilters(url.searchParams);
+  const report = await loadFeeRevenueReport(prisma, scope, filters);
+
+  if (url.searchParams.get("format")?.toLowerCase() === "csv") {
+    return new NextResponse(feeRevenueReportCsv(report), {
+      headers: {
+        "Content-Type": "text/csv; charset=utf-8",
+        "Content-Disposition": `attachment; filename="sovlend-fee-revenue-${new Date().toISOString().slice(0, 10)}.csv"`,
+        "Cache-Control": "no-store",
+      },
+    });
+  }
+
+  return NextResponse.json(serializeReportPayload(report));
 }

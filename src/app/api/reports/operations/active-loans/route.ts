@@ -5,41 +5,33 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { permissions } from "@/modules/identity/domain/permissions";
 import {
+  activeLoansReportCsv,
   isoDate,
+  loadActiveLoansReport,
   loadOperationsReportContext,
-  loadOutstandingBalancesReport,
-  outstandingBalancesReportCsv,
 } from "@/modules/reports/domain/operations-report";
 
 export async function GET(request: Request) {
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const context = await loadOperationsReportContext(
-    prisma,
-    session.user.id,
-    permissions.reportOutstandingBalances,
-  );
+  const context = await loadOperationsReportContext(prisma, session.user.id, permissions.reportActiveLoans);
   if (!context) return NextResponse.json({ error: "Workspace assignment required" }, { status: 403 });
   if (!context.allowed) {
-    return NextResponse.json(
-      { error: "You are not allowed to view the outstanding balances report" },
-      { status: 403 },
-    );
+    return NextResponse.json({ error: "You are not allowed to view the active loans report" }, { status: 403 });
   }
 
   const searchParams = new URL(request.url).searchParams;
-  const report = await loadOutstandingBalancesReport(prisma, context.scope, {
+  const report = await loadActiveLoansReport(prisma, context.scope, {
     officeId: searchParams.get("officeId"),
     loanOfficerId: searchParams.get("loanOfficerId"),
-    currencyCode: searchParams.get("currencyCode"),
   });
 
   if (searchParams.get("format")?.toLowerCase() === "csv") {
-    return new NextResponse(outstandingBalancesReportCsv(report), {
+    return new NextResponse(activeLoansReportCsv(report), {
       headers: {
         "Content-Type": "text/csv; charset=utf-8",
-        "Content-Disposition": `attachment; filename="sovlend-outstanding-balances-${new Date().toISOString().slice(0, 10)}.csv"`,
+        "Content-Disposition": `attachment; filename="sovlend-active-loans-${new Date().toISOString().slice(0, 10)}.csv"`,
         "Cache-Control": "no-store",
       },
     });
@@ -48,7 +40,6 @@ export async function GET(request: Request) {
   return NextResponse.json({
     officeId: report.officeId,
     loanOfficerId: report.loanOfficerId,
-    currencyCode: report.currencyCode,
     rows: report.rows.map((row) => ({
       loanId: row.loanId,
       accountNumber: row.accountNumber,
@@ -57,24 +48,24 @@ export async function GET(request: Request) {
       officeName: row.officeName,
       loanOfficerId: row.loanOfficerId,
       loanOfficerName: row.loanOfficerName,
+      productName: row.productName,
       currencyCode: row.currencyCode,
       status: row.status,
+      principalMinor: row.principalMinor.toString(),
       disbursedOn: row.disbursedOn ? isoDate(row.disbursedOn) : null,
       maturesOn: row.maturesOn ? isoDate(row.maturesOn) : null,
-      principalOutstandingMinor: row.principalOutstandingMinor.toString(),
-      interestOutstandingMinor: row.interestOutstandingMinor.toString(),
-      feesOutstandingMinor: row.feesOutstandingMinor.toString(),
-      penaltiesOutstandingMinor: row.penaltiesOutstandingMinor.toString(),
-      totalOutstandingMinor: row.totalOutstandingMinor.toString(),
+      outstandingPrincipalMinor: row.outstandingPrincipalMinor.toString(),
+      outstandingTotalMinor: row.outstandingTotalMinor.toString(),
+      daysOverdue: row.daysOverdue,
+      overdueSince: row.overdueSince ? isoDate(row.overdueSince) : null,
+      agingBucket: row.agingBucket,
     })),
     totals: report.totals.map((row) => ({
       currencyCode: row.currencyCode,
       loanCount: row.loanCount,
-      principalOutstandingMinor: row.principalOutstandingMinor.toString(),
-      interestOutstandingMinor: row.interestOutstandingMinor.toString(),
-      feesOutstandingMinor: row.feesOutstandingMinor.toString(),
-      penaltiesOutstandingMinor: row.penaltiesOutstandingMinor.toString(),
-      totalOutstandingMinor: row.totalOutstandingMinor.toString(),
+      principalMinor: row.principalMinor.toString(),
+      outstandingPrincipalMinor: row.outstandingPrincipalMinor.toString(),
+      outstandingTotalMinor: row.outstandingTotalMinor.toString(),
     })),
   });
 }

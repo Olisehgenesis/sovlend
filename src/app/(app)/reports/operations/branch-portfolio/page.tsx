@@ -1,13 +1,15 @@
-import { Building2 } from "lucide-react";
+import { Building2, Download } from "lucide-react";
 import { headers } from "next/headers";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { Breadcrumbs } from "@/components/breadcrumbs";
+import { ReportPicker } from "@/components/report-picker";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { permissions } from "@/modules/identity/domain/permissions";
 import { formatMinor } from "@/modules/money/domain/format-minor";
+import { loadReportPickerOptions } from "@/modules/reports/report-catalog";
 import {
   formatPercent,
   formatReportDate,
@@ -34,10 +36,16 @@ export default async function BranchPortfolioPage({
   if (!context.allowed) redirect("/reports");
 
   const params = await searchParams;
-  const report = await loadBranchPortfolioReport(prisma, context.scope, {
-    parType: params.parType,
-    date: params.date,
-  });
+  const query = querySuffix(params);
+  const [report, pickerOptions] = await Promise.all([
+    loadBranchPortfolioReport(prisma, context.scope, {
+      parType: params.parType,
+      date: params.date,
+    }),
+    loadReportPickerOptions(prisma, session.user.id, context.scope.organizationId),
+  ]);
+  const apiHref = `/api/reports/operations/branch-portfolio${query}`;
+  const exportHref = `${apiHref}${query ? "&" : "?"}format=csv`;
 
   return (
     <main className="directory-page">
@@ -56,7 +64,14 @@ export default async function BranchPortfolioPage({
             Office-level active book, outstanding principal, PAR&gt;{report.parDays}, and disbursals for {formatReportDate(report.asOfDate)}.
           </p>
         </div>
+        <ReportPicker current="/reports/operations/branch-portfolio" options={pickerOptions} />
         <div className="header-actions">
+          <a className="secondary-action" href={exportHref}>
+            <Download size={16} /> Export CSV
+          </a>
+          <Link className="secondary-action" href={apiHref}>
+            API JSON
+          </Link>
           <Link className="secondary-action" href="/reports">
             Reports
           </Link>
@@ -159,4 +174,12 @@ export default async function BranchPortfolioPage({
       </section>
     </main>
   );
+}
+
+function querySuffix(filters: { parType?: string; date?: string }) {
+  const params = new URLSearchParams();
+  if (filters.parType) params.set("parType", filters.parType);
+  if (filters.date) params.set("date", filters.date);
+  const query = params.toString();
+  return query ? `?${query}` : "";
 }

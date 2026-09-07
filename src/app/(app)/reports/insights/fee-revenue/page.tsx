@@ -1,9 +1,10 @@
-import { ReceiptText } from "lucide-react";
+import { Download, ReceiptText } from "lucide-react";
 import { headers } from "next/headers";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { Breadcrumbs } from "@/components/breadcrumbs";
+import { ReportPicker } from "@/components/report-picker";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { AuthorizationService } from "@/modules/identity/application/authorization-service";
@@ -11,6 +12,7 @@ import { getUserDataScope } from "@/modules/identity/application/data-scope";
 import { permissions } from "@/modules/identity/domain/permissions";
 import { formatMinor } from "@/modules/money/domain/format-minor";
 import { formatDisplayDate, formatDisplayDateTime, getFeeRevenueFilters, loadFeeRevenueReport } from "@/modules/reports/domain/insights-report";
+import { loadReportPickerOptions } from "@/modules/reports/report-catalog";
 
 export default async function FeeRevenueReportPage({ searchParams }: { searchParams: Promise<{ startDate?: string; endDate?: string }> }) {
   const session = await auth.api.getSession({ headers: await headers() });
@@ -26,7 +28,12 @@ export default async function FeeRevenueReportPage({ searchParams }: { searchPar
   if (!allowed) redirect("/reports");
 
   const filters = getFeeRevenueFilters(await searchParams);
-  const report = await loadFeeRevenueReport(prisma, scope, filters);
+  const [report, pickerOptions] = await Promise.all([
+    loadFeeRevenueReport(prisma, scope, filters),
+    loadReportPickerOptions(prisma, session.user.id, scope.organizationId),
+  ]);
+  const query = querySuffix({ startDate: report.startDate, endDate: report.endDate });
+  const exportHref = `/api/reports/insights/fee-revenue${query}${query ? "&" : "?"}format=csv`;
 
   return (
     <main className="directory-page">
@@ -37,7 +44,11 @@ export default async function FeeRevenueReportPage({ searchParams }: { searchPar
           <h1>Fee &amp; charges revenue report</h1>
           <p>{formatDisplayDate(filters.startDate)} to {formatDisplayDate(filters.endDate)} by charge due date</p>
         </div>
+        <ReportPicker current="/reports/insights/fee-revenue" options={pickerOptions} />
         <div className="header-actions">
+          <a className="secondary-action" href={exportHref}>
+            <Download size={16} /> Export CSV
+          </a>
           <Link className="secondary-action" href="/reports">All reports</Link>
           <Link className="secondary-action" href="/backoffice/products">Charge templates</Link>
         </div>
@@ -176,4 +187,12 @@ export default async function FeeRevenueReportPage({ searchParams }: { searchPar
       ) : null}
     </main>
   );
+}
+
+function querySuffix(filters: { startDate: string; endDate: string }) {
+  const params = new URLSearchParams();
+  params.set("startDate", filters.startDate);
+  params.set("endDate", filters.endDate);
+  const query = params.toString();
+  return query ? `?${query}` : "";
 }
