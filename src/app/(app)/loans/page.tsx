@@ -14,6 +14,12 @@ import {
 } from "@/modules/identity/application/data-scope";
 
 const activeLoanStatuses: LoanStatus[] = ["ACTIVE", "IN_ARREARS", "OVERPAID"];
+const supportedStatusFilters = ["IN_ARREARS", "OVERPAID", "WRITTEN_OFF", "CLOSED"] as const;
+type SupportedLoanStatusFilter = (typeof supportedStatusFilters)[number];
+
+function clampToZero(value: bigint): bigint {
+  return value > 0n ? value : 0n;
+}
 
 const statusAliasToValue: Record<string, LoanStatus> = {
   active: "ACTIVE",
@@ -22,15 +28,75 @@ const statusAliasToValue: Record<string, LoanStatus> = {
   "in arrears": "IN_ARREARS",
   arrears: "IN_ARREARS",
   overpaid: "OVERPAID",
+  "written off": "WRITTEN_OFF",
+  writtenoff: "WRITTEN_OFF",
+  closed: "CLOSED",
 };
 
-export default async function LoansPage({ searchParams }: { searchParams: Promise<{ query?: string; page?: string }> }) {
+const loanStatusFilterMeta: Record<
+  SupportedLoanStatusFilter,
+  {
+    heading: string;
+    countLabel: string;
+    panelTitle: string;
+    panelDescription: string;
+    emptyTitle: string;
+    emptyDescription: string;
+    tone: string;
+  }
+> = {
+  IN_ARREARS: {
+    heading: "In arrears",
+    countLabel: "loan accounts in arrears",
+    panelTitle: "Loans in arrears",
+    panelDescription: "Operational register for delinquent accounts needing recovery follow-up",
+    emptyTitle: "No matching loans in arrears",
+    emptyDescription: "Change the filter and try again.",
+    tone: "in-arrears",
+  },
+  OVERPAID: {
+    heading: "Overpaid",
+    countLabel: "overpaid loan accounts",
+    panelTitle: "Loans overpaid",
+    panelDescription: "Operational register for accounts with excess repayments to reconcile",
+    emptyTitle: "No matching overpaid loans",
+    emptyDescription: "Change the filter and try again.",
+    tone: "review",
+  },
+  WRITTEN_OFF: {
+    heading: "Written off",
+    countLabel: "written-off loan accounts",
+    panelTitle: "Loans written off",
+    panelDescription: "Archived loss register for loans already written off",
+    emptyTitle: "No matching written-off loans",
+    emptyDescription: "Change the filter and try again.",
+    tone: "in-arrears",
+  },
+  CLOSED: {
+    heading: "Closed",
+    countLabel: "closed loan accounts",
+    panelTitle: "Loans closed",
+    panelDescription: "Completed loan accounts with no remaining balance",
+    emptyTitle: "No matching closed loans",
+    emptyDescription: "Change the filter and try again.",
+    tone: "up-to-date",
+  },
+};
+
+export default async function LoansPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ query?: string; page?: string; status?: string }>;
+}) {
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session) redirect("/sign-in");
   const userScope = await getUserDataScope(prisma, session.user.id);
   if (!userScope) redirect("/");
+
   const params = await searchParams;
   const query = params.query?.trim() ?? "";
+  const requestedStatus = parseLoanStatusFilter(params.status);
+  const activeStatusMeta = requestedStatus ? loanStatusFilterMeta[requestedStatus] : null;
   const pageSize = 15;
   const requestedPage = Math.max(1, Number.parseInt(params.page ?? "1", 10) || 1);
 
@@ -45,42 +111,43 @@ export default async function LoansPage({ searchParams }: { searchParams: Promis
     searchFilters.push({ client: { lastName: { contains: query, mode: "insensitive" } } });
     searchFilters.push({ client: { accountNumber: { contains: query } } });
     searchFilters.push({ client: { mobileNumber: { contains: query } } });
+    searchFilters.push({ group: { name: { contains: query, mode: "insensitive" } } });
+    searchFilters.push({ group: { accountNumber: { contains: query } } });
     searchFilters.push({ office: { name: { contains: query, mode: "insensitive" } } });
     searchFilters.push({ loanOfficer: { is: { name: { contains: query, mode: "insensitive" } } } });
   }
 
   const loanWhere: Prisma.LoanWhereInput = {
-    client: { organizationId: userScope.organizationId },
+    office: { organizationId: userScope.organizationId },
     ...officeWhere(userScope),
-    status: { in: activeLoanStatuses },
+    status: requestedStatus ? requestedStatus : { in: activeLoanStatuses },
     ...(searchFilters.length > 0 ? { AND: [{ OR: searchFilters }] } : {}),
   };
 
-  const [products, applications, activeLoanTotal] = await Promise.all([
+  const [products, applications, loanTotal] = await Promise.all([
     prisma.loanProduct.findMany({
       where: { organizationId: userScope.organizationId },
       orderBy: [{ active: "desc" }, { name: "asc" }],
     }),
     prisma.loanApplication.findMany({
       where: {
-        client: {
-          organizationId: userScope.organizationId,
-          ...officeWhere(userScope),
-        },
+        office: { organizationId: userScope.organizationId },
+        ...officeWhere(userScope),
       },
-      include: { client: true, product: true },
+      include: { client: true, group: true, product: true },
       orderBy: { createdAt: "desc" },
       take: 20,
     }),
     prisma.loan.count({ where: loanWhere }),
   ]);
 
-  const pages = Math.max(1, Math.ceil(activeLoanTotal / pageSize));
+  const pages = Math.max(1, Math.ceil(loanTotal / pageSize));
   const page = Math.min(requestedPage, pages);
   const loans = await prisma.loan.findMany({
     where: loanWhere,
     include: {
       client: { include: { office: { select: { name: true } } } },
+      group: { select: { name: true, accountNumber: true } },
       product: true,
       loanOfficer: { select: { name: true } },
       installments: {
@@ -93,6 +160,10 @@ export default async function LoansPage({ searchParams }: { searchParams: Promis
           interestPaidMinor: true,
           feesPaidMinor: true,
           penaltiesPaidMinor: true,
+          principalWaivedMinor: true,
+          interestWaivedMinor: true,
+          feesWaivedMinor: true,
+          penaltiesWaivedMinor: true,
         },
       },
     },
@@ -103,20 +174,24 @@ export default async function LoansPage({ searchParams }: { searchParams: Promis
 
   const pageWindow = paginateWindow(page, pages);
   const pageHref = (targetPage: number) => {
-    const q = new URLSearchParams();
-    if (query) q.set("query", query);
-    q.set("page", String(targetPage));
-    return `/loans?${q.toString()}`;
+    const nextParams = new URLSearchParams();
+    if (query) nextParams.set("query", query);
+    if (requestedStatus) nextParams.set("status", requestedStatus);
+    nextParams.set("page", String(targetPage));
+    return `/loans?${nextParams.toString()}`;
   };
+  const clearStatusHref = query ? `/loans?query=${encodeURIComponent(query)}` : "/loans";
 
   return (
     <main className="directory-page">
       <header className="directory-header">
         <div>
           <p className="eyebrow">Lending operations</p>
-          <h1>Loans</h1>
+          <h1>{activeStatusMeta ? `Loans — ${activeStatusMeta.heading}` : "Loans"}</h1>
           <p>
-            {activeLoanTotal.toLocaleString()} active loan accounts · {applications.length} applications needing review
+            {activeStatusMeta
+              ? `${loanTotal.toLocaleString()} ${activeStatusMeta.countLabel}`
+              : `${loanTotal.toLocaleString()} active loan accounts`} · {applications.length} applications needing review
           </p>
         </div>
         <div className="header-actions">
@@ -126,26 +201,43 @@ export default async function LoansPage({ searchParams }: { searchParams: Promis
           <a className="secondary-action" href="/api/loans/export">
             <Download size={16} /> Export CSV
           </a>
+          <Link className="secondary-action" href="/loans/exports">
+            <Download size={16} /> Full export
+          </Link>
           <Link className="invest-button" href="/loans/new">
             <Plus size={16} /> New application
           </Link>
         </div>
       </header>
-      <LiveSearchInput placeholder="Filter display by name, client account, staff, office, loan name or status" />
+      <div className="directory-toolbar">
+        <LiveSearchInput placeholder="Filter display by name, client account, staff, office, loan name or status" />
+        {activeStatusMeta ? (
+          <div className="directory-filter-chip">
+            <span className={`status ${activeStatusMeta.tone}`}>Status: {activeStatusMeta.heading}</span>
+            <Link className="green-link" href={clearStatusHref}>
+              Clear filter
+            </Link>
+          </div>
+        ) : null}
+      </div>
       <section className="loan-route-grid">
         <article className="panel">
           <div className="panel-heading">
             <div>
-              <h2>All active loans</h2>
-              <p>Operational register for active and in-arrears accounts</p>
+              <h2>{activeStatusMeta ? activeStatusMeta.panelTitle : "All active loans"}</h2>
+              <p>
+                {activeStatusMeta
+                  ? activeStatusMeta.panelDescription
+                  : "Operational register for active and in-arrears accounts"}
+              </p>
             </div>
             <CircleDollarSign size={19} />
           </div>
           {loans.length === 0 ? (
             <div className="empty-state">
               <CircleDollarSign size={28} />
-              <strong>No matching active loans</strong>
-              <p>Change the filter and try again.</p>
+              <strong>{activeStatusMeta ? activeStatusMeta.emptyTitle : "No matching active loans"}</strong>
+              <p>{activeStatusMeta ? activeStatusMeta.emptyDescription : "Change the filter and try again."}</p>
             </div>
           ) : (
             <div className="table-scroll">
@@ -166,23 +258,50 @@ export default async function LoansPage({ searchParams }: { searchParams: Promis
                 </thead>
                 <tbody>
                   {loans.map((loan) => {
-                    const principalDue = loan.installments.reduce((sum, item) => sum + item.principalDueMinor - item.principalPaidMinor, 0n);
-                    const interestDue = loan.installments.reduce((sum, item) => sum + item.interestDueMinor - item.interestPaidMinor, 0n);
-                    const feesDue = loan.installments.reduce((sum, item) => sum + item.feesDueMinor - item.feesPaidMinor, 0n);
-                    const penaltiesDue = loan.installments.reduce((sum, item) => sum + item.penaltiesDueMinor - item.penaltiesPaidMinor, 0n);
+                    const principalDueRaw = loan.installments.reduce(
+                      (sum, item) => sum + item.principalDueMinor - item.principalPaidMinor - item.principalWaivedMinor,
+                      0n,
+                    ) - loan.principalWrittenOffMinor;
+                    const interestDueRaw = loan.installments.reduce(
+                      (sum, item) => sum + item.interestDueMinor - item.interestPaidMinor - item.interestWaivedMinor,
+                      0n,
+                    ) - loan.interestWrittenOffMinor;
+                    const feesDueRaw = loan.installments.reduce(
+                      (sum, item) => sum + item.feesDueMinor - item.feesPaidMinor - item.feesWaivedMinor,
+                      0n,
+                    ) - loan.feesWrittenOffMinor;
+                    const penaltiesDueRaw = loan.installments.reduce(
+                      (sum, item) => sum + item.penaltiesDueMinor - item.penaltiesPaidMinor - item.penaltiesWaivedMinor,
+                      0n,
+                    ) - loan.penaltiesWrittenOffMinor;
+                    const principalDue = clampToZero(principalDueRaw);
+                    const interestDue = clampToZero(interestDueRaw);
+                    const feesDue = clampToZero(feesDueRaw);
+                    const penaltiesDue = clampToZero(penaltiesDueRaw);
                     const totalDue = principalDue + interestDue + feesDue + penaltiesDue;
-                    const totalPaid = loan.installments.reduce((sum, item) => sum + item.principalPaidMinor + item.interestPaidMinor + item.feesPaidMinor + item.penaltiesPaidMinor, 0n);
-                    const borrower = `${loan.client.firstName} ${loan.client.lastName}`;
+                    const totalPaid = loan.installments.reduce(
+                      (sum, item) =>
+                        sum +
+                        item.principalPaidMinor +
+                        item.interestPaidMinor +
+                        item.feesPaidMinor +
+                        item.penaltiesPaidMinor,
+                      0n,
+                    );
+                    const borrower = loan.client
+                      ? `${loan.client.firstName} ${loan.client.lastName}`
+                      : `Group: ${loan.group?.name ?? "Unknown"}`;
+
                     return (
                       <tr key={loan.id}>
                         <td>
                           {borrower}
                           <Link className="row-link" href={`/loans/${loan.id}`} aria-label={`Open ${loan.accountNumber}`} />
                         </td>
-                        <td className="mono">{loan.client.accountNumber}</td>
+                        <td className="mono">{loan.client ? loan.client.accountNumber : (loan.group?.accountNumber ?? "")}</td>
                         <td>{loan.product.name}</td>
                         <td>
-                          <span className={`status ${loan.status === "ACTIVE" ? "up-to-date" : loan.status === "IN_ARREARS" ? "in-arrears" : "review"}`}>
+                          <span className={`status ${loanStatusTone(loan.status)}`}>
                             {loan.status.replaceAll("_", " ")}
                           </span>
                         </td>
@@ -199,7 +318,10 @@ export default async function LoansPage({ searchParams }: { searchParams: Promis
               </table>
             </div>
           )}
-          <nav className="pagination" aria-label="Active loan pages">
+          <nav
+            className="pagination"
+            aria-label={activeStatusMeta ? `${activeStatusMeta.panelTitle} pages` : "Active loan pages"}
+          >
             <Link aria-disabled={page <= 1} href={pageHref(1)}>
               {"<<"}
             </Link>
@@ -249,7 +371,9 @@ export default async function LoansPage({ searchParams }: { searchParams: Promis
                   {applications.map((application) => (
                     <tr key={application.id}>
                       <td>
-                        {application.client.firstName} {application.client.lastName}
+                        {application.client
+                          ? `${application.client.firstName} ${application.client.lastName}`
+                          : `Group: ${application.group?.name ?? "Unknown"}`}
                       </td>
                       <td>{application.product.name}</td>
                       <td>
@@ -301,15 +425,8 @@ export default async function LoansPage({ searchParams }: { searchParams: Promis
                       <small>{product.shortName}</small>
                     </td>
                     <td>
-                      {formatMinor(
-                        product.principalMinMinor,
-                        product.denominationCurrency,
-                      )}{" "}
-                      -{" "}
-                      {formatMinor(
-                        product.principalMaxMinor,
-                        product.denominationCurrency,
-                      )}
+                      {formatMinor(product.principalMinMinor, product.denominationCurrency)} -{" "}
+                      {formatMinor(product.principalMaxMinor, product.denominationCurrency)}
                     </td>
                     <td>{(product.annualRateBps / 100).toFixed(2)}%</td>
                     <td>
@@ -331,6 +448,29 @@ function paginateWindow(page: number, totalPages: number) {
   const start = Math.max(1, page - 2);
   const end = Math.min(totalPages, page + 2);
   const pages: number[] = [];
-  for (let current = start; current <= end; current += 1) pages.push(current);
+
+  for (let current = start; current <= end; current += 1) {
+    pages.push(current);
+  }
+
   return pages;
+}
+
+function parseLoanStatusFilter(status?: string): SupportedLoanStatusFilter | null {
+  const normalized = status?.trim().toUpperCase();
+  if (!normalized) return null;
+  return supportedStatusFilters.find((value) => value === normalized) ?? null;
+}
+
+function loanStatusTone(status: LoanStatus) {
+  switch (status) {
+    case "ACTIVE":
+    case "CLOSED":
+      return "up-to-date";
+    case "IN_ARREARS":
+    case "WRITTEN_OFF":
+      return "in-arrears";
+    default:
+      return "review";
+  }
 }

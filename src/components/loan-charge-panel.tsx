@@ -1,6 +1,7 @@
 "use client";
 
 import { CheckCircle2, LoaderCircle, Plus, XCircle } from "lucide-react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -76,7 +77,7 @@ export function LoanChargesPanel({
         </div>
       ) : (
         <div className="table-scroll">
-          <table>
+          <table className="clickable-rows">
             <thead>
               <tr>
                 <th>Charge</th>
@@ -89,7 +90,10 @@ export function LoanChargesPanel({
             <tbody>
               {charges.map((charge) => (
                 <tr key={charge.id}>
-                  <td>{charge.name}</td>
+                  <td>
+                    <strong>{charge.name}</strong>
+                    <Link className="row-link" href={`/loans/${loanId}/charges/${charge.id}`} aria-label={`Open charge ${charge.name}`} />
+                  </td>
                   <td className="mono">{formatMinor(BigInt(charge.amountMinor), charge.currencyCode)}</td>
                   <td>{charge.dueOnFormatted ?? "-"}</td>
                   <td>
@@ -97,7 +101,7 @@ export function LoanChargesPanel({
                       {charge.status}
                     </span>
                   </td>
-                  <td>
+                  <td style={{ position: "relative", zIndex: 1 }}>
                     {canManage && charge.status === "PENDING" ? (
                       <div className="account-card-actions">
                         <button className="icon-action" disabled={pendingId === charge.id} onClick={() => setStatus(charge.id, "PAID")} title="Mark paid" type="button">

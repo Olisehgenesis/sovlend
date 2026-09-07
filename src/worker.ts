@@ -3,6 +3,7 @@ import { Worker } from "bullmq";
 
 import { enqueueRepaymentReminders } from "@/modules/notifications/application/reminder-scanner";
 import { classifyLoanArrears } from "@/modules/lending/application/classify-arrears";
+import { processLoanExportJob } from "@/modules/lending/application/export-loans";
 import { reminderJobId, reminderJobSchema } from "@/modules/notifications/domain/reminder";
 import { sendSms } from "@/modules/notifications/infrastructure/sms";
 import { formatMinor } from "@/modules/money/domain/format-minor";
@@ -14,6 +15,7 @@ import { BullMqPriceRefreshQueue, PrismaPriceSnapshotStore, RedisPriceCache } fr
 import { createCryptoProviders } from "@/modules/pricing/infrastructure/providers";
 import {
   domainEventQueue,
+  loanExportQueue,
   maintenanceQueue,
   priceRefreshQueue,
   redisConnection,
@@ -123,6 +125,15 @@ const priceWorker = new Worker(
   { connection: redisConnection, concurrency: 2 },
 );
 
+const loanExportWorker = new Worker(
+  "loan-export",
+  async (job) => {
+    const { jobId } = job.data as { jobId: string };
+    return processLoanExportJob(prisma, jobId);
+  },
+  { connection: redisConnection, concurrency: 2 },
+);
+
 async function publishOutboxBatch(): Promise<void> {
   const events = await prisma.outboxEvent.findMany({
     where: { publishedAt: null },
@@ -162,8 +173,8 @@ async function run(): Promise<void> {
 
 async function shutdown(): Promise<void> {
   stopping = true;
-  await Promise.all([maintenanceWorker.close(), reminderWorker.close(), priceWorker.close()]);
-  await Promise.all([domainEventQueue.close(), maintenanceQueue.close(), reminderQueue.close(), priceRefreshQueue.close()]);
+  await Promise.all([maintenanceWorker.close(), reminderWorker.close(), priceWorker.close(), loanExportWorker.close()]);
+  await Promise.all([domainEventQueue.close(), maintenanceQueue.close(), reminderQueue.close(), priceRefreshQueue.close(), loanExportQueue.close()]);
   await redisConnection.quit();
   await prisma.$disconnect();
 }

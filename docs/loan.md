@@ -153,17 +153,17 @@ Observed actions on loan page:
 
 ### LoanApplication fields
 - id, submittedById
-- clientId, productId
+- clientId (optional), groupId (optional — exactly one of clientId/groupId required, DB `CHECK` constraint), officeId, productId
 - proposedPrincipalMinor
 - approvedPrincipalMinor
 - status
 - purpose
 - submittedAt, approvedAt
-- relations: approvals, loan, client, product
+- relations: approvals, loan, client, group, office, product
 
 ### Loan fields
 - id, applicationId (unique)
-- clientId, productId, officeId, loanOfficerId
+- clientId (optional), groupId (optional — exactly one of clientId/groupId required, DB `CHECK` constraint), productId, officeId, loanOfficerId
 - accountNumber (unique)
 - denominationCurrency
 - principalMinor
@@ -177,6 +177,7 @@ Observed actions on loan page:
 - loanId, installmentNumber, dueOn
 - due buckets: principalDueMinor, interestDueMinor, feesDueMinor, penaltiesDueMinor
 - paid buckets: principalPaidMinor, interestPaidMinor, feesPaidMinor, penaltiesPaidMinor
+- waived buckets: principalWaivedMinor, interestWaivedMinor, feesWaivedMinor, penaltiesWaivedMinor (set by Prepay/Foreclosure servicing actions)
 
 ### LoanTransaction fields
 - loanId
@@ -194,6 +195,14 @@ Observed actions on loan page:
 ### LoanTransactionAllocation fields
 - transactionId, installmentId
 - principalMinor, interestMinor, feesMinor, penaltiesMinor
+
+### LoanServiceRequest fields (Agent 5: high-risk servicing, maker-checker)
+- loanId, actionType (UNDO_DISBURSAL, PREPAY, FORECLOSURE, TRANSACTION_REVERSAL)
+- status (PENDING, APPROVED, REJECTED), reason, payload (JSON, captured at request time)
+- idempotencyKey (unique)
+- requestedById, requestedAt, decidedById, decidedAt, decisionNote
+- resultTransactionId (unique, links to the LoanTransaction created on approval)
+- only one PENDING request per loan is allowed at a time; the decider must differ from the requester
 
 ### Other loan-related entities
 - Document (loanId relation)
@@ -299,10 +308,7 @@ Observed actions on loan page:
 ## Gaps Between Legacy Surface and Current SovLend Surface
 Legacy shows broader per-loan tabs than current SovLend loan page:
 - Not yet surfaced in SovLend loan UI:
-  - Overdue Charges tab
-  - Undo Disbursal action
-  - Foreclosure action
-  - Prepay Loan action
+  - None remaining for high-risk servicing actions (Undo Disbursal, Foreclosure, Prepay Loan are now available under the "Servicing" tab, maker-checker controlled)
 - Not yet surfaced in SovLend loan register:
   - Export-to-document action matching legacy operator flow
 - Partially present elsewhere:
@@ -350,7 +356,7 @@ For communication/control:
 - Active loans register pagination: Legacy yes, SovLend yes
 - Active loans register export-to-document flow: Legacy yes, SovLend partial (CSV export exists)
 - Active loans row click-through interaction: Legacy yes, SovLend yes
-- Group and individual loan visibility: Legacy yes, SovLend yes (both are Loan records linked to Client)
+- Group and individual loan visibility: Legacy yes, SovLend yes (Loan/LoanApplication can be owned by either a Client or a Group — added 2026-09-03, see `prisma/migrations/20260903030000_group_owned_loans/`)
 - Loan application capture: Legacy yes, SovLend yes
 - Maker-checker approval: Legacy yes, SovLend yes
 - Maker-checker disbursement separation: Legacy yes, SovLend yes
@@ -362,9 +368,10 @@ For communication/control:
 - Loan notes tab: Legacy yes, SovLend yes
 - Loan collateral tab: Legacy yes, SovLend yes
 - Overdue charges tab: Legacy yes, SovLend partial
-- Prepay loan action: Legacy yes, SovLend no
-- Foreclosure action: Legacy yes, SovLend no
-- Undo disbursal action: Legacy yes, SovLend no
+- Prepay loan action: Legacy yes, SovLend yes (maker-checker, Servicing tab)
+- Foreclosure action: Legacy yes, SovLend yes (maker-checker, Servicing tab)
+- Undo disbursal action: Legacy yes, SovLend yes (maker-checker, Servicing tab, only while no repayments posted)
+- Transaction reversal action: Legacy yes, SovLend yes (maker-checker, repayment transactions only)
 - Loan export: Legacy yes, SovLend yes (CSV)
 
 ### Live examples captured
@@ -443,17 +450,15 @@ For communication/control:
 - POST /api/loans/[id]/disburse
 - POST /api/loans/[id]/repayments
 - GET /api/loans/export
+- Full-fidelity export (Agent 6): GET/POST /api/loans/export-jobs, GET /api/loans/export-jobs/[jobId], GET /api/loans/export-jobs/[jobId]/download
 - Loan charges: GET/POST /api/loans/[id]/charges and PATCH /api/loans/[id]/charges/[chargeId]
 - Loan notes: GET/POST /api/loans/[id]/notes
 - Loan documents: GET/POST /api/loans/[id]/documents and DELETE /api/loans/[id]/documents/[documentId]
 - Loan collateral: GET/POST /api/loans/[id]/collateral and PATCH/DELETE /api/loans/[id]/collateral/[collateralId]
+- High-impact servicing (maker-checker): GET/POST /api/loans/[id]/service-actions, POST /api/loans/[id]/service-actions/[requestId]/decision, GET /api/loans/[id]/payoff-quote
 
 ### Routes missing for full legacy parity
-- High-impact servicing:
-  - POST /api/loans/[id]/undo-disbursal
-  - POST /api/loans/[id]/prepay
-  - POST /api/loans/[id]/foreclose
-  - POST /api/loans/[id]/transactions/[txnId]/reverse
+- None remaining for the six-track parity plan; all six agents (1-6) are complete.
 
 ### Active-loans register parity gaps from legacy sample
 - Missing unified register filter by name/client/staff/office
@@ -514,5 +519,4 @@ Export must support full extraction for any one loan and bulk extraction for all
 - Idempotent export job keys for repeated requests
 
 ### Current SovLend export gap
-- Current implementation exports only application-level summary CSV.
-- Missing complete loan-level operational export package described above.
+- Resolved by Agent 6: async export job API (`LoanExportJob`) supports SINGLE_LOAN/FILTERED/PORTFOLIO scopes, CSV zip (all 13 datasets above) and nested JSON package formats, manifest with as-of date/scope/per-dataset counts, idempotency keys, office-scope + permission enforcement, and async processing via BullMQ worker. UI at `/loans/exports`.

@@ -87,13 +87,55 @@ export class ReadOnlyFineractClient {
     return response.json();
   }
 
+  /** Full group record including client members and the collection-meeting calendar. */
+  async getGroup(groupId: number): Promise<unknown> {
+    const response = await this.fetchWithRetry(this.buildUrl(`groups/${groupId}`, { associations: "all" }), "application/json");
+    return response.json();
+  }
+
+  async getGroupAccounts(groupId: number): Promise<unknown> {
+    const response = await this.fetchWithRetry(this.buildUrl(`groups/${groupId}/accounts`), "application/json");
+    return response.json();
+  }
+
   async getLoan(loanId: number): Promise<unknown> {
     const response = await this.fetchWithRetry(this.buildUrl(`loans/${loanId}`, { associations: "repaymentSchedule,transactions" }), "application/json");
     return response.json();
   }
 
+  async getLoanWithCharges(loanId: number): Promise<unknown> {
+    const response = await this.fetchWithRetry(this.buildUrl(`loans/${loanId}`, { associations: "charges" }), "application/json");
+    return response.json();
+  }
+
+  async getLoanGuarantors(loanId: number): Promise<unknown> {
+    const response = await this.fetchWithRetry(this.buildUrl(`loans/${loanId}`, { associations: "guarantors" }), "application/json");
+    return (await response.json()).guarantors;
+  }
+
+  async getLoanDocuments(loanId: number): Promise<unknown> {
+    const response = await this.fetchWithRetry(this.buildUrl(`loans/${loanId}/documents`), "application/json");
+    return response.json();
+  }
+
+  async getLoanNotes(loanId: number): Promise<unknown> {
+    const response = await this.fetchWithRetry(this.buildUrl(`loans/${loanId}/notes`), "application/json");
+    return response.json();
+  }
+
+  async getSavingsAccount(savingsAccountId: number): Promise<unknown> {
+    const response = await this.fetchWithRetry(this.buildUrl(`savingsaccounts/${savingsAccountId}`, { associations: "transactions" }), "application/json");
+    return response.json();
+  }
+
   async downloadClientDocument(clientId: number, documentId: number): Promise<{ bytes: Buffer; contentType: string }> {
     const response = await this.fetchWithRetry(this.buildUrl(`clients/${clientId}/documents/${documentId}/attachment`), "*/*");
+    const arrayBuffer = await response.arrayBuffer();
+    return { bytes: Buffer.from(arrayBuffer), contentType: response.headers.get("content-type") ?? "application/octet-stream" };
+  }
+
+  async downloadLoanDocument(loanId: number, documentId: number): Promise<{ bytes: Buffer; contentType: string }> {
+    const response = await this.fetchWithRetry(this.buildUrl(`loans/${loanId}/documents/${documentId}/attachment`), "*/*");
     const arrayBuffer = await response.arrayBuffer();
     return { bytes: Buffer.from(arrayBuffer), contentType: response.headers.get("content-type") ?? "application/octet-stream" };
   }

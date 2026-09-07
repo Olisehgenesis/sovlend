@@ -1,5 +1,6 @@
 import { ShieldCheck } from "lucide-react";
 import { headers } from "next/headers";
+import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 
 import { ApproveLoanForm } from "@/components/approve-loan-form";
@@ -22,10 +23,12 @@ export default async function LoanApplicationPage({
   const application = await prisma.loanApplication.findFirst({
     where: {
       id: (await params).id,
-      client: { organizationId: scope.organizationId },
+      office: { organizationId: scope.organizationId },
     },
     include: {
       client: { include: { office: true } },
+      group: { select: { name: true, accountNumber: true } },
+      office: { select: { name: true } },
       product: true,
       loan: true,
       submittedBy: { select: { id: true, name: true } },
@@ -37,7 +40,7 @@ export default async function LoanApplicationPage({
   });
   if (
     !application ||
-    (scope.officeIds && !scope.officeIds.includes(application.client.officeId))
+    (scope.officeIds && !scope.officeIds.includes(application.officeId))
   )
     notFound();
   const proposed = formatMinor(
@@ -54,6 +57,7 @@ export default async function LoanApplicationPage({
   const actorApproved = application.approvals.some(
     (approval) => approval.reviewerId === session.user.id,
   );
+  const displayedStatus = application.loan?.status ?? application.status;
   const actionPanel =
     application.status === "SUBMITTED" &&
     application.submittedById !== session.user.id ? (
@@ -95,7 +99,8 @@ export default async function LoanApplicationPage({
       <Breadcrumbs
         items={[
           { label: "Loans", href: "/loans" },
-          { label: "Application review" },
+          { label: "Applications", href: "/loans/applications" },
+          { label: application.client ? `${application.client.firstName} ${application.client.lastName}` : `Group: ${application.group?.name ?? "Unknown"}` },
         ]}
       />
       <header className="directory-header">
@@ -103,15 +108,28 @@ export default async function LoanApplicationPage({
           <p className="eyebrow">Maker-checker review</p>
           <h1>Loan application</h1>
           <p>
-            {application.client.firstName} {application.client.lastName} ·{" "}
-            {application.client.accountNumber}
+            {application.client
+              ? `${application.client.firstName} ${application.client.lastName}`
+              : `Group: ${application.group?.name ?? "Unknown"}`}{" "}
+            ·{" "}
+            {application.client ? application.client.accountNumber : (application.group?.accountNumber ?? "")}
           </p>
         </div>
-        <span
-          className={`status status-prominent ${application.status === "APPROVED" ? "up-to-date" : "review"}`}
-        >
-          {application.loan?.status ?? application.status}
-        </span>
+        <div className="header-actions">
+          <Link className="secondary-action" href="/loans/applications">
+            All applications
+          </Link>
+          {application.loan ? (
+            <Link className="invest-button" href={`/loans/${application.loan.id}`}>
+              Open loan account
+            </Link>
+          ) : null}
+          <span
+            className={`status status-prominent ${displayedStatus === "ACTIVE" || displayedStatus === "APPROVED" || displayedStatus === "DISBURSED" || displayedStatus === "OVERPAID" || displayedStatus === "CLOSED" ? "up-to-date" : displayedStatus === "IN_ARREARS" || displayedStatus === "REJECTED" || displayedStatus === "WRITTEN_OFF" ? "in-arrears" : "review"}`}
+          >
+            {displayedStatus}
+          </span>
+        </div>
       </header>
       <section className="review-grid">
         <article className="panel review-summary">
@@ -128,17 +146,17 @@ export default async function LoanApplicationPage({
           <dl>
             <div>
               <dt>Status</dt>
-              <dd>{application.loan?.status ?? application.status}</dd>
+              <dd>{displayedStatus}</dd>
             </div>
             <div>
               <dt>Loan account</dt>
               <dd>
-                {application.loan?.accountNumber ?? "Created after approval"}
+                {application.loan ? <Link className="green-link" href={`/loans/${application.loan.id}`}>{application.loan.accountNumber}</Link> : "Created after approval"}
               </dd>
             </div>
             <div>
               <dt>Office</dt>
-              <dd>{application.client.office.name}</dd>
+              <dd>{application.office.name}</dd>
             </div>
             <div>
               <dt>Product</dt>
@@ -165,6 +183,10 @@ export default async function LoanApplicationPage({
             <div>
               <dt>Purpose</dt>
               <dd>{application.purpose ?? "Not provided"}</dd>
+            </div>
+            <div>
+              <dt>Approved at</dt>
+              <dd>{application.approvedAt?.toLocaleString() ?? "Pending decision"}</dd>
             </div>
             <div>
               <dt>Submitted by</dt>

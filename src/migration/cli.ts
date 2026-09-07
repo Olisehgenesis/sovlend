@@ -1,7 +1,9 @@
 import { rebuildManifest, verifyArchive } from "./archive";
 import { extractLegacy } from "./extract";
+import { extractLegacyLoanHistory } from "./extract-loans";
 import { ReadOnlyFineractClient } from "./fineract-client";
 import { importAllLegacyData } from "./import-all";
+import { importArchiveGroupsAndLoans } from "./import-archive-loans";
 import { importFoundation } from "./import-foundation";
 import { prisma } from "@/lib/prisma";
 
@@ -10,6 +12,12 @@ async function main() {
   if (command === "extract") {
     const result = await extractLegacy(process.env);
     console.log(`Extracted ${result.manifest.artifacts.length} checksummed pages to ${result.root}`);
+    return;
+  }
+  if (command === "extract-loans") {
+    const result = await extractLegacyLoanHistory(process.env);
+    console.log(`Extracted loan history for ${result.ownersProcessed} clients/groups (${result.loansExtracted} loan records) into ${result.root}`);
+    if (result.errors.length > 0) console.log(`${result.errors.length} issues:\n${result.errors.join("\n")}`);
     return;
   }
   if (command === "verify") {
@@ -40,20 +48,35 @@ async function main() {
     const officeName = process.env.MIGRATION_DEFAULT_OFFICE_NAME;
     const actorEmail = process.env.MIGRATION_ACTOR_EMAIL;
     const includeLoans = process.env.MIGRATION_INCLUDE_LOANS === "true";
+    const includeGroups = process.env.MIGRATION_INCLUDE_GROUPS !== "false";
     const { LEGACY_BASE_URL, LEGACY_TENANT_ID, LEGACY_USERNAME, LEGACY_PASSWORD } = process.env;
     if (!organizationName || !officeName || !actorEmail || !LEGACY_BASE_URL || !LEGACY_TENANT_ID || !LEGACY_USERNAME || !LEGACY_PASSWORD) {
-      throw new Error("Usage: MIGRATION_ORGANIZATION_NAME=... MIGRATION_DEFAULT_OFFICE_NAME=... MIGRATION_ACTOR_EMAIL=... [MIGRATION_INCLUDE_LOANS=true] LEGACY_*=... pnpm migration:import-all-clients");
+      throw new Error("Usage: MIGRATION_ORGANIZATION_NAME=... MIGRATION_DEFAULT_OFFICE_NAME=... MIGRATION_ACTOR_EMAIL=... [MIGRATION_INCLUDE_LOANS=true] [MIGRATION_INCLUDE_GROUPS=false] LEGACY_*=... pnpm migration:import-all-clients");
     }
     const organization = await prisma.organization.findFirstOrThrow({ where: { name: organizationName } });
     const office = await prisma.office.findFirstOrThrow({ where: { name: officeName, organizationId: organization.id } });
     const actor = await prisma.user.findFirstOrThrow({ where: { email: actorEmail.toLowerCase() } });
     const fineract = new ReadOnlyFineractClient(LEGACY_BASE_URL, LEGACY_TENANT_ID, LEGACY_USERNAME, LEGACY_PASSWORD);
-    const result = await importAllLegacyData(prisma, fineract, { organizationId: organization.id, defaultOfficeId: office.id, actorUserId: actor.id, includeLoans });
-    console.log(`Imported ${result.clientsImported} clients (${result.clientsSkipped} already present), ${result.loansImported} loans.`);
+    const result = await importAllLegacyData(prisma, fineract, { organizationId: organization.id, defaultOfficeId: office.id, actorUserId: actor.id, includeLoans, includeGroups });
+    console.log(`Imported ${result.clientsImported} clients (${result.clientsSkipped} already present), ${result.groupsImported} groups (${result.groupsSkipped} already present), ${result.loansImported} loans.`);
     if (result.errors.length > 0) console.log(`${result.errors.length} issues:\n${result.errors.join("\n")}`);
     return;
   }
-  throw new Error("Usage: migration:extract | migration:verify <archive-directory> | migration:manifest <archive-directory> | migration:import <archive-directory> | migration:import-all-clients");
+  if (command === "import-archive-loans") {
+    const root = process.argv[3];
+    const organizationName = process.env.MIGRATION_ORGANIZATION_NAME;
+    const actorEmail = process.env.MIGRATION_ACTOR_EMAIL;
+    if (!root || !organizationName || !actorEmail) {
+      throw new Error("Usage: MIGRATION_ORGANIZATION_NAME=... MIGRATION_ACTOR_EMAIL=... pnpm migration:import-archive-loans <archive-directory>");
+    }
+    const organization = await prisma.organization.findFirstOrThrow({ where: { name: organizationName } });
+    const actor = await prisma.user.findFirstOrThrow({ where: { email: actorEmail.toLowerCase() } });
+    const result = await importArchiveGroupsAndLoans(prisma, root, organization.id, actor.id);
+    console.log(`Imported ${result.groupsImported} groups, ${result.membersImported} group memberships, ${result.loansImported} loans from archive.`);
+    if (result.loansSkipped.length > 0) console.log(`${result.loansSkipped.length} loans skipped:\n${result.loansSkipped.join("\n")}`);
+    return;
+  }
+  throw new Error("Usage: migration:extract | migration:extract-loans | migration:verify <archive-directory> | migration:manifest <archive-directory> | migration:import <archive-directory> | migration:import-archive-loans <archive-directory> | migration:import-all-clients");
 }
 
 void main().catch((error) => { console.error(error instanceof Error ? error.message : error); process.exitCode = 1; });

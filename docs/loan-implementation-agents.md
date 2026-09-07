@@ -8,8 +8,8 @@ Purpose: execute loan parity in ordered tracks, one by one.
 - Agent 2: Completed
 - Agent 3: Completed
 - Agent 4: Completed
-- Agent 5: Not started
-- Agent 6: Not started
+- Agent 5: Completed
+- Agent 6: Completed
 
 ## Agent 1: Active-Loans Register Parity
 Scope:
@@ -81,6 +81,19 @@ Deliverables:
 Definition of done:
 - High-impact actions are possible without breaking financial invariants.
 
+Status: Completed.
+- `LoanServiceRequest` model added (propose → separate-actor decide → atomic execution), enforcing exactly one PENDING request per loan.
+- Domain function `calculateLoanPayoff` computes principal/interest/fees/penalties payoff (collected vs waived) on a cash-basis accounting model — no reversing entries are needed for interest/penalties never booked, only principal (always booked in full at disbursement) is guaranteed fully collected.
+- Application service `loan-service-actions.ts` implements: `requestLoanServiceAction`, `decideLoanServiceAction`, `previewLoanPayoff`, and executors for Undo Disbursal, full settlement (Prepay/Foreclosure), and Transaction Reversal (repayments only; disbursement reversal goes through Undo Disbursal instead).
+- Undo Disbursal is only permitted while the loan is ACTIVE with no transactions besides the original disbursement (guarantees safe schedule deletion); reverses the disbursement journal Dr/Cr and resets the loan to APPROVED.
+- Foreclosure always forces `waivePenalties = true`; Prepay allows an operator-chosen `waivePenalties` flag. Both close the loan and reuse `calculateLoanPayoff`.
+- Transaction Reversal decrements installment paid buckets per original allocation and recomputes loan status, allowing a CLOSED/overpaid loan to reopen if reversal creates a new balance.
+- New API routes: `POST/GET /api/loans/[id]/service-actions`, `POST /api/loans/[id]/service-actions/[requestId]/decision`, `GET /api/loans/[id]/payoff-quote`.
+- New `permissions.loanReverse` check (assigned to the Branch Manager default group) gates request and decision; maker-checker enforced by rejecting a decision from the same user who made the request.
+- New "Servicing" tab added to the loan detail page (`loan-service-actions-panel.tsx`) with a request form (live payoff preview) and an approve/reject history list.
+- `LoanInstallment` gained `principalWaivedMinor`/`interestWaivedMinor`/`feesWaivedMinor`/`penaltiesWaivedMinor` columns to record the Waived bucket from the legacy parity breakdown.
+- New unit tests: `loan-payoff.test.ts` (4 tests covering mixed past/future installments, waive-penalties policy, partial prior payments, fully-settled installments).
+
 ## Agent 6: Full-Fidelity Loan Export
 Scope:
 - Export all loan data for one loan, filtered sets, and full portfolio.
@@ -93,6 +106,15 @@ Deliverables:
 
 Definition of done:
 - Auditor can reconstruct any loan lifecycle from export package only.
+
+Status: Completed.
+- Pure domain module `loan-export.ts` builds 14 CSV datasets (loans, loan_balances, loan_schedule, loan_transactions, loan_transaction_allocations, loan_charges, loan_overdue_snapshot, loan_documents, loan_notes, loan_collateral, loan_journals, loan_journal_lines, loan_audit_events, loan_reminders) plus a nested JSON export shape and an export manifest (as-of date, scope, per-dataset counts).
+- `LoanExportJob` model (async job pattern matching the rest of the codebase): PENDING → PROCESSING → COMPLETED/FAILED, idempotency key unique per request, stores manifest + result object key/sha256/byte size on completion.
+- Application service `export-loans.ts`: `requestLoanExport` (permission check on `loanView`, idempotency short-circuit, scope validation for SINGLE_LOAN/FILTERED/PORTFOLIO, freezes requester's office scope, audit+outbox `loan.export.requested`), `processLoanExportJob` (resolves loans per scope, batch-gathers journals/journal lines/audit events, builds CSV zip via `archiver` or nested JSON, stores bytes via `export-storage.ts`, marks job COMPLETED/FAILED with audit+outbox events).
+- New BullMQ `loan-export` queue/worker wired the same way as existing notification queues.
+- New routes: `POST/GET /api/loans/export-jobs`, `GET /api/loans/export-jobs/[jobId]`, `GET /api/loans/export-jobs/[jobId]/download`.
+- New `/loans/exports` page + `loan-exports-panel.tsx`: scope/format picker, jobs table with polling while PENDING/PROCESSING, download links once COMPLETED. Header link added from the main loans list.
+- 11 new unit tests (`loan-export.test.ts`) plus a full fixture-based end-to-end smoke test against real local Postgres/Redis (both CSV_ZIP and JSON formats, correct byte-level zip/JSON output, idempotent replay) — confirmed the whole async pipeline works, not just unit-level logic.
 
 ## Execution Order
 1. Agent 1
@@ -113,3 +135,39 @@ Definition of done:
 - Add authorization checks to each new route.
 - Add idempotency keys for new financial mutation endpoints.
 - Append audit and outbox events for all critical state changes.
+
+## Post-Agent-6 Follow-On: Group-Owned Loans (2026-09-03)
+
+Triggered by explicit feedback: "groups are for people that save or borrow together, not a joint
+individual account" — comparing against the production iLend/Fineract reference tenant, which
+actively runs a "GROUP LOAN PRODUCT" where the borrower on the loan account is the `Group` itself,
+not one of its members.
+
+Status: Completed.
+- Schema: `Loan.clientId` and `LoanApplication.clientId` made optional; `groupId` (FK to `Group`)
+  added to both; `LoanApplication.officeId` added (new required denormalized column, mirroring
+  `Loan.officeId`) so office/org scoping never needs a `Client` relation; a DB `CHECK` constraint
+  on both tables enforces exactly one of `clientId`/`groupId` is set. `Charge.clientId` was also
+  made optional with a new `Charge.groupId` so charges can be posted on group-owned loans.
+  Migration: `prisma/migrations/20260903030000_group_owned_loans/`.
+- All loan-scoped routes/services updated to scope by `office.organizationId` instead of
+  `client.organizationId` (works identically for client- or group-owned rows): loan-applications
+  create route, approve-loan-application service, 10 loan sub-resource routes (charges,
+  documents, notes, collateral, service-actions, payoff-quote), the loans CSV export route, the
+  Agent-6 full-fidelity export service, the documents-by-id route, and the operations dashboard.
+- UI: loans list/detail pages and the loan-application review page display "Group: {name}" in
+  place of a client name when a loan/application is group-owned; the "new loan application" form
+  gained a borrower-type (Client/Group) selector; the Group detail page gained a "Loans" tab
+  listing the group's loan accounts and pending applications with a "New loan application" link
+  that pre-selects the group.
+- Migration tooling: `src/migration/import-groups.ts` (new — read-only, idempotent import of a
+  legacy iLend group plus its client-member links) and `src/migration/import-loans.ts`
+  (generalized to import loans for either a client or a group owner), wired through
+  `import-all.ts`/`cli.ts` behind a `MIGRATION_INCLUDE_GROUPS` flag (default on).
+- Verification: `npx tsc --noEmit` clean, `pnpm exec vitest run` (44/44 passing), `pnpm build`
+  clean, plus an ad-hoc smoke test creating a group-owned `LoanApplication`/`Loan` end-to-end and
+  confirming the DB `CHECK` constraint rejects an owner-less row.
+- Not done in this pass: group-owned **savings accounts** (a separate, still-open gap — see
+  `docs/ilend-parity-gap.md`); a fresh production data pull using the extended migration tooling
+  (tooling is ready, but running it against the real 891-client iLend tenant was treated as a
+  separate, explicit go/no-go decision rather than a default action).

@@ -6,6 +6,7 @@ import { notFound, redirect } from "next/navigation";
 import { LoanCollateralPanel } from "@/components/loan-collateral-panel";
 import { LoanChargesPanel } from "@/components/loan-charge-panel";
 import { LoanDocumentsPanel, LoanNotesPanel } from "@/components/loan-record-forms";
+import { LoanServiceActionsPanel } from "@/components/loan-service-actions-panel";
 import { RepaymentForm } from "@/components/repayment-form";
 import { Breadcrumbs } from "@/components/breadcrumbs";
 import { auth } from "@/lib/auth";
@@ -14,6 +15,12 @@ import { AuthorizationService } from "@/modules/identity/application/authorizati
 import { getUserDataScope } from "@/modules/identity/application/data-scope";
 import { permissions } from "@/modules/identity/domain/permissions";
 import { formatMinor } from "@/modules/money/domain/format-minor";
+import {
+  installmentOutstandingMinor,
+  installmentWaivedMinor,
+  loanOutstandingMinor,
+  loanWrittenOffMinor,
+} from "@/modules/lending/domain/loan-outstanding";
 
 export default async function LoanPage({
   params,
@@ -27,17 +34,32 @@ export default async function LoanPage({
   const scope = await getUserDataScope(prisma, session.user.id);
   if (!scope) redirect("/");
   const tab = (await searchParams).tab;
-  const activeTab = tab === "charges" || tab === "overdue-charges" || tab === "documents" || tab === "notes" || tab === "collateral" ? tab : "schedule";
+  const activeTab =
+    tab === "schedule" ||
+    tab === "record-payment" ||
+    tab === "charges" ||
+    tab === "overdue-charges" ||
+    tab === "documents" ||
+    tab === "notes" ||
+    tab === "collateral" ||
+    tab === "guarantors" ||
+    tab === "servicing"
+      ? tab
+      : "details";
   const loan = await prisma.loan.findFirst({
     where: {
       id: (await params).id,
-      client: { organizationId: scope.organizationId },
+      office: { organizationId: scope.organizationId },
     },
     include: {
       client: { include: { office: true } },
+      group: { select: { name: true, accountNumber: true } },
+      office: { select: { name: true } },
+      loanOfficer: { select: { name: true } },
       product: true,
       charges: { orderBy: { createdAt: "desc" } },
       collateralItems: { orderBy: { createdAt: "desc" } },
+      guarantors: { orderBy: [{ createdAt: "asc" }, { id: "asc" }] },
       documents: { orderBy: { createdAt: "desc" } },
       notes: {
         include: { author: { select: { name: true } } },
@@ -57,6 +79,12 @@ export default async function LoanPage({
   const canManageCharges = await authorization.isAllowed({
     actorUserId: session.user.id,
     permission: permissions.clientManage,
+    organizationId: scope.organizationId,
+    officeId: loan.officeId,
+  });
+  const canRequestServiceActions = await authorization.isAllowed({
+    actorUserId: session.user.id,
+    permission: permissions.loanReverse,
     organizationId: scope.organizationId,
     officeId: loan.officeId,
   });
@@ -84,14 +112,33 @@ export default async function LoanPage({
         item.interestPaidMinor +
         item.feesPaidMinor +
         item.penaltiesPaidMinor,
+      waived: sum.waived + installmentWaivedMinor(item),
     }),
-    { due: 0n, paid: 0n },
+    { due: 0n, paid: 0n, waived: 0n },
   );
+  const writtenOff = loanWrittenOffMinor(loan);
+  const outstanding = loanOutstandingMinor(loan.installments, loan);
   const settlementAccounts = await prisma.settlementAccount.findMany({
     where: { organizationId: scope.organizationId, currencyCode: loan.denominationCurrency, active: true },
     select: { id: true, name: true, type: true },
     orderBy: [{ type: "asc" }, { name: "asc" }],
   });
+  const serviceRequests = await prisma.loanServiceRequest.findMany({
+    where: { loanId: loan.id },
+    include: { requestedBy: { select: { name: true } }, decidedBy: { select: { name: true } } },
+    orderBy: { requestedAt: "desc" },
+  });
+  const hasPendingDisbursement =
+    loan.status === "ACTIVE" &&
+    Boolean(loan.disbursedOn) &&
+    loan.transactions.every((item) => item.transactionType === "DISBURSEMENT");
+  const isOpenLoan = ["ACTIVE", "IN_ARREARS", "OVERPAID"].includes(loan.status);
+  const repaymentTransactions = loan.transactions
+    .filter((item) => item.transactionType === "REPAYMENT" && !item.reversedById)
+    .map((item) => ({
+      id: item.id,
+      label: `${item.businessDate.toLocaleDateString()} · ${formatMinor(item.denominationAmountMinor, loan.denominationCurrency)}${item.externalReference ? ` · ${item.externalReference}` : ""}`,
+    }));
   return (
     <main className="directory-page">
       <Breadcrumbs
@@ -102,7 +149,7 @@ export default async function LoanPage({
           <p className="eyebrow">Loan account</p>
           <h1>{loan.accountNumber}</h1>
           <p>
-            {loan.client.firstName} {loan.client.lastName} · {loan.product.name}
+            {loan.client ? `${loan.client.firstName} ${loan.client.lastName}` : `Group: ${loan.group?.name ?? "Unknown"}`} · {loan.product.name}
           </p>
         </div>
         <span
@@ -129,24 +176,134 @@ export default async function LoanPage({
         <article>
           <span>Outstanding</span>
           <strong>
-            {formatMinor(totals.due - totals.paid, loan.denominationCurrency)}
+            {formatMinor(outstanding, loan.denominationCurrency)}
           </strong>
         </article>
       </section>
       <nav className="client-tabs" aria-label="Loan record sections">
-        <Link className={activeTab === "schedule" ? "active" : ""} href={`/loans/${loan.id}`}>Repayment Schedule</Link>
+        <Link className={activeTab === "details" ? "active" : ""} href={`/loans/${loan.id}`}>Details</Link>
+        <Link className={activeTab === "schedule" ? "active" : ""} href={`/loans/${loan.id}?tab=schedule`}>Repayment Schedule</Link>
+        {isOpenLoan ? (
+          <Link className={activeTab === "record-payment" ? "active" : ""} href={`/loans/${loan.id}?tab=record-payment`}>Record Payment</Link>
+        ) : null}
         <Link className={activeTab === "charges" ? "active" : ""} href={`/loans/${loan.id}?tab=charges`}>Charges</Link>
         <Link className={activeTab === "overdue-charges" ? "active" : ""} href={`/loans/${loan.id}?tab=overdue-charges`}>Overdue Charges</Link>
         <Link className={activeTab === "collateral" ? "active" : ""} href={`/loans/${loan.id}?tab=collateral`}>Loan Collateral</Link>
+        <Link className={activeTab === "guarantors" ? "active" : ""} href={`/loans/${loan.id}?tab=guarantors`}>Guarantors</Link>
         <Link className={activeTab === "documents" ? "active" : ""} href={`/loans/${loan.id}?tab=documents`}>Loan Documents</Link>
         <Link className={activeTab === "notes" ? "active" : ""} href={`/loans/${loan.id}?tab=notes`}>Notes</Link>
+        <Link className={activeTab === "servicing" ? "active" : ""} href={`/loans/${loan.id}?tab=servicing`}>Servicing</Link>
       </nav>
-      {["ACTIVE", "IN_ARREARS", "OVERPAID"].includes(loan.status) ? (
+      {activeTab === "record-payment" && isOpenLoan ? (
         <section className="panel repayment-panel">
           <RepaymentForm
             loanId={loan.id}
             settlementAccounts={settlementAccounts}
           />
+        </section>
+      ) : null}
+      {activeTab === "details" ? (
+        <section className="panel review-summary">
+          <div className="panel-heading">
+            <div>
+              <h2>Loan details</h2>
+              <p>Terms captured at origination and current lifecycle dates</p>
+            </div>
+          </div>
+          <dl className="detail-grid">
+            <div>
+              <dt>Loan account</dt>
+              <dd>{loan.accountNumber}</dd>
+            </div>
+            <div>
+              <dt>Borrower</dt>
+              <dd>
+                {loan.client
+                  ? `${loan.client.firstName} ${loan.client.lastName} · ${loan.client.accountNumber}`
+                  : `Group: ${loan.group?.name ?? "Unknown"} · ${loan.group?.accountNumber ?? "—"}`}
+              </dd>
+            </div>
+            <div>
+              <dt>Product</dt>
+              <dd>{loan.product.name}</dd>
+            </div>
+            <div>
+              <dt>Office</dt>
+              <dd>{loan.office?.name ?? loan.client?.office?.name ?? "—"}</dd>
+            </div>
+            <div>
+              <dt>Loan officer</dt>
+              <dd>{loan.loanOfficer?.name ?? "Unassigned"}</dd>
+            </div>
+            <div>
+              <dt>Currency</dt>
+              <dd>{loan.denominationCurrency}</dd>
+            </div>
+            <div>
+              <dt>Principal (taken)</dt>
+              <dd>{formatMinor(loan.principalMinor, loan.denominationCurrency)}</dd>
+            </div>
+            <div>
+              <dt>Interest rate</dt>
+              <dd>{(loan.product.annualRateBps / 100).toFixed(2)}% per annum</dd>
+            </div>
+            <div>
+              <dt>Interest method</dt>
+              <dd>{loan.product.interestMethod.replaceAll("_", " ")}</dd>
+            </div>
+            <div>
+              <dt>Amortization</dt>
+              <dd>{loan.product.amortizationMethod.replaceAll("_", " ")}</dd>
+            </div>
+            <div>
+              <dt>Repayment frequency</dt>
+              <dd>{loan.product.repaymentFrequency.replaceAll("_", " ")}</dd>
+            </div>
+            <div>
+              <dt>Number of repayments</dt>
+              <dd>{loan.product.repaymentCount}</dd>
+            </div>
+            <div>
+              <dt>Disbursed on</dt>
+              <dd>{loan.disbursedOn ? loan.disbursedOn.toLocaleDateString() : "Not yet disbursed"}</dd>
+            </div>
+            <div>
+              <dt>Matures on</dt>
+              <dd>{loan.maturesOn ? loan.maturesOn.toLocaleDateString() : "Not set"}</dd>
+            </div>
+            <div>
+              <dt>Total scheduled</dt>
+              <dd>{formatMinor(totals.due, loan.denominationCurrency)}</dd>
+            </div>
+            <div>
+              <dt>Total paid</dt>
+              <dd>{formatMinor(totals.paid, loan.denominationCurrency)}</dd>
+            </div>
+            <div>
+              <dt>Waived</dt>
+              <dd>{formatMinor(totals.waived, loan.denominationCurrency)}</dd>
+            </div>
+            <div>
+              <dt>Written off</dt>
+              <dd>{formatMinor(writtenOff, loan.denominationCurrency)}</dd>
+            </div>
+            <div>
+              <dt>Outstanding</dt>
+              <dd>{formatMinor(outstanding, loan.denominationCurrency)}</dd>
+            </div>
+            <div>
+              <dt>Status</dt>
+              <dd>
+                <span className={`status ${loan.status === "ACTIVE" ? "up-to-date" : loan.status === "IN_ARREARS" ? "in-arrears" : "review"}`}>
+                  {loan.status.replaceAll("_", " ")}
+                </span>
+              </dd>
+            </div>
+            <div>
+              <dt>Application submitted</dt>
+              <dd>{loan.createdAt.toLocaleDateString()}</dd>
+            </div>
+          </dl>
         </section>
       ) : null}
       {activeTab === "charges" ? (
@@ -190,7 +347,7 @@ export default async function LoanPage({
             </div>
           ) : (
             <div className="table-scroll">
-              <table>
+              <table className="clickable-rows">
                 <thead>
                   <tr>
                     <th>Charge</th>
@@ -202,7 +359,10 @@ export default async function LoanPage({
                 <tbody>
                   {overdueCharges.map((charge) => (
                     <tr key={charge.id}>
-                      <td>{charge.name}</td>
+                      <td>
+                        <strong>{charge.name}</strong>
+                        <Link className="row-link" href={`/loans/${loan.id}/charges/${charge.id}`} aria-label={`Open overdue charge ${charge.name}`} />
+                      </td>
                       <td>{charge.dueOn?.toLocaleDateString() ?? "-"}</td>
                       <td className="mono">{formatMinor(charge.amountMinor, charge.currencyCode)}</td>
                       <td>
@@ -239,6 +399,60 @@ export default async function LoanPage({
               status: item.status,
             }))}
           />
+        </section>
+      ) : null}
+      {activeTab === "guarantors" ? (
+        <section className="panel">
+          <div className="panel-heading">
+            <div>
+              <h2>Guarantors</h2>
+              <p>People recorded as vouching for this loan</p>
+            </div>
+          </div>
+          {loan.guarantors.length === 0 ? (
+            <div className="empty-state compact-empty">
+              <strong>No guarantors on record</strong>
+              <p>This loan has no guarantors recorded.</p>
+            </div>
+          ) : (
+            <div className="table-scroll">
+              <table className="clickable-rows">
+                <thead>
+                  <tr>
+                    <th>Name</th>
+                    <th>Type</th>
+                    <th>Relationship</th>
+                    <th>Phone</th>
+                    <th>Date of birth</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {loan.guarantors.map((guarantor) => (
+                    <tr key={guarantor.id}>
+                      <td>
+                        <strong>{[guarantor.firstName, guarantor.lastName].filter(Boolean).join(" ") || "Unnamed guarantor"}</strong>
+                        <Link className="row-link" href={`/loans/${loan.id}/guarantors/${guarantor.id}`} aria-label={`Open guarantor ${[guarantor.firstName, guarantor.lastName].filter(Boolean).join(" ") || "record"}`} />
+                      </td>
+                      <td>{guarantor.guarantorType}</td>
+                      <td>{guarantor.relationship ?? "-"}</td>
+                      <td>{guarantor.phone ?? "-"}</td>
+                      <td>
+                        {guarantor.dateOfBirth
+                          ? new Intl.DateTimeFormat("en-UG", { dateStyle: "medium" }).format(guarantor.dateOfBirth)
+                          : "-"}
+                      </td>
+                      <td>
+                        <span className={`status ${guarantor.active ? "up-to-date" : "review"}`}>
+                          {guarantor.active ? "Active" : "Inactive"}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </section>
       ) : null}
       {activeTab === "documents" ? (
@@ -282,6 +496,38 @@ export default async function LoanPage({
           />
         </section>
       ) : null}
+      {activeTab === "servicing" ? (
+        <section className="panel">
+          <div className="panel-heading">
+            <div>
+              <h2>High-risk servicing actions</h2>
+              <p>Undo disbursal, prepay, foreclosure, and transaction reversal — all maker-checker controlled</p>
+            </div>
+          </div>
+          <LoanServiceActionsPanel
+            loanId={loan.id}
+            canRequest={canRequestServiceActions}
+            hasPendingDisbursement={hasPendingDisbursement}
+            isOpenLoan={isOpenLoan}
+            settlementAccounts={settlementAccounts}
+            repaymentTransactions={repaymentTransactions}
+            currencyCode={loan.denominationCurrency}
+            requests={serviceRequests.map((item) => ({
+              id: item.id,
+              actionType: item.actionType,
+              status: item.status,
+              reason: item.reason,
+              requestedByName: item.requestedBy.name,
+              requestedAt: new Intl.DateTimeFormat("en-UG", { dateStyle: "medium", timeStyle: "short" }).format(item.requestedAt),
+              decidedByName: item.decidedBy?.name ?? null,
+              decidedAt: item.decidedAt ? new Intl.DateTimeFormat("en-UG", { dateStyle: "medium", timeStyle: "short" }).format(item.decidedAt) : null,
+              decisionNote: item.decisionNote,
+              canDecide: item.status === "PENDING" && item.requestedById !== session.user.id,
+              isOwnRequest: item.requestedById === session.user.id,
+            }))}
+          />
+        </section>
+      ) : null}
       {activeTab === "schedule" ? (
       <section className="loan-route-grid servicing-grid">
         <article className="panel">
@@ -317,16 +563,12 @@ export default async function LoanPage({
                 </thead>
                 <tbody>
                   {loan.installments.map((item) => {
-                    const due =
-                      item.principalDueMinor +
-                      item.interestDueMinor +
-                      item.feesDueMinor +
-                      item.penaltiesDueMinor;
                     const paid =
                       item.principalPaidMinor +
                       item.interestPaidMinor +
                       item.feesPaidMinor +
                       item.penaltiesPaidMinor;
+                    const rowOutstanding = installmentOutstandingMinor(item);
                     return (
                       <tr key={item.id}>
                         <td>{item.installmentNumber}</td>
@@ -357,7 +599,7 @@ export default async function LoanPage({
                         </td>
                         <td>{formatMinor(paid, loan.denominationCurrency)}</td>
                         <td>
-                          {formatMinor(due - paid, loan.denominationCurrency)}
+                          {formatMinor(rowOutstanding, loan.denominationCurrency)}
                         </td>
                       </tr>
                     );
@@ -381,7 +623,7 @@ export default async function LoanPage({
             </div>
           ) : (
             <div className="table-scroll">
-              <table>
+              <table className="clickable-rows">
                 <thead>
                   <tr>
                     <th>Date</th>
@@ -394,7 +636,10 @@ export default async function LoanPage({
                 <tbody>
                   {loan.transactions.map((item) => (
                     <tr key={item.id}>
-                      <td>{item.businessDate.toLocaleDateString()}</td>
+                      <td>
+                        {item.businessDate.toLocaleDateString()}
+                        <Link className="row-link" href={`/loans/${loan.id}/transactions/${item.id}`} aria-label={`Open ${item.transactionType.replaceAll("_", " ").toLowerCase()} transaction`} />
+                      </td>
                       <td>{item.transactionType}</td>
                       <td>{item.settlementChannel}</td>
                       <td>

@@ -18,7 +18,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
       id,
       OR: [
         { client: { organizationId: scope.organizationId, ...inOfficeScope } },
-        { loan: { client: { organizationId: scope.organizationId }, ...inOfficeScope } },
+        { loan: { office: { organizationId: scope.organizationId }, ...inOfficeScope } },
       ],
     },
   });

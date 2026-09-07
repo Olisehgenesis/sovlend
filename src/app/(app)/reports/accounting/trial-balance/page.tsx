@@ -1,0 +1,189 @@
+import { Scale } from "lucide-react";
+import { headers } from "next/headers";
+import Link from "next/link";
+import { redirect } from "next/navigation";
+
+import { Breadcrumbs } from "@/components/breadcrumbs";
+import { auth } from "@/lib/auth";
+import { prisma } from "@/lib/prisma";
+import { AuthorizationService } from "@/modules/identity/application/authorization-service";
+import { getUserDataScope } from "@/modules/identity/application/data-scope";
+import { permissions } from "@/modules/identity/domain/permissions";
+import { formatMinor } from "@/modules/money/domain/format-minor";
+import {
+  accountTypeLabel,
+  buildReportQueryString,
+  currentMonthDateRange,
+  formatDateInputValue,
+  formatReportDate,
+  getTrialBalanceReport,
+  listAccountingReportOffices,
+  normalizeDateRange,
+  parseDateInput,
+  resolveOfficeFilter,
+  sideLabel,
+  summarizeBalance,
+} from "@/modules/reports/domain/accounting-report";
+
+export default async function TrialBalancePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ startDate?: string; endDate?: string; officeId?: string }>;
+}) {
+  const session = await auth.api.getSession({ headers: await headers() });
+  if (!session) redirect("/sign-in");
+
+  const scope = await getUserDataScope(prisma, session.user.id);
+  if (!scope) redirect("/");
+
+  const allowed = await new AuthorizationService(prisma).isAllowedForOrganization(
+    session.user.id,
+    scope.organizationId,
+    permissions.reportTrialBalance,
+  );
+  if (!allowed) redirect("/reports");
+
+  const params = await searchParams;
+  const defaults = currentMonthDateRange();
+  const offices = await listAccountingReportOffices(prisma, scope);
+  const { startDate, endDate } = normalizeDateRange(
+    parseDateInput(params.startDate, defaults.startDate),
+    parseDateInput(params.endDate, defaults.endDate),
+  );
+  const officeId = resolveOfficeFilter(offices, params.officeId ?? null);
+  const report = await getTrialBalanceReport(prisma, scope, { startDate, endDate, officeId });
+  const activeOfficeName = offices.find((office) => office.id === officeId)?.name ?? "All offices";
+  const apiHref = `/api/reports/accounting/trial-balance?${buildReportQueryString({
+    startDate: formatDateInputValue(startDate),
+    endDate: formatDateInputValue(endDate),
+    officeId,
+  })}`;
+
+  return (
+    <main className="directory-page">
+      <Breadcrumbs items={[{ label: "Reports", href: "/reports" }, { label: "Accounting", href: "/reports" }, { label: "Trial Balance" }]} />
+      <header className="directory-header">
+        <div>
+          <p className="eyebrow">Accounting statements</p>
+          <h1>Trial Balance</h1>
+          <p>
+            Ledger debits and credits from {formatReportDate(report.startDate)} to {formatReportDate(report.endDate)} · {activeOfficeName}
+          </p>
+        </div>
+        <div className="header-actions">
+          <Link className="secondary-action" href="/reports">
+            Reports
+          </Link>
+          <a className="secondary-action" href={apiHref}>
+            JSON API
+          </a>
+        </div>
+      </header>
+
+      <section className="panel form-panel">
+        <form className="entity-form compact-mapping" method="GET">
+          <fieldset>
+            <legend>Filters</legend>
+            <div className="form-row three">
+              <label>
+                Start date
+                <input defaultValue={formatDateInputValue(startDate)} name="startDate" required type="date" />
+              </label>
+              <label>
+                End date
+                <input defaultValue={formatDateInputValue(endDate)} name="endDate" required type="date" />
+              </label>
+              <label>
+                Office
+                <select defaultValue={officeId ?? ""} name="officeId">
+                  <option value="">All offices</option>
+                  {offices.map((office) => (
+                    <option key={office.id} value={office.id}>
+                      {office.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+          </fieldset>
+          <div className="form-actions">
+            <button className="invest-button" type="submit">
+              Apply filters
+            </button>
+          </div>
+        </form>
+      </section>
+
+      <section className="panel">
+        <div className="panel-heading">
+          <div>
+            <h2>Ledger balances</h2>
+            <p>
+              {report.rows.length.toLocaleString()} account{report.rows.length === 1 ? "" : "s"} · {report.journalCount.toLocaleString()} posted journal
+              {report.journalCount === 1 ? "" : "s"}
+            </p>
+          </div>
+          <span className={`status ${report.differenceMinor === 0n ? "up-to-date" : "review"}`}>
+            {report.differenceMinor === 0n ? "Balanced" : "Out of balance"}
+          </span>
+        </div>
+
+        {!report.hasActivity ? (
+          <div className="empty-state">
+            <Scale size={28} />
+            <strong>No posted journal entries yet</strong>
+            <p>The trial balance will populate once posted journals exist in the selected period and office scope.</p>
+          </div>
+        ) : (
+          <div className="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>Account</th>
+                  <th>Type</th>
+                  <th>Debits</th>
+                  <th>Credits</th>
+                  <th>Balance</th>
+                </tr>
+              </thead>
+              <tbody>
+                {report.rows.map((row) => {
+                  const balance = summarizeBalance(row.type, row.balanceMinor);
+                  return (
+                    <tr key={row.id}>
+                      <td>
+                        <strong>{row.code}</strong>
+                        <small>{row.name}</small>
+                      </td>
+                      <td>{accountTypeLabel(row.type)}</td>
+                      <td className="mono">{formatMinor(row.debitTotalMinor, "UGX")}</td>
+                      <td className="mono">{formatMinor(row.creditTotalMinor, "UGX")}</td>
+                      <td className="mono">
+                        {formatMinor(balance.absoluteMinor, "UGX")} {sideLabel(balance.balanceSide)}
+                      </td>
+                    </tr>
+                  );
+                })}
+                <tr>
+                  <td>
+                    <strong>Grand total</strong>
+                  </td>
+                  <td>—</td>
+                  <td className="mono">
+                    <strong>{formatMinor(report.totalDebitsMinor, "UGX")}</strong>
+                  </td>
+                  <td className="mono">
+                    <strong>{formatMinor(report.totalCreditsMinor, "UGX")}</strong>
+                  </td>
+                  <td className="mono">
+                    <strong>{formatMinor(report.differenceMinor, "UGX")}</strong>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+    </main>
+  );
+}

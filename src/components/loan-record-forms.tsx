@@ -1,6 +1,7 @@
 "use client";
 
 import { LoaderCircle, Plus, Trash2, Upload } from "lucide-react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -106,7 +107,7 @@ export function LoanDocumentsPanel({ loanId, documents, canManage }: { loanId: s
         </div>
       ) : (
         <div className="table-scroll">
-          <table>
+          <table className="clickable-rows">
             <thead>
               <tr>
                 <th>Name</th>
@@ -119,11 +120,14 @@ export function LoanDocumentsPanel({ loanId, documents, canManage }: { loanId: s
             <tbody>
               {documents.map((document) => (
                 <tr key={document.id}>
-                  <td><strong>{document.name}</strong></td>
+                  <td>
+                    <strong>{document.name}</strong>
+                    <Link className="row-link" href={`/loans/${loanId}/documents/${document.id}`} aria-label={`Open document ${document.name}`} />
+                  </td>
                   <td>{document.description ?? "-"}</td>
                   <td>{document.mediaType}</td>
                   <td>{document.createdAtLabel}</td>
-                  <td>
+                  <td style={{ position: "relative", zIndex: 1 }}>
                     <div className="account-card-actions">
                       <a className="green-link" href={`/api/documents/${document.id}`}>Download</a>
                       {canManage ? (

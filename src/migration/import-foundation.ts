@@ -277,7 +277,7 @@ function parentFromHierarchy(hierarchy: string) {
   return parts.length > 1 ? parts.at(-2) ?? null : null;
 }
 
-function deterministicUuid(value: string) {
+export function deterministicUuid(value: string) {
   const hex = createHash("sha256").update(value).digest("hex").slice(0, 32).split("");
   hex[12] = "4";
   hex[16] = ((Number.parseInt(hex[16], 16) & 0x3) | 0x8).toString(16);

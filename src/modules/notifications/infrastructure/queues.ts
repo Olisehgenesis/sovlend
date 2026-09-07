@@ -9,6 +9,7 @@ export const domainEventQueue = new Queue("domain-events", { connection: redisCo
 export const reminderQueue = new Queue("repayment-reminders", { connection: redisConnection });
 export const maintenanceQueue = new Queue("maintenance", { connection: redisConnection });
 export const priceRefreshQueue = new Queue("price-refresh", { connection: redisConnection });
+export const loanExportQueue = new Queue("loan-export", { connection: redisConnection });
 
 export async function registerSchedules(): Promise<void> {
   await maintenanceQueue.upsertJobScheduler(
