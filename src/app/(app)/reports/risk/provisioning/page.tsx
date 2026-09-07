@@ -13,11 +13,11 @@ import { permissions } from "@/modules/identity/domain/permissions";
 import { formatMinor } from "@/modules/money/domain/format-minor";
 import { loadReportPickerOptions } from "@/modules/reports/report-catalog";
 import {
-  agingBucketTone,
   formatBps,
   loadProvisioningReport,
   loadRiskFilterOptions,
   parseRiskFilters,
+  provisioningBucketTone,
 } from "@/modules/reports/domain/risk-report";
 
 export default async function ProvisioningReportPage({
@@ -59,7 +59,7 @@ export default async function ProvisioningReportPage({
           <p className="eyebrow">Portfolio risk</p>
           <h1>Provisioning</h1>
           <p>
-            {report.totals.loanCount.toLocaleString()} loans · {formatMinor(report.totals.totalOutstandingPrincipalMinor, "UGX")} exposure · {formatMinor(report.totals.totalProvisionMinor, "UGX")} required provision
+            {report.totals.loanCount.toLocaleString()} loans · {formatMinor(report.totals.totalOutstandingMinor, "UGX")} exposure · {formatMinor(report.totals.totalProvisionMinor, "UGX")} required provision
           </p>
         </div>
         <ReportPicker current="/reports/risk/provisioning" options={pickerOptions} />
@@ -78,8 +78,8 @@ export default async function ProvisioningReportPage({
 
       <section className="loan-summary-metrics">
         <article>
-          <span>Outstanding principal</span>
-          <strong>{formatMinor(report.totals.totalOutstandingPrincipalMinor, "UGX")}</strong>
+          <span>Outstanding (total)</span>
+          <strong>{formatMinor(report.totals.totalOutstandingMinor, "UGX")}</strong>
         </article>
         <article>
           <span>Required provision</span>
@@ -136,7 +136,7 @@ export default async function ProvisioningReportPage({
         <div className="panel-heading">
           <div>
             <h2>Provision ladder</h2>
-            <p>Policy assumption: Current 0%, 1-30 10%, 31-60 25%, 61-90 50%, 90+ 100%.</p>
+            <p>Policy: Normal 1%, Watch (1-30d) 5%, Substandard (31-90d) 25%, Doubtful (91-180d) 50%, Loss (180+d) 100%.</p>
           </div>
           <PiggyBank size={19} />
         </div>
@@ -147,7 +147,7 @@ export default async function ProvisioningReportPage({
                 <th>Bucket</th>
                 <th>Rate</th>
                 <th>Loans</th>
-                <th>Outstanding principal</th>
+                <th>Outstanding (total)</th>
                 <th>Required provision</th>
               </tr>
             </thead>
@@ -155,11 +155,11 @@ export default async function ProvisioningReportPage({
               {report.buckets.map((bucket) => (
                 <tr key={bucket.key}>
                   <td>
-                    <span className={`status ${agingBucketTone(bucket.key)}`}>{bucket.label}</span>
+                    <span className={`status ${provisioningBucketTone(bucket.key)}`}>{bucket.label}</span>
                   </td>
                   <td>{bucket.provisionRatePercent}%</td>
                   <td>{bucket.loanCount.toLocaleString()}</td>
-                  <td>{formatMinor(bucket.outstandingPrincipalMinor, "UGX")}</td>
+                  <td>{formatMinor(bucket.outstandingMinor, "UGX")}</td>
                   <td>{formatMinor(bucket.provisionMinor, "UGX")}</td>
                 </tr>
               ))}
@@ -191,7 +191,7 @@ export default async function ProvisioningReportPage({
                   <th>Officer</th>
                   <th>Bucket</th>
                   <th>Days overdue</th>
-                  <th>Outstanding principal</th>
+                  <th>Outstanding (total)</th>
                   <th>Rate</th>
                   <th>Provision</th>
                 </tr>
@@ -207,10 +207,10 @@ export default async function ProvisioningReportPage({
                     <td>{loan.officeName}</td>
                     <td>{loan.loanOfficerName}</td>
                     <td>
-                      <span className={`status ${agingBucketTone(loan.agingBucket)}`}>{bucketLabel(loan.agingBucket)}</span>
+                      <span className={`status ${provisioningBucketTone(loan.provisioningBucket)}`}>{bucketLabel(loan.provisioningBucket)}</span>
                     </td>
                     <td>{loan.daysOverdue.toLocaleString()}</td>
-                    <td>{formatMinor(loan.outstandingPrincipalMinor, loan.currencyCode)}</td>
+                    <td>{formatMinor(loan.outstandingMinor, loan.currencyCode)}</td>
                     <td>{loan.provisionRatePercent}%</td>
                     <td>{formatMinor(loan.provisionMinor, loan.currencyCode)}</td>
                   </tr>
@@ -226,16 +226,16 @@ export default async function ProvisioningReportPage({
 
 function bucketLabel(bucket: string) {
   switch (bucket) {
-    case "CURRENT":
-      return "Current";
-    case "1_30":
-      return "1-30 days";
-    case "31_60":
-      return "31-60 days";
-    case "61_90":
-      return "61-90 days";
+    case "NORMAL":
+      return "Normal";
+    case "WATCH":
+      return "Watch (1-30d)";
+    case "SUBSTANDARD":
+      return "Substandard (31-90d)";
+    case "DOUBTFUL":
+      return "Doubtful (91-180d)";
     default:
-      return "90+ days";
+      return "Loss (180+d)";
   }
 }
 

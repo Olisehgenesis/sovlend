@@ -33,15 +33,45 @@ export const vintageBucketLabels: Record<VintageBucketKey, string> = {
   WRITTEN_OFF: "Written-off",
 };
 
-// Assumed provisioning ladder for portfolio reporting: Current 0%, 1-30 10%, 31-60 25%,
-// 61-90 50%, 90+ 100%. This mirrors a common MFI / Uganda-style prudential policy.
-export const provisioningRates: Record<AgingBucketKey, number> = {
-  CURRENT: 0,
-  "1_30": 10,
-  "31_60": 25,
-  "61_90": 50,
-  "90_PLUS": 100,
+// Provisioning classification ladder matching iLend's canned "Provision Report" exactly
+// (Normal/Watch/Substandard/Doubtful/Loss @ 1%/5%/25%/50%/100%, boundaries at 0/1-30/31-90/
+// 91-180/180+ days overdue). This is intentionally a separate ladder from the generic
+// AgingBucketKey scheme above (used by the Aging report / PAR roll-rate), which iLend itself
+// also buckets differently (0-30/30-60/60-90/90-180/180-360/360+) for its own aging report.
+export type ProvisioningBucketKey = "NORMAL" | "WATCH" | "SUBSTANDARD" | "DOUBTFUL" | "LOSS";
+
+export const provisioningBucketOrder: ProvisioningBucketKey[] = ["NORMAL", "WATCH", "SUBSTANDARD", "DOUBTFUL", "LOSS"];
+
+export const provisioningBucketLabels: Record<ProvisioningBucketKey, string> = {
+  NORMAL: "Normal (current)",
+  WATCH: "Watch (1-30 days)",
+  SUBSTANDARD: "Substandard (31-90 days)",
+  DOUBTFUL: "Doubtful (91-180 days)",
+  LOSS: "Loss (180+ days)",
 };
+
+export const provisioningRates: Record<ProvisioningBucketKey, number> = {
+  NORMAL: 1,
+  WATCH: 5,
+  SUBSTANDARD: 25,
+  DOUBTFUL: 50,
+  LOSS: 100,
+};
+
+export function classifyProvisioningBucket(daysOverdue: number): ProvisioningBucketKey {
+  if (daysOverdue <= 0) return "NORMAL";
+  if (daysOverdue <= 30) return "WATCH";
+  if (daysOverdue <= 90) return "SUBSTANDARD";
+  if (daysOverdue <= 180) return "DOUBTFUL";
+  return "LOSS";
+}
+
+export function provisioningBucketTone(bucket: ProvisioningBucketKey) {
+  if (bucket === "NORMAL") return "up-to-date";
+  if (bucket === "WATCH" || bucket === "SUBSTANDARD") return "review";
+  return "in-arrears";
+}
+
 
 const openRiskStatuses: LoanStatus[] = ["ACTIVE", "IN_ARREARS"];
 const cohortStatuses: LoanStatus[] = ["ACTIVE", "IN_ARREARS", "OVERPAID", "WRITTEN_OFF", "CLOSED"];
@@ -262,7 +292,12 @@ export async function loadNonPerformingLoansReport(
     (loan) => loan.outstandingPrincipalMinor > 0n,
   );
   const loans = portfolioLoans
-    .filter((loan) => loan.daysOverdue > thresholdDays || (loan.status === "IN_ARREARS" && loan.outstandingPrincipalMinor > 0n))
+    // NPL definition matches iLend's canned "Non Performing Loans" report exactly: loans
+    // more than `thresholdDays` past due. Previously this also unconditionally included
+    // every IN_ARREARS loan regardless of days overdue, which over-counted NPL exposure
+    // relative to iLend (a loan can be classified IN_ARREARS locally as soon as it misses
+    // a due date, long before it crosses the 90-day NPL threshold).
+    .filter((loan) => loan.daysOverdue > thresholdDays)
     .map((loan) => ({
       id: loan.id,
       accountNumber: loan.accountNumber,
@@ -299,26 +334,28 @@ export async function loadNonPerformingLoansReport(
 
 export async function loadProvisioningReport(prisma: PrismaClient, scope: UserDataScope, filters: RiskFilters, now = new Date()) {
   const today = startOfUtcDay(now);
-  const loans = (await loadPortfolioLoans(prisma, scope, filters, { statuses: openRiskStatuses }, today)).filter(
-    (loan) => loan.outstandingPrincipalMinor > 0n,
-  );
+  // Provisioning basis matches iLend's canned Provision Report: total outstanding exposure
+  // (principal + interest + fees + penalties), not principal alone.
+  const loans = (await loadPortfolioLoans(prisma, scope, filters, { statuses: openRiskStatuses }, today))
+    .filter((loan) => loan.outstandingTotalMinor > 0n)
+    .map((loan) => ({ ...loan, provisioningBucket: classifyProvisioningBucket(loan.daysOverdue) }));
 
-  const buckets = agingBucketOrder.map((bucket) => {
-    const bucketLoans = loans.filter((loan) => loan.agingBucket === bucket);
-    const outstandingPrincipalMinor = sumBigInt(bucketLoans.map((loan) => loan.outstandingPrincipalMinor));
+  const buckets = provisioningBucketOrder.map((bucket) => {
+    const bucketLoans = loans.filter((loan) => loan.provisioningBucket === bucket);
+    const outstandingMinor = sumBigInt(bucketLoans.map((loan) => loan.outstandingTotalMinor));
     const provisionRatePercent = provisioningRates[bucket];
-    const provisionMinor = percentageOf(outstandingPrincipalMinor, provisionRatePercent);
+    const provisionMinor = percentageOf(outstandingMinor, provisionRatePercent);
     return {
       key: bucket,
-      label: agingBucketLabels[bucket],
+      label: provisioningBucketLabels[bucket],
       provisionRatePercent,
       loanCount: bucketLoans.length,
-      outstandingPrincipalMinor,
+      outstandingMinor,
       provisionMinor,
     };
   });
 
-  const totalOutstandingPrincipalMinor = sumBigInt(buckets.map((bucket) => bucket.outstandingPrincipalMinor));
+  const totalOutstandingMinor = sumBigInt(buckets.map((bucket) => bucket.outstandingMinor));
   const totalProvisionMinor = sumBigInt(buckets.map((bucket) => bucket.provisionMinor));
 
   return {
@@ -326,9 +363,9 @@ export async function loadProvisioningReport(prisma: PrismaClient, scope: UserDa
     filters,
     totals: {
       loanCount: loans.length,
-      totalOutstandingPrincipalMinor,
+      totalOutstandingMinor,
       totalProvisionMinor,
-      coverageBps: ratioBps(totalProvisionMinor, totalOutstandingPrincipalMinor),
+      coverageBps: ratioBps(totalProvisionMinor, totalOutstandingMinor),
     },
     buckets,
     loans: loans
@@ -341,14 +378,19 @@ export async function loadProvisioningReport(prisma: PrismaClient, scope: UserDa
         productName: loan.productName,
         status: loan.status,
         currencyCode: loan.denominationCurrency,
-        outstandingPrincipalMinor: loan.outstandingPrincipalMinor,
+        outstandingMinor: loan.outstandingTotalMinor,
         daysOverdue: loan.daysOverdue,
-        agingBucket: loan.agingBucket,
-        provisionRatePercent: provisioningRates[loan.agingBucket],
-        provisionMinor: percentageOf(loan.outstandingPrincipalMinor, provisioningRates[loan.agingBucket]),
+        provisioningBucket: loan.provisioningBucket,
+        provisionRatePercent: provisioningRates[loan.provisioningBucket],
+        provisionMinor: percentageOf(loan.outstandingTotalMinor, provisioningRates[loan.provisioningBucket]),
       }))
       .sort((left, right) => {
-        if (left.provisionMinor === right.provisionMinor) return compareRiskLoans(left, right);
+        if (left.provisionMinor === right.provisionMinor) {
+          return compareRiskLoans(
+            { ...left, outstandingPrincipalMinor: left.outstandingMinor },
+            { ...right, outstandingPrincipalMinor: right.outstandingMinor },
+          );
+        }
         return left.provisionMinor > right.provisionMinor ? -1 : 1;
       }),
   };
@@ -667,9 +709,9 @@ export function provisioningReportCsv(report: ProvisioningReport) {
       productName: loan.productName,
       status: loan.status,
       currencyCode: loan.currencyCode,
-      outstandingPrincipalMinor: loan.outstandingPrincipalMinor.toString(),
+      outstandingMinor: loan.outstandingMinor.toString(),
       daysOverdue: String(loan.daysOverdue),
-      agingBucket: loan.agingBucket,
+      provisioningBucket: loan.provisioningBucket,
       provisionRatePercent: String(loan.provisionRatePercent),
       provisionMinor: loan.provisionMinor.toString(),
     })),
@@ -681,9 +723,9 @@ export function provisioningReportCsv(report: ProvisioningReport) {
       "productName",
       "status",
       "currencyCode",
-      "outstandingPrincipalMinor",
+      "outstandingMinor",
       "daysOverdue",
-      "agingBucket",
+      "provisioningBucket",
       "provisionRatePercent",
       "provisionMinor",
     ],
