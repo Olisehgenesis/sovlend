@@ -177,8 +177,12 @@ export async function loadRiskFilterOptions(prisma: PrismaClient, scope: UserDat
 
 export async function loadAgingReport(prisma: PrismaClient, scope: UserDataScope, filters: RiskFilters, now = new Date()) {
   const today = startOfUtcDay(now);
+  // Use total outstanding (principal+interest+fees+penalties) as the portfolio inclusion basis,
+  // not principal alone — some loans amortize principal to zero while still owing accrued
+  // interest/fees/penalties, and iLend's canned Aging report includes those. See NPL/Provisioning
+  // fixes for the same underlying pattern.
   const loans = (await loadPortfolioLoans(prisma, scope, filters, { statuses: openRiskStatuses }, today)).filter(
-    (loan) => loan.outstandingPrincipalMinor > 0n,
+    (loan) => loan.outstandingTotalMinor > 0n,
   );
   const totalOutstandingPrincipalMinor = sumBigInt(loans.map((loan) => loan.outstandingPrincipalMinor));
   const overdueOutstandingPrincipalMinor = sumBigInt(
@@ -445,8 +449,7 @@ export async function loadRecoveriesReport(prisma: PrismaClient, scope: UserData
 
       const recoveries = loan.transactions
         .filter((transaction) => !transaction.reversedById)
-        .filter((transaction) => isRepaymentLikeTransaction(transaction.transactionType))
-        .filter((transaction) => transaction.businessDate > writeOffDate)
+        .filter((transaction) => isRecoveryTransaction(transaction.transactionType, transaction.businessDate, writeOffDate))
         .map((transaction) => ({
           businessDate: transaction.businessDate,
           transactionType: transaction.transactionType,
@@ -1042,6 +1045,26 @@ function isRepaymentLikeTransaction(transactionType: string) {
   if (normalized.includes("recoveryrepayment") || normalized.includes("recovery_repayment")) return true;
   if (normalized.includes("repaymentatdisbursement")) return false;
   return normalized.endsWith(".repayment") || normalized === "repayment" || normalized === "prepayment" || normalized === "foreclosure";
+}
+
+function isExplicitRecoveryTransactionType(transactionType: string) {
+  const normalized = transactionType.toLowerCase();
+  return normalized.includes("recoveryrepayment") || normalized.includes("recovery_repayment");
+}
+
+/**
+ * A transaction counts as a written-off loan recovery when either:
+ *  - it is explicitly typed as a recovery-repayment by the source system (trust that
+ *    classification regardless of date — migrated legacy data has bulk/batch WRITE_OFF
+ *    ledger postings that are sometimes dated after individual recovery-repayment
+ *    transactions that the source system had already tagged as recoveries), or
+ *  - it is a generic repayment-like transaction posted strictly after the write-off date
+ *    (the fallback heuristic for systems/loans without a distinct recovery transaction type).
+ */
+function isRecoveryTransaction(transactionType: string, businessDate: Date, writeOffDate: Date) {
+  if (isExplicitRecoveryTransactionType(transactionType)) return true;
+  if (!isRepaymentLikeTransaction(transactionType)) return false;
+  return businessDate > writeOffDate;
 }
 
 function compareRiskLoans(
