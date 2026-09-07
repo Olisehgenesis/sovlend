@@ -201,9 +201,10 @@ async function importLoans(prisma: PrismaClient, root: string, organizationId: s
           });
         }
 
+        const createdTransactionIds = new Map<unknown, string>();
         for (const txn of transactions) {
           const amountMinor = toMinor(Number(txn.amount ?? 0), exponent);
-          await transaction.loanTransaction.create({
+          const created = await transaction.loanTransaction.create({
             data: {
               loanId: createdLoan.id,
               transactionType: String((txn.type as Record<string, unknown> | undefined)?.code ?? "unknown"),
@@ -216,6 +217,32 @@ async function importLoans(prisma: PrismaClient, root: string, organizationId: s
               idempotencyKey: `legacy-loan-${legacyLoanId}-txn-${txn.id}`,
             },
           });
+          createdTransactionIds.set(txn.id, created.id);
+        }
+
+        // Fineract flags transactions it has itself reversed with `manuallyReversed`. Link
+        // those to a synthetic reversal record so `reversedById` filters exclude them from
+        // totals, matching iLend's own already-netted "Total Paid"/summary figures.
+        for (const txn of transactions) {
+          if (!txn.manuallyReversed) continue;
+          const originalId = createdTransactionIds.get(txn.id);
+          if (!originalId) continue;
+          const amountMinor = toMinor(Number(txn.amount ?? 0), exponent);
+          const originalType = String((txn.type as Record<string, unknown> | undefined)?.code ?? "unknown");
+          const reversal = await transaction.loanTransaction.create({
+            data: {
+              loanId: createdLoan.id,
+              transactionType: `${originalType}.reversal`,
+              businessDate: dateFromParts(txn.date) ?? new Date(),
+              settlementCurrency: currency,
+              settlementChannel: "CASH",
+              settlementAmountMinor: amountMinor,
+              denominationAmountMinor: amountMinor,
+              externalReference: `legacy:${legacyLoanId}:${txn.id}:reversal`,
+              idempotencyKey: `legacy-loan-${legacyLoanId}-txn-${txn.id}-reversal`,
+            },
+          });
+          await transaction.loanTransaction.update({ where: { id: originalId }, data: { reversedById: reversal.id } });
         }
 
         await transaction.auditEvent.create({
