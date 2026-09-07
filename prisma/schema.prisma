@@ -720,6 +720,8 @@ model Loan {
   interestWrittenOffMinor  BigInt            @default(0)
   feesWrittenOffMinor      BigInt            @default(0)
   penaltiesWrittenOffMinor BigInt            @default(0)
+  writtenOffOn         DateTime?            @db.Date
+  writtenOffByName     String?
   application          LoanApplication      @relation(fields: [applicationId], references: [id])
   client               Client?              @relation(fields: [clientId], references: [id])
   group                Group?               @relation(fields: [groupId], references: [id])

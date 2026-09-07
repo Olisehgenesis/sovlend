@@ -13,7 +13,7 @@ import {
   officeWhere,
 } from "@/modules/identity/application/data-scope";
 
-const activeLoanStatuses: LoanStatus[] = ["ACTIVE", "IN_ARREARS", "OVERPAID"];
+const activeLoanStatuses: LoanStatus[] = ["ACTIVE", "IN_ARREARS"];
 const supportedStatusFilters = ["IN_ARREARS", "OVERPAID", "WRITTEN_OFF", "CLOSED"] as const;
 type SupportedLoanStatusFilter = (typeof supportedStatusFilters)[number];
 
@@ -249,11 +249,18 @@ export default async function LoansPage({
                     <th>Loan name</th>
                     <th>Status</th>
                     <th>Loan amount</th>
+                    {requestedStatus === "WRITTEN_OFF" ? <th>Written off by</th> : null}
                     <th>Business development officer</th>
                     <th>Principal due</th>
                     <th>Interest due</th>
                     <th>Total due</th>
                     <th>Total paid</th>
+                    {requestedStatus === "OVERPAID" ? (
+                      <>
+                        <th>Overpaid by</th>
+                        <th>Total expected repayment</th>
+                      </>
+                    ) : null}
                   </tr>
                 </thead>
                 <tbody>
@@ -288,6 +295,16 @@ export default async function LoansPage({
                         item.penaltiesPaidMinor,
                       0n,
                     );
+                    const totalExpectedRepayment = loan.installments.reduce(
+                      (sum, item) =>
+                        sum +
+                        item.principalDueMinor +
+                        item.interestDueMinor +
+                        item.feesDueMinor +
+                        item.penaltiesDueMinor,
+                      0n,
+                    );
+                    const overpaidBy = clampToZero(totalPaid - totalExpectedRepayment);
                     const borrower = loan.client
                       ? `${loan.client.firstName} ${loan.client.lastName}`
                       : `Group: ${loan.group?.name ?? "Unknown"}`;
@@ -306,11 +323,18 @@ export default async function LoansPage({
                           </span>
                         </td>
                         <td>{formatMinor(loan.principalMinor, loan.denominationCurrency)}</td>
+                        {requestedStatus === "WRITTEN_OFF" ? <td>{loan.writtenOffByName ?? "—"}</td> : null}
                         <td>{loan.loanOfficer?.name ?? "Unassigned"}</td>
                         <td>{formatMinor(principalDue, loan.denominationCurrency)}</td>
                         <td>{formatMinor(interestDue, loan.denominationCurrency)}</td>
                         <td>{formatMinor(totalDue, loan.denominationCurrency)}</td>
                         <td>{formatMinor(totalPaid, loan.denominationCurrency)}</td>
+                        {requestedStatus === "OVERPAID" ? (
+                          <>
+                            <td>{formatMinor(overpaidBy, loan.denominationCurrency)}</td>
+                            <td>{formatMinor(totalExpectedRepayment, loan.denominationCurrency)}</td>
+                          </>
+                        ) : null}
                       </tr>
                     );
                   })}
