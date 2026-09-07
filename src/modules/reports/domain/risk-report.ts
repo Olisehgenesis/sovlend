@@ -288,8 +288,11 @@ export async function loadNonPerformingLoansReport(
   now = new Date(),
 ) {
   const today = startOfUtcDay(now);
+  // Match iLend's inclusion basis: total outstanding (principal+interest+fees+penalties), not
+  // principal alone. Some past-due loans carry zero outstanding principal but still owe
+  // interest/fees/penalties, and iLend's canned report still classifies those as NPL.
   const portfolioLoans = (await loadPortfolioLoans(prisma, scope, filters, { statuses: openRiskStatuses }, today)).filter(
-    (loan) => loan.outstandingPrincipalMinor > 0n,
+    (loan) => loan.outstandingTotalMinor > 0n,
   );
   const loans = portfolioLoans
     // NPL definition matches iLend's canned "Non Performing Loans" report exactly: loans
