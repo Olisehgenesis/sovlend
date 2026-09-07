@@ -97,6 +97,7 @@ async function importLegacyLoanAccounts(
       const exponent = Number((loan.currency as Record<string, unknown>).decimalPlaces ?? 2);
       const status = loan.status as Record<string, unknown>;
       const timeline = (loan.timeline ?? {}) as Record<string, unknown>;
+      const summary = (loan.summary ?? {}) as Record<string, unknown>;
       const schedule = (loan.repaymentSchedule as Record<string, unknown> | undefined)?.periods as Array<Record<string, unknown>> | undefined;
       const transactions = (loan.transactions as Array<Record<string, unknown>>) ?? [];
       const principalMinor = toMinor(Number(loan.principal ?? 0), exponent);
@@ -132,6 +133,10 @@ async function importLegacyLoanAccounts(
             status: mapLoanStatus(status),
             disbursedOn: dateFromParts(timeline.actualDisbursementDate),
             maturesOn: dateFromParts(timeline.expectedMaturityDate) ?? dateFromParts(timeline.closedOnDate),
+            principalWrittenOffMinor: toMinor(Number(summary.principalWrittenOff ?? 0), exponent),
+            interestWrittenOffMinor: toMinor(Number(summary.interestWrittenOff ?? 0), exponent),
+            feesWrittenOffMinor: toMinor(Number(summary.feeChargesWrittenOff ?? 0), exponent),
+            penaltiesWrittenOffMinor: toMinor(Number(summary.penaltyChargesWrittenOff ?? 0), exponent),
           },
         });
 
@@ -151,6 +156,10 @@ async function importLegacyLoanAccounts(
               interestPaidMinor: toMinor(Number(period.interestPaid ?? 0), exponent),
               feesPaidMinor: toMinor(Number(period.feeChargesPaid ?? 0), exponent),
               penaltiesPaidMinor: toMinor(Number(period.penaltyChargesPaid ?? 0), exponent),
+              principalWaivedMinor: toMinor(Number(period.principalWaived ?? 0), exponent),
+              interestWaivedMinor: toMinor(Number(period.interestWaived ?? 0), exponent),
+              feesWaivedMinor: toMinor(Number(period.feeChargesWaived ?? 0), exponent),
+              penaltiesWaivedMinor: toMinor(Number(period.penaltyChargesWaived ?? 0), exponent),
             },
           });
         }

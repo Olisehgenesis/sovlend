@@ -17,6 +17,10 @@ const activeLoanStatuses: LoanStatus[] = ["ACTIVE", "IN_ARREARS", "OVERPAID"];
 const supportedStatusFilters = ["IN_ARREARS", "OVERPAID", "WRITTEN_OFF", "CLOSED"] as const;
 type SupportedLoanStatusFilter = (typeof supportedStatusFilters)[number];
 
+function clampToZero(value: bigint): bigint {
+  return value > 0n ? value : 0n;
+}
+
 const statusAliasToValue: Record<string, LoanStatus> = {
   active: "ACTIVE",
   "up to date": "ACTIVE",
@@ -156,6 +160,10 @@ export default async function LoansPage({
           interestPaidMinor: true,
           feesPaidMinor: true,
           penaltiesPaidMinor: true,
+          principalWaivedMinor: true,
+          interestWaivedMinor: true,
+          feesWaivedMinor: true,
+          penaltiesWaivedMinor: true,
         },
       },
     },
@@ -250,22 +258,26 @@ export default async function LoansPage({
                 </thead>
                 <tbody>
                   {loans.map((loan) => {
-                    const principalDue = loan.installments.reduce(
-                      (sum, item) => sum + item.principalDueMinor - item.principalPaidMinor,
+                    const principalDueRaw = loan.installments.reduce(
+                      (sum, item) => sum + item.principalDueMinor - item.principalPaidMinor - item.principalWaivedMinor,
                       0n,
-                    );
-                    const interestDue = loan.installments.reduce(
-                      (sum, item) => sum + item.interestDueMinor - item.interestPaidMinor,
+                    ) - loan.principalWrittenOffMinor;
+                    const interestDueRaw = loan.installments.reduce(
+                      (sum, item) => sum + item.interestDueMinor - item.interestPaidMinor - item.interestWaivedMinor,
                       0n,
-                    );
-                    const feesDue = loan.installments.reduce(
-                      (sum, item) => sum + item.feesDueMinor - item.feesPaidMinor,
+                    ) - loan.interestWrittenOffMinor;
+                    const feesDueRaw = loan.installments.reduce(
+                      (sum, item) => sum + item.feesDueMinor - item.feesPaidMinor - item.feesWaivedMinor,
                       0n,
-                    );
-                    const penaltiesDue = loan.installments.reduce(
-                      (sum, item) => sum + item.penaltiesDueMinor - item.penaltiesPaidMinor,
+                    ) - loan.feesWrittenOffMinor;
+                    const penaltiesDueRaw = loan.installments.reduce(
+                      (sum, item) => sum + item.penaltiesDueMinor - item.penaltiesPaidMinor - item.penaltiesWaivedMinor,
                       0n,
-                    );
+                    ) - loan.penaltiesWrittenOffMinor;
+                    const principalDue = clampToZero(principalDueRaw);
+                    const interestDue = clampToZero(interestDueRaw);
+                    const feesDue = clampToZero(feesDueRaw);
+                    const penaltiesDue = clampToZero(penaltiesDueRaw);
                     const totalDue = principalDue + interestDue + feesDue + penaltiesDue;
                     const totalPaid = loan.installments.reduce(
                       (sum, item) =>

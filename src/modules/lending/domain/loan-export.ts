@@ -8,6 +8,8 @@
 // loan_charges, loan_overdue_snapshot, loan_documents, loan_notes, loan_collateral,
 // loan_journals, loan_journal_lines, loan_audit_events, loan_reminders.
 
+import { isLoanSettledStatus } from "./loan-outstanding";
+
 export type ExportInstallment = Readonly<{
   id: string;
   installmentNumber: number;
@@ -133,6 +135,10 @@ export type ExportLoanRecord = Readonly<{
   status: string;
   denominationCurrency: string;
   principalMinor: bigint;
+  principalWrittenOffMinor: bigint;
+  interestWrittenOffMinor: bigint;
+  feesWrittenOffMinor: bigint;
+  penaltiesWrittenOffMinor: bigint;
   disbursedOn: Date | null;
   maturesOn: Date | null;
   createdAt: Date;
@@ -254,7 +260,9 @@ export function buildLoanExportDatasets(records: readonly ExportLoanRecord[], as
         interestWaived: sum.interestWaived + item.interestWaivedMinor,
         feesWaived: sum.feesWaived + item.feesWaivedMinor,
         penaltiesWaived: sum.penaltiesWaived + item.penaltiesWaivedMinor,
-        overdue: sum.overdue + (item.dueOn < asOfDate ? installmentOutstanding(item) : 0n),
+        // A written-off loan is settled: Fineract zeroes it out at the loan level rather than
+        // clearing individual installment rows, so a loan in that state never counts as overdue.
+        overdue: sum.overdue + (!isLoanSettledStatus(loan.status) && item.dueOn < asOfDate ? installmentOutstanding(item) : 0n),
       }),
       {
         principalDue: 0n, interestDue: 0n, feesDue: 0n, penaltiesDue: 0n,
@@ -264,33 +272,34 @@ export function buildLoanExportDatasets(records: readonly ExportLoanRecord[], as
       },
     );
     const components = [
-      { key: "principal", due: totals.principalDue, paid: totals.principalPaid, waived: totals.principalWaived },
-      { key: "interest", due: totals.interestDue, paid: totals.interestPaid, waived: totals.interestWaived },
-      { key: "fees", due: totals.feesDue, paid: totals.feesPaid, waived: totals.feesWaived },
-      { key: "penalties", due: totals.penaltiesDue, paid: totals.penaltiesPaid, waived: totals.penaltiesWaived },
+      { key: "principal", due: totals.principalDue, paid: totals.principalPaid, waived: totals.principalWaived, writtenOff: loan.principalWrittenOffMinor },
+      { key: "interest", due: totals.interestDue, paid: totals.interestPaid, waived: totals.interestWaived, writtenOff: loan.interestWrittenOffMinor },
+      { key: "fees", due: totals.feesDue, paid: totals.feesPaid, waived: totals.feesWaived, writtenOff: loan.feesWrittenOffMinor },
+      { key: "penalties", due: totals.penaltiesDue, paid: totals.penaltiesPaid, waived: totals.penaltiesWaived, writtenOff: loan.penaltiesWrittenOffMinor },
     ];
     const balanceRow: CsvRow = { loanId: loan.id, accountNumber: loan.accountNumber, asOfDate: isoDate(asOfDate) };
     let totalOriginal = 0n;
     let totalPaid = 0n;
     let totalWaived = 0n;
+    let totalWrittenOff = 0n;
     for (const component of components) {
-      const outstanding = component.due - component.paid - component.waived;
+      const outstanding = component.due - component.paid - component.waived - component.writtenOff;
       balanceRow[`${component.key}Original`] = money(component.due);
       balanceRow[`${component.key}Paid`] = money(component.paid);
       balanceRow[`${component.key}Waived`] = money(component.waived);
-      // No write-off action exists in the codebase yet (permissions.loanWriteOff is defined but
-      // unused); the column is reserved so the CSV shape matches the legacy breakdown table.
-      balanceRow[`${component.key}WrittenOff`] = "0";
-      balanceRow[`${component.key}Outstanding`] = money(outstanding);
+      balanceRow[`${component.key}WrittenOff`] = money(component.writtenOff);
+      balanceRow[`${component.key}Outstanding`] = money(outstanding > 0n ? outstanding : 0n);
       totalOriginal += component.due;
       totalPaid += component.paid;
       totalWaived += component.waived;
+      totalWrittenOff += component.writtenOff;
     }
     balanceRow.totalOriginal = money(totalOriginal);
     balanceRow.totalPaid = money(totalPaid);
     balanceRow.totalWaived = money(totalWaived);
-    balanceRow.totalWrittenOff = "0";
-    balanceRow.totalOutstanding = money(totalOriginal - totalPaid - totalWaived);
+    balanceRow.totalWrittenOff = money(totalWrittenOff);
+    const totalOutstanding = totalOriginal - totalPaid - totalWaived - totalWrittenOff;
+    balanceRow.totalOutstanding = money(totalOutstanding > 0n ? totalOutstanding : 0n);
     balanceRow.totalOverDue = money(totals.overdue);
     datasets.loan_balances.push(balanceRow);
 
@@ -315,7 +324,7 @@ export function buildLoanExportDatasets(records: readonly ExportLoanRecord[], as
         penaltiesWaivedMinor: money(item.penaltiesWaivedMinor),
         outstandingMinor: money(outstanding),
       });
-      if (item.dueOn < asOfDate && outstanding > 0n) {
+      if (!isLoanSettledStatus(loan.status) && item.dueOn < asOfDate && outstanding > 0n) {
         datasets.loan_overdue_snapshot.push({
           loanId: loan.id,
           accountNumber: loan.accountNumber,

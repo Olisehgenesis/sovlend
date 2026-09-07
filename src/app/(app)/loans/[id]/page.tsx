@@ -15,6 +15,12 @@ import { AuthorizationService } from "@/modules/identity/application/authorizati
 import { getUserDataScope } from "@/modules/identity/application/data-scope";
 import { permissions } from "@/modules/identity/domain/permissions";
 import { formatMinor } from "@/modules/money/domain/format-minor";
+import {
+  installmentOutstandingMinor,
+  installmentWaivedMinor,
+  loanOutstandingMinor,
+  loanWrittenOffMinor,
+} from "@/modules/lending/domain/loan-outstanding";
 
 export default async function LoanPage({
   params,
@@ -29,6 +35,8 @@ export default async function LoanPage({
   if (!scope) redirect("/");
   const tab = (await searchParams).tab;
   const activeTab =
+    tab === "schedule" ||
+    tab === "record-payment" ||
     tab === "charges" ||
     tab === "overdue-charges" ||
     tab === "documents" ||
@@ -37,7 +45,7 @@ export default async function LoanPage({
     tab === "guarantors" ||
     tab === "servicing"
       ? tab
-      : "schedule";
+      : "details";
   const loan = await prisma.loan.findFirst({
     where: {
       id: (await params).id,
@@ -46,6 +54,8 @@ export default async function LoanPage({
     include: {
       client: { include: { office: true } },
       group: { select: { name: true, accountNumber: true } },
+      office: { select: { name: true } },
+      loanOfficer: { select: { name: true } },
       product: true,
       charges: { orderBy: { createdAt: "desc" } },
       collateralItems: { orderBy: { createdAt: "desc" } },
@@ -102,9 +112,12 @@ export default async function LoanPage({
         item.interestPaidMinor +
         item.feesPaidMinor +
         item.penaltiesPaidMinor,
+      waived: sum.waived + installmentWaivedMinor(item),
     }),
-    { due: 0n, paid: 0n },
+    { due: 0n, paid: 0n, waived: 0n },
   );
+  const writtenOff = loanWrittenOffMinor(loan);
+  const outstanding = loanOutstandingMinor(loan.installments, loan);
   const settlementAccounts = await prisma.settlementAccount.findMany({
     where: { organizationId: scope.organizationId, currencyCode: loan.denominationCurrency, active: true },
     select: { id: true, name: true, type: true },
@@ -163,12 +176,16 @@ export default async function LoanPage({
         <article>
           <span>Outstanding</span>
           <strong>
-            {formatMinor(totals.due - totals.paid, loan.denominationCurrency)}
+            {formatMinor(outstanding, loan.denominationCurrency)}
           </strong>
         </article>
       </section>
       <nav className="client-tabs" aria-label="Loan record sections">
-        <Link className={activeTab === "schedule" ? "active" : ""} href={`/loans/${loan.id}`}>Repayment Schedule</Link>
+        <Link className={activeTab === "details" ? "active" : ""} href={`/loans/${loan.id}`}>Details</Link>
+        <Link className={activeTab === "schedule" ? "active" : ""} href={`/loans/${loan.id}?tab=schedule`}>Repayment Schedule</Link>
+        {isOpenLoan ? (
+          <Link className={activeTab === "record-payment" ? "active" : ""} href={`/loans/${loan.id}?tab=record-payment`}>Record Payment</Link>
+        ) : null}
         <Link className={activeTab === "charges" ? "active" : ""} href={`/loans/${loan.id}?tab=charges`}>Charges</Link>
         <Link className={activeTab === "overdue-charges" ? "active" : ""} href={`/loans/${loan.id}?tab=overdue-charges`}>Overdue Charges</Link>
         <Link className={activeTab === "collateral" ? "active" : ""} href={`/loans/${loan.id}?tab=collateral`}>Loan Collateral</Link>
@@ -177,12 +194,116 @@ export default async function LoanPage({
         <Link className={activeTab === "notes" ? "active" : ""} href={`/loans/${loan.id}?tab=notes`}>Notes</Link>
         <Link className={activeTab === "servicing" ? "active" : ""} href={`/loans/${loan.id}?tab=servicing`}>Servicing</Link>
       </nav>
-      {["ACTIVE", "IN_ARREARS", "OVERPAID"].includes(loan.status) ? (
+      {activeTab === "record-payment" && isOpenLoan ? (
         <section className="panel repayment-panel">
           <RepaymentForm
             loanId={loan.id}
             settlementAccounts={settlementAccounts}
           />
+        </section>
+      ) : null}
+      {activeTab === "details" ? (
+        <section className="panel review-summary">
+          <div className="panel-heading">
+            <div>
+              <h2>Loan details</h2>
+              <p>Terms captured at origination and current lifecycle dates</p>
+            </div>
+          </div>
+          <dl className="detail-grid">
+            <div>
+              <dt>Loan account</dt>
+              <dd>{loan.accountNumber}</dd>
+            </div>
+            <div>
+              <dt>Borrower</dt>
+              <dd>
+                {loan.client
+                  ? `${loan.client.firstName} ${loan.client.lastName} · ${loan.client.accountNumber}`
+                  : `Group: ${loan.group?.name ?? "Unknown"} · ${loan.group?.accountNumber ?? "—"}`}
+              </dd>
+            </div>
+            <div>
+              <dt>Product</dt>
+              <dd>{loan.product.name}</dd>
+            </div>
+            <div>
+              <dt>Office</dt>
+              <dd>{loan.office?.name ?? loan.client?.office?.name ?? "—"}</dd>
+            </div>
+            <div>
+              <dt>Loan officer</dt>
+              <dd>{loan.loanOfficer?.name ?? "Unassigned"}</dd>
+            </div>
+            <div>
+              <dt>Currency</dt>
+              <dd>{loan.denominationCurrency}</dd>
+            </div>
+            <div>
+              <dt>Principal (taken)</dt>
+              <dd>{formatMinor(loan.principalMinor, loan.denominationCurrency)}</dd>
+            </div>
+            <div>
+              <dt>Interest rate</dt>
+              <dd>{(loan.product.annualRateBps / 100).toFixed(2)}% per annum</dd>
+            </div>
+            <div>
+              <dt>Interest method</dt>
+              <dd>{loan.product.interestMethod.replaceAll("_", " ")}</dd>
+            </div>
+            <div>
+              <dt>Amortization</dt>
+              <dd>{loan.product.amortizationMethod.replaceAll("_", " ")}</dd>
+            </div>
+            <div>
+              <dt>Repayment frequency</dt>
+              <dd>{loan.product.repaymentFrequency.replaceAll("_", " ")}</dd>
+            </div>
+            <div>
+              <dt>Number of repayments</dt>
+              <dd>{loan.product.repaymentCount}</dd>
+            </div>
+            <div>
+              <dt>Disbursed on</dt>
+              <dd>{loan.disbursedOn ? loan.disbursedOn.toLocaleDateString() : "Not yet disbursed"}</dd>
+            </div>
+            <div>
+              <dt>Matures on</dt>
+              <dd>{loan.maturesOn ? loan.maturesOn.toLocaleDateString() : "Not set"}</dd>
+            </div>
+            <div>
+              <dt>Total scheduled</dt>
+              <dd>{formatMinor(totals.due, loan.denominationCurrency)}</dd>
+            </div>
+            <div>
+              <dt>Total paid</dt>
+              <dd>{formatMinor(totals.paid, loan.denominationCurrency)}</dd>
+            </div>
+            <div>
+              <dt>Waived</dt>
+              <dd>{formatMinor(totals.waived, loan.denominationCurrency)}</dd>
+            </div>
+            <div>
+              <dt>Written off</dt>
+              <dd>{formatMinor(writtenOff, loan.denominationCurrency)}</dd>
+            </div>
+            <div>
+              <dt>Outstanding</dt>
+              <dd>{formatMinor(outstanding, loan.denominationCurrency)}</dd>
+            </div>
+            <div>
+              <dt>Status</dt>
+              <dd>
+                <span className={`status ${loan.status === "ACTIVE" ? "up-to-date" : loan.status === "IN_ARREARS" ? "in-arrears" : "review"}`}>
+                  {loan.status.replaceAll("_", " ")}
+                </span>
+              </dd>
+            </div>
+            <div>
+              <dt>Application submitted</dt>
+              <dd>{loan.createdAt.toLocaleDateString()}</dd>
+            </div>
+          </dl>
         </section>
       ) : null}
       {activeTab === "charges" ? (
@@ -311,6 +432,7 @@ export default async function LoanPage({
                     <tr key={guarantor.id}>
                       <td>
                         <strong>{[guarantor.firstName, guarantor.lastName].filter(Boolean).join(" ") || "Unnamed guarantor"}</strong>
+                        <Link className="row-link" href={`/loans/${loan.id}/guarantors/${guarantor.id}`} aria-label={`Open guarantor ${[guarantor.firstName, guarantor.lastName].filter(Boolean).join(" ") || "record"}`} />
                       </td>
                       <td>{guarantor.guarantorType}</td>
                       <td>{guarantor.relationship ?? "-"}</td>
@@ -441,16 +563,12 @@ export default async function LoanPage({
                 </thead>
                 <tbody>
                   {loan.installments.map((item) => {
-                    const due =
-                      item.principalDueMinor +
-                      item.interestDueMinor +
-                      item.feesDueMinor +
-                      item.penaltiesDueMinor;
                     const paid =
                       item.principalPaidMinor +
                       item.interestPaidMinor +
                       item.feesPaidMinor +
                       item.penaltiesPaidMinor;
+                    const rowOutstanding = installmentOutstandingMinor(item);
                     return (
                       <tr key={item.id}>
                         <td>{item.installmentNumber}</td>
@@ -481,7 +599,7 @@ export default async function LoanPage({
                         </td>
                         <td>{formatMinor(paid, loan.denominationCurrency)}</td>
                         <td>
-                          {formatMinor(due - paid, loan.denominationCurrency)}
+                          {formatMinor(rowOutstanding, loan.denominationCurrency)}
                         </td>
                       </tr>
                     );

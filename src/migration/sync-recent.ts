@@ -1,4 +1,5 @@
 import { PrismaClient, type LoanStatus, type Prisma } from "@prisma/client";
+import Decimal from "decimal.js";
 import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 
@@ -180,6 +181,19 @@ async function correctLoanStatusDrift(prisma: PrismaClient, root: string): Promi
     if (!localLoan.disbursedOn && disbursedOn) data.disbursedOn = disbursedOn;
     if (!localLoan.maturesOn && maturesOn) data.maturesOn = maturesOn;
 
+    // Written off at Fineract means the remaining balance is closed out at the loan level
+    // (see loan-outstanding.ts) -- capture that here so the outstanding balance doesn't
+    // keep showing the pre-write-off amount once the status flips.
+    if (status === "WRITTEN_OFF") {
+      const summary = asRecord(payload.summary);
+      const currency = asRecord(payload.currency);
+      const exponent = Number(currency?.decimalPlaces ?? 2);
+      data.principalWrittenOffMinor = toMinor(Number(summary?.principalWrittenOff ?? 0), exponent);
+      data.interestWrittenOffMinor = toMinor(Number(summary?.interestWrittenOff ?? 0), exponent);
+      data.feesWrittenOffMinor = toMinor(Number(summary?.feeChargesWrittenOff ?? 0), exponent);
+      data.penaltiesWrittenOffMinor = toMinor(Number(summary?.penaltyChargesWrittenOff ?? 0), exponent);
+    }
+
     await prisma.loan.update({ where: { id: localLoan.id }, data });
     console.log(`Loan ${accountNumber}: ${localLoan.status} -> ${status}`);
 
@@ -207,6 +221,10 @@ function dateFromParts(value: unknown): Date | null {
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" ? (value as Record<string, unknown>) : null;
+}
+
+function toMinor(amount: number, exponent = 2): bigint {
+  return BigInt(new Decimal(amount).mul(new Decimal(10).pow(exponent)).toDecimalPlaces(0, Decimal.ROUND_HALF_UP).toFixed(0));
 }
 
 function loadLocalEnvFile() {

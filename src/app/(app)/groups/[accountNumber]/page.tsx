@@ -44,11 +44,16 @@ function savingsAccountTypeLabel(accountType: string) {
   return accountType.replaceAll("_", " ");
 }
 
-function outstandingPrincipalMinor(installments: Array<{ principalDueMinor: bigint; principalPaidMinor: bigint; principalWaivedMinor: bigint }>) {
-  return installments.reduce((sum, installment) => {
+function outstandingPrincipalMinor(
+  installments: Array<{ principalDueMinor: bigint; principalPaidMinor: bigint; principalWaivedMinor: bigint }>,
+  principalWrittenOffMinor: bigint = 0n,
+) {
+  const dueOutstanding = installments.reduce((sum, installment) => {
     const outstanding = installment.principalDueMinor - installment.principalPaidMinor - installment.principalWaivedMinor;
     return sum + (outstanding > 0n ? outstanding : 0n);
   }, 0n);
+  const outstanding = dueOutstanding - principalWrittenOffMinor;
+  return outstanding > 0n ? outstanding : 0n;
 }
 
 export default async function GroupDetailPage({ params, searchParams }: { params: Promise<{ accountNumber: string }>; searchParams: Promise<{ tab?: string }> }) {
@@ -109,6 +114,7 @@ export default async function GroupDetailPage({ params, searchParams }: { params
         product: { select: { name: true } },
         client: { select: { accountNumber: true, firstName: true, middleName: true, lastName: true } },
         installments: { select: { principalDueMinor: true, principalPaidMinor: true, principalWaivedMinor: true } },
+        principalWrittenOffMinor: true,
       },
     }),
     prisma.savingsAccount.findMany({
@@ -127,7 +133,7 @@ export default async function GroupDetailPage({ params, searchParams }: { params
     const summary = memberLoanSummary.get(loan.clientId) ?? { activeLoanCount: 0, outstandingPrincipalMinor: 0n, currencyCode: loan.denominationCurrency };
     if (ACTIVE_MEMBER_LOAN_STATUSES.has(loan.status)) {
       summary.activeLoanCount += 1;
-      summary.outstandingPrincipalMinor += outstandingPrincipalMinor(loan.installments);
+      summary.outstandingPrincipalMinor += outstandingPrincipalMinor(loan.installments, loan.principalWrittenOffMinor);
     }
     memberLoanSummary.set(loan.clientId, summary);
   }
@@ -368,7 +374,7 @@ export default async function GroupDetailPage({ params, searchParams }: { params
                     <tbody>
                       {memberLoans.map((loan) => {
                         const ownerName = loan.client ? fullName(loan.client) : "Former member";
-                        const principalOutstanding = outstandingPrincipalMinor(loan.installments);
+                        const principalOutstanding = outstandingPrincipalMinor(loan.installments, loan.principalWrittenOffMinor);
                         return (
                           <tr key={loan.id}>
                             <td>

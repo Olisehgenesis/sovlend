@@ -17,6 +17,10 @@ function makeLoan(overrides: Partial<ExportLoanRecord> = {}): ExportLoanRecord {
     status: "ACTIVE",
     denominationCurrency: "UGX",
     principalMinor: 1_000_000n,
+    principalWrittenOffMinor: 0n,
+    interestWrittenOffMinor: 0n,
+    feesWrittenOffMinor: 0n,
+    penaltiesWrittenOffMinor: 0n,
     disbursedOn: new Date("2026-01-01"),
     maturesOn: new Date("2026-07-01"),
     createdAt: new Date("2025-12-20"),
@@ -74,6 +78,32 @@ describe("buildLoanExportDatasets", () => {
     // Installment 2 is fully overdue as-of 2026-06-01 (principal+interest unpaid, penalties waived)
     expect(balance.totalOverDue).toBe("110000");
     expect(balance.totalWrittenOff).toBe("0");
+  });
+
+  it("subtracts loan-level written-off amounts from outstanding and suppresses overdue on written-off loans", () => {
+    const loan = makeLoan({
+      status: "WRITTEN_OFF",
+      principalWrittenOffMinor: 90_000n,
+      interestWrittenOffMinor: 10_000n,
+      installments: [
+        {
+          id: "i1", installmentNumber: 1, dueOn: new Date("2026-01-15"),
+          principalDueMinor: 100_000n, interestDueMinor: 10_000n, feesDueMinor: 0n, penaltiesDueMinor: 0n,
+          principalPaidMinor: 10_000n, interestPaidMinor: 0n, feesPaidMinor: 0n, penaltiesPaidMinor: 0n,
+          principalWaivedMinor: 0n, interestWaivedMinor: 0n, feesWaivedMinor: 0n, penaltiesWaivedMinor: 0n,
+        },
+      ],
+    });
+    const datasets = buildLoanExportDatasets([loan], new Date("2026-06-01"));
+    const balance = datasets.loan_balances[0];
+    // due 110,000 - paid 10,000 - written off 100,000 = 0 outstanding, matching Fineract's own
+    // summary for a written-off loan even though the raw installment row still looks unpaid.
+    expect(balance.principalWrittenOff).toBe("90000");
+    expect(balance.interestWrittenOff).toBe("10000");
+    expect(balance.totalWrittenOff).toBe("100000");
+    expect(balance.totalOutstanding).toBe("0");
+    expect(balance.totalOverDue).toBe("0");
+    expect(datasets.loan_overdue_snapshot).toHaveLength(0);
   });
 
   it("flags overdue installments and overdue charges in the overdue snapshot", () => {

@@ -713,6 +713,13 @@ model Loan {
   status               LoanStatus           @default(APPROVED)
   disbursedOn          DateTime?            @db.Date
   maturesOn            DateTime?            @db.Date
+  // Set only when a loan is written off (mirrors Fineract's loan-level write-off summary,
+  // since a write-off closes out remaining balance at the loan level rather than being
+  // allocated back onto individual installment rows). Always 0 for non-written-off loans.
+  principalWrittenOffMinor BigInt            @default(0)
+  interestWrittenOffMinor  BigInt            @default(0)
+  feesWrittenOffMinor      BigInt            @default(0)
+  penaltiesWrittenOffMinor BigInt            @default(0)
   application          LoanApplication      @relation(fields: [applicationId], references: [id])
   client               Client?              @relation(fields: [clientId], references: [id])
   group                Group?               @relation(fields: [groupId], references: [id])

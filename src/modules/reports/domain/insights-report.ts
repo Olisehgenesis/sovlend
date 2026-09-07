@@ -293,6 +293,7 @@ export async function loadGroupPortfolioReport(prisma: PrismaClient, scope: User
         select: {
           status: true,
           principalMinor: true,
+          principalWrittenOffMinor: true,
           denominationCurrency: true,
           installments: { select: { principalDueMinor: true, principalPaidMinor: true, principalWaivedMinor: true } },
         },
@@ -308,7 +309,7 @@ export async function loadGroupPortfolioReport(prisma: PrismaClient, scope: User
 
   const rows = groups.map<GroupPortfolioRow>((group) => {
     const loanPrincipalMinor = group.loans.reduce((sum, loan) => sum + loan.principalMinor, 0n);
-    const outstandingPrincipalMinor = group.loans.reduce((sum, loan) => sum + outstandingPrincipalMinorFromInstallments(loan.installments), 0n);
+    const outstandingPrincipalMinor = group.loans.reduce((sum, loan) => sum + outstandingPrincipalMinorFromInstallments(loan.installments, loan.principalWrittenOffMinor), 0n);
     const savingsBalanceMinor = group.savingsAccounts.reduce(
       (sum, account) => sum + account.transactions.reduce((accountSum, transaction) => accountSum + transaction.amountMinor, 0n),
       0n,
@@ -371,6 +372,7 @@ export async function loadGuarantorExposureReport(prisma: PrismaClient, scope: U
           accountNumber: true,
           status: true,
           denominationCurrency: true,
+          principalWrittenOffMinor: true,
           client: { select: { firstName: true, middleName: true, lastName: true } },
           group: { select: { name: true } },
           installments: { select: { principalDueMinor: true, principalPaidMinor: true, principalWaivedMinor: true } },
@@ -397,7 +399,7 @@ export async function loadGuarantorExposureReport(prisma: PrismaClient, scope: U
       accountNumber: guarantor.loan.accountNumber,
       borrowerName: guarantor.loan.group?.name ?? fullName(guarantor.loan.client),
       status: guarantor.loan.status,
-      outstandingPrincipalMinor: outstandingPrincipalMinorFromInstallments(guarantor.loan.installments),
+      outstandingPrincipalMinor: outstandingPrincipalMinorFromInstallments(guarantor.loan.installments, guarantor.loan.principalWrittenOffMinor),
       currencyCode: guarantor.loan.denominationCurrency,
     });
     grouped.set(key, existing);
@@ -746,11 +748,14 @@ function startOfUtcDay(date: Date) {
 
 function outstandingPrincipalMinorFromInstallments(
   installments: Array<{ principalDueMinor: bigint; principalPaidMinor: bigint; principalWaivedMinor: bigint }>,
+  principalWrittenOffMinor: bigint = 0n,
 ) {
-  return installments.reduce((sum, installment) => {
+  const dueOutstanding = installments.reduce((sum, installment) => {
     const outstanding = installment.principalDueMinor - installment.principalPaidMinor - installment.principalWaivedMinor;
     return sum + (outstanding > 0n ? outstanding : 0n);
   }, 0n);
+  const outstanding = dueOutstanding - principalWrittenOffMinor;
+  return outstanding > 0n ? outstanding : 0n;
 }
 
 function fullName(person: { firstName: string; middleName: string | null; lastName: string } | null | undefined) {
