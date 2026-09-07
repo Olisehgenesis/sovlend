@@ -66,6 +66,7 @@ export const reportSections: readonly ReportSection[] = [
     reports: [
       { href: "/reports/operations/active-loans", permission: permissions.reportActiveLoans, title: "Active Loans", description: "Register of all currently active and in-arrears loan accounts." },
       { href: "/reports/operations/collection-by-officer", permission: permissions.reportCollectionByOfficer, title: "Collection by Officer", description: "Expected collections grouped by responsible officer." },
+      { href: "/reports/operations/collections", permission: permissions.reportCollectionsLog, title: "Collections", description: "Actual receipts ledger of every repayment posted, with principal/interest/fees/penalty breakdown." },
       { href: "/reports/operations/unassigned-loans", permission: permissions.reportUnassignedLoans, title: "Unassigned Loans", description: "Find active loans missing an assigned officer." },
       { href: "/reports/operations/branch-portfolio", permission: permissions.reportBranchPortfolio, title: "Branch Portfolio", description: "Portfolio totals by office and branch." },
       { href: "/reports/operations/disbursal-cohort", permission: permissions.reportDisbursalCohort, title: "Disbursal Cohort", description: "Compare loan cohorts by disbursal period." },

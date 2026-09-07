@@ -42,6 +42,7 @@ const descriptions: Record<string, string> = {
 
   [permissions.reportActiveLoans]: "View the Active Loans register report",
   [permissions.reportCollectionByOfficer]: "View expected daily collection per loan officer",
+  [permissions.reportCollectionsLog]: "View actual collections/receipts ledger",
   [permissions.reportUnassignedLoans]: "View active loans with no assigned loan officer",
   [permissions.reportBranchPortfolio]: "View branch/office portfolio breakdown",
   [permissions.reportDisbursalCohort]: "View loans grouped by disbursal period",
