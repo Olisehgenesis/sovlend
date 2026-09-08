@@ -49,6 +49,13 @@ export default async function Home() {
         timeZone: "Africa/Kampala",
       }).format(dashboard.btcPrice.observedAt)
     : null;
+  const usdObservedAt = dashboard.usdPrice
+    ? new Intl.DateTimeFormat("en-UG", {
+        dateStyle: "medium",
+        timeStyle: "short",
+        timeZone: "Africa/Kampala",
+      }).format(dashboard.usdPrice.observedAt)
+    : null;
   const metricCards = [
     {
       href: "/loans",
@@ -148,6 +155,21 @@ export default async function Home() {
                 <strong>{ugxCurrencyFormatter.format(dashboard.btcPrice.priceUgx)}</strong>
                 <small>
                   {dashboard.btcPrice.status.toLowerCase()} · {btcObservedAt}
+                </small>
+              </>
+            ) : (
+              <small>No fresh cached rate</small>
+            )}
+          </div>
+          <div className="custody">
+            <span>
+              <CircleDollarSign size={16} /> USD/UGX
+            </span>
+            {dashboard.usdPrice ? (
+              <>
+                <strong>{ugxCurrencyFormatter.format(dashboard.usdPrice.priceUgx)}</strong>
+                <small>
+                  {dashboard.usdPrice.status.toLowerCase()} · {usdObservedAt}
                 </small>
               </>
             ) : (

@@ -8,7 +8,13 @@ import { getUserDataScope, officeWhere } from "@/modules/identity/application/da
 // have their own separate list/tab in iLend and should not inflate the active portfolio
 // count/value shown here — see the same fix applied to the /loans list page.
 const activeStatuses = ["ACTIVE", "IN_ARREARS"] as const;
-const freshSnapshotWindowMs = 60 * 60 * 1_000;
+// BTC/USD is refreshed from real-time crypto sources every 5 minutes, so a tight window is fine.
+const cryptoFreshSnapshotWindowMs = 60 * 60 * 1_000;
+// USD/UGX falls back to a free daily-rate API whose `observedAt` reflects the source's once-a-day
+// publish date (not our fetch time) — see FawazExchangeProvider. A 1-hour window would make it
+// look stale almost all day even though it's refreshed every 15 minutes, so match the aggregator's
+// own `maximumAgeMs` tolerance for fiat pairs instead.
+const fiatFreshSnapshotWindowMs = 36 * 60 * 60 * 1_000;
 
 export async function loadDashboard(userId: string) {
   const [user, scope] = await Promise.all([
@@ -27,7 +33,8 @@ export async function loadDashboard(userId: string) {
   const now = new Date();
   const today = startOfUtcDay(now);
   const tomorrow = new Date(today.getTime() + 86_400_000);
-  const freshAfter = new Date(now.getTime() - freshSnapshotWindowMs);
+  const cryptoFreshAfter = new Date(now.getTime() - cryptoFreshSnapshotWindowMs);
+  const fiatFreshAfter = new Date(now.getTime() - fiatFreshSnapshotWindowMs);
   const loanScope = {
     office: { organizationId: user.organizationId },
     ...officeWhere(scope),
@@ -101,12 +108,12 @@ export async function loadDashboard(userId: string) {
       },
     }),
     prisma.priceSnapshot.findFirst({
-      where: { baseCode: "BTC", quoteCode: "USD", observedAt: { gt: freshAfter } },
+      where: { baseCode: "BTC", quoteCode: "USD", observedAt: { gt: cryptoFreshAfter } },
       orderBy: { observedAt: "desc" },
       select: { price: true, status: true, observedAt: true },
     }),
     prisma.priceSnapshot.findFirst({
-      where: { baseCode: "USD", quoteCode: "UGX", observedAt: { gt: freshAfter } },
+      where: { baseCode: "USD", quoteCode: "UGX", observedAt: { gt: fiatFreshAfter } },
       orderBy: { observedAt: "desc" },
       select: { price: true, status: true, observedAt: true },
     }),
@@ -134,6 +141,13 @@ export async function loadDashboard(userId: string) {
               : usdUgxPrice.observedAt,
         }
       : null;
+  const usdPrice = usdUgxPrice
+    ? {
+        priceUgx: Number(usdUgxPrice.price),
+        status: usdUgxPrice.status,
+        observedAt: usdUgxPrice.observedAt,
+      }
+    : null;
 
   return {
     organizationName: user.organization.name,
@@ -167,6 +181,7 @@ export async function loadDashboard(userId: string) {
       .slice(0, 8),
     ownership: summarizeOwnership(ownershipPools, user.organization.baseCurrency),
     btcPrice,
+    usdPrice,
   };
 }
 
