@@ -5,7 +5,7 @@ import { z } from "zod";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { AuthorizationService, PermissionDeniedError } from "@/modules/identity/application/authorization-service";
-import { getUserDataScope, officeWhere } from "@/modules/identity/application/data-scope";
+import { getUserDataScope, groupScopeWhere } from "@/modules/identity/application/data-scope";
 import { permissions } from "@/modules/identity/domain/permissions";
 
 const schema = z.object({ body: z.string().trim().min(1).max(2000) });
@@ -18,7 +18,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   const scope = await getUserDataScope(prisma, session.user.id);
   if (!scope) return NextResponse.json({ error: "Workspace assignment required" }, { status: 403 });
   const { id } = await params;
-  const group = await prisma.group.findFirst({ where: { id, organizationId: scope.organizationId, ...officeWhere(scope) } });
+  const group = await prisma.group.findFirst({ where: { id, organizationId: scope.organizationId, ...groupScopeWhere(scope) } });
   if (!group) return NextResponse.json({ error: "Group not found" }, { status: 404 });
 
   try {

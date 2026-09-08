@@ -7,7 +7,7 @@ import { notFound, redirect } from "next/navigation";
 import { Breadcrumbs } from "@/components/breadcrumbs";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { getUserDataScope, officeWhere } from "@/modules/identity/application/data-scope";
+import { clientScopeWhere, getUserDataScope, groupScopeWhere } from "@/modules/identity/application/data-scope";
 import { formatMinor } from "@/modules/money/domain/format-minor";
 
 const dateFormatter = new Intl.DateTimeFormat("en-UG", { dateStyle: "medium" });
@@ -68,11 +68,11 @@ export default async function SavingsAccountDetailPage({
 
   const clientScope: Prisma.ClientWhereInput = {
     organizationId: scope.organizationId,
-    ...officeWhere(scope),
+    ...clientScopeWhere(scope),
   };
   const groupScope: Prisma.GroupWhereInput = {
     organizationId: scope.organizationId,
-    ...officeWhere(scope),
+    ...groupScopeWhere(scope),
   };
 
   const { accountNumber } = await params;

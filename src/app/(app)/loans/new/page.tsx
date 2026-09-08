@@ -7,7 +7,7 @@ import { CreateLoanApplicationForm } from "@/components/create-loan-application-
 import { Breadcrumbs } from "@/components/breadcrumbs";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { getUserDataScope, officeWhere } from "@/modules/identity/application/data-scope";
+import { clientScopeWhere, getUserDataScope, groupScopeWhere } from "@/modules/identity/application/data-scope";
 import { formatMinor } from "@/modules/money/domain/format-minor";
 
 export default async function NewLoanApplicationPage({ searchParams }: { searchParams: Promise<{ query?: string; clientId?: string; groupId?: string }> }) {
@@ -19,11 +19,11 @@ export default async function NewLoanApplicationPage({ searchParams }: { searchP
   const query = params.query?.trim() ?? "";
   const clientSearch = query ? { OR: [{ firstName: { contains: query, mode: "insensitive" as const } }, { lastName: { contains: query, mode: "insensitive" as const } }, { accountNumber: { contains: query } }, { mobileNumber: { contains: query } }] } : {};
   const [clients, selectedClient, products, groups, selectedGroup] = await Promise.all([
-    prisma.client.findMany({ where: { organizationId: scope.organizationId, ...officeWhere(scope), status: "ACTIVE", ...clientSearch }, orderBy: [{ firstName: "asc" }, { lastName: "asc" }], take: 50 }),
-    params.clientId ? prisma.client.findFirst({ where: { id: params.clientId, organizationId: scope.organizationId, ...officeWhere(scope), status: "ACTIVE" } }) : null,
+    prisma.client.findMany({ where: { organizationId: scope.organizationId, ...clientScopeWhere(scope), status: "ACTIVE", ...clientSearch }, orderBy: [{ firstName: "asc" }, { lastName: "asc" }], take: 50 }),
+    params.clientId ? prisma.client.findFirst({ where: { id: params.clientId, organizationId: scope.organizationId, ...clientScopeWhere(scope), status: "ACTIVE" } }) : null,
     prisma.loanProduct.findMany({ where: { organizationId: scope.organizationId, active: true }, orderBy: { name: "asc" } }),
-    prisma.group.findMany({ where: { organizationId: scope.organizationId, ...officeWhere(scope), status: "ACTIVE" }, orderBy: { name: "asc" }, take: 100 }),
-    params.groupId ? prisma.group.findFirst({ where: { id: params.groupId, organizationId: scope.organizationId, ...officeWhere(scope), status: "ACTIVE" } }) : null,
+    prisma.group.findMany({ where: { organizationId: scope.organizationId, ...groupScopeWhere(scope), status: "ACTIVE" }, orderBy: { name: "asc" }, take: 100 }),
+    params.groupId ? prisma.group.findFirst({ where: { id: params.groupId, organizationId: scope.organizationId, ...groupScopeWhere(scope), status: "ACTIVE" } }) : null,
   ]);
   const availableClients = selectedClient && !clients.some((client) => client.id === selectedClient.id) ? [selectedClient, ...clients] : clients;
   const availableGroups = selectedGroup && !groups.some((group) => group.id === selectedGroup.id) ? [selectedGroup, ...groups] : groups;

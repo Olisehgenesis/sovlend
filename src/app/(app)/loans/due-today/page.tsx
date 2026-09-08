@@ -7,7 +7,7 @@ import { redirect } from "next/navigation";
 import { Breadcrumbs } from "@/components/breadcrumbs";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { getUserDataScope, officeWhere } from "@/modules/identity/application/data-scope";
+import { getUserDataScope, loanScopeWhere } from "@/modules/identity/application/data-scope";
 import { formatMinor } from "@/modules/money/domain/format-minor";
 
 export default async function LoansDueTodayPage() {
@@ -25,7 +25,7 @@ export default async function LoansDueTodayPage() {
       dueOn: { gte: today, lt: tomorrow },
       loan: {
         office: { organizationId: userScope.organizationId },
-        ...officeWhere(userScope),
+        ...loanScopeWhere(userScope),
       },
     },
     select: {

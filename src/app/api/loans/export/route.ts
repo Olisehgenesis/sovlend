@@ -21,7 +21,8 @@ export async function GET() {
   }
 
   const applications = await prisma.loanApplication.findMany({
-    where: { office: { organizationId: scope.organizationId }, ...officeWhere(scope) },
+    // LoanApplication has no loanOfficerId field, so officer-scoped users are pinned by submittedById.
+    where: { office: { organizationId: scope.organizationId }, ...officeWhere(scope), ...(scope.officerUserId ? { submittedById: scope.officerUserId } : {}) },
     include: { client: true, group: true, office: true, product: true, loan: true },
     orderBy: { createdAt: "asc" },
   });

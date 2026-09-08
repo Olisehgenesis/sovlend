@@ -1,6 +1,6 @@
 import type { LoanStatus, PrismaClient } from "@prisma/client";
 
-import { officeWhere, type UserDataScope } from "@/modules/identity/application/data-scope";
+import { loanScopeWhere, type UserDataScope } from "@/modules/identity/application/data-scope";
 import { rowsToCsv } from "@/modules/lending/domain/loan-export";
 
 export type RiskFilters = Readonly<{
@@ -181,7 +181,7 @@ export function parseBoundedInteger(
 }
 
 export async function loadRiskFilterOptions(prisma: PrismaClient, scope: UserDataScope): Promise<RiskFilterOptions> {
-  const scopedWhere = officeWhere(scope);
+  const scopedWhere = loanScopeWhere(scope);
   const [offices, loanOfficers] = await Promise.all([
     prisma.office.findMany({
       where: {
@@ -442,9 +442,11 @@ export async function loadRecoveriesReport(prisma: PrismaClient, scope: UserData
   const loans = await prisma.loan.findMany({
     where: {
       office: { organizationId: scope.organizationId },
-      ...officeWhere(scope),
+      ...loanScopeWhere(scope),
       ...(filters.officeId ? { officeId: filters.officeId } : {}),
-      ...(filters.loanOfficerId ? { loanOfficerId: filters.loanOfficerId } : {}),
+      // Officer-scoped users (scope.officerUserId set) are already pinned to their own loans by
+      // loanScopeWhere above -- never let a manually-supplied loanOfficerId filter override that.
+      ...(!scope.officerUserId && filters.loanOfficerId ? { loanOfficerId: filters.loanOfficerId } : {}),
       status: "WRITTEN_OFF",
     },
     select: {
@@ -878,9 +880,11 @@ export async function loadPortfolioLoans(
   const loans = await prisma.loan.findMany({
     where: {
       office: { organizationId: scope.organizationId },
-      ...officeWhere(scope),
+      ...loanScopeWhere(scope),
       ...(filters.officeId ? { officeId: filters.officeId } : {}),
-      ...(filters.loanOfficerId ? { loanOfficerId: filters.loanOfficerId } : {}),
+      // Officer-scoped users (scope.officerUserId set) are already pinned to their own loans by
+      // loanScopeWhere above -- never let a manually-supplied loanOfficerId filter override that.
+      ...(!scope.officerUserId && filters.loanOfficerId ? { loanOfficerId: filters.loanOfficerId } : {}),
       ...(options.disbursedOnOrAfter ? { disbursedOn: { gte: options.disbursedOnOrAfter } } : {}),
       status: { in: options.statuses },
     },

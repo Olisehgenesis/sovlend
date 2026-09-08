@@ -118,12 +118,16 @@ export async function promoteLegacyStaffToAccounts(prismaClient: PrismaClient): 
           });
           if (group) {
             const organizationScope = ["ADMIN", "GENERAL_MANAGER", "TREASURY_SIGNER", "AUDITOR", "INVESTOR"].includes(staff.systemRole);
+            // Loan Officers only ever work their own assigned portfolio (loans/clients/groups/
+            // savings accounts), never their whole office -- see loanScopeWhere/clientScopeWhere/
+            // etc. in data-scope.ts, which key off this "OWN" scope.
+            const ownScope = staff.systemRole === "LOAN_OFFICER";
             await prismaClient.userPermissionAssignment.create({
               data: {
                 userId: staff.id,
                 groupId: group.id,
-                scope: organizationScope ? "ORGANIZATION" : "OFFICE",
-                officeId: organizationScope ? null : staff.officeId,
+                scope: organizationScope ? "ORGANIZATION" : ownScope ? "OWN" : "OFFICE",
+                officeId: organizationScope || ownScope ? null : staff.officeId,
                 includeChildOffices: staff.systemRole === "BRANCH_MANAGER",
               },
             });

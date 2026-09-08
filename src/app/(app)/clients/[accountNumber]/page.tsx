@@ -11,7 +11,7 @@ import { NewSavingsAccountWizard } from "@/components/new-savings-account-wizard
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { AuthorizationService } from "@/modules/identity/application/authorization-service";
-import { getUserDataScope, officeWhere } from "@/modules/identity/application/data-scope";
+import { clientScopeWhere, getUserDataScope } from "@/modules/identity/application/data-scope";
 import { permissions } from "@/modules/identity/domain/permissions";
 import { getClientWalletSummary, OPEN_LOAN_STATUSES } from "@/modules/lending/application/client-wallet";
 import { formatMinor } from "@/modules/money/domain/format-minor";
@@ -40,7 +40,7 @@ export default async function ClientDetailPage({ params, searchParams }: { param
   const activeTab: TabKey = tabs.some((item) => item.key === tab) ? (tab as TabKey) : "general";
 
   const client = await prisma.client.findFirst({
-    where: { accountNumber, organizationId: scope.organizationId, ...officeWhere(scope) },
+    where: { accountNumber, organizationId: scope.organizationId, ...clientScopeWhere(scope) },
     include: {
       office: { select: { name: true } },
       assignedOfficer: { select: { name: true } },

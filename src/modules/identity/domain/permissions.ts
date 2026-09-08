@@ -85,7 +85,7 @@ export const defaultPermissionGroups: Record<string, readonly PermissionCode[]> 
     ...allReportPermissions,
   ],
   Teller: [permissions.clientView, permissions.loanView, permissions.loanRepayment, permissions.savingsView, permissions.savingsTransact, permissions.reportView, permissions.reportSavingsAccountListing, permissions.reportSavingsTransactions],
-  "Loan Officer": [permissions.clientView, permissions.clientManage, permissions.loanView, permissions.loanApply, permissions.reportView, permissions.reportCollectionByOfficer, permissions.reportCollectionsLog, permissions.reportAging, permissions.reportUnassignedLoans, permissions.reportClientListing, permissions.reportSavingsAccountListing],
+  "Loan Officer": [permissions.clientView, permissions.clientManage, permissions.loanView, permissions.loanApply, permissions.reportView, permissions.reportActiveLoans, permissions.reportCollectionByOfficer, permissions.reportCollectionsLog, permissions.reportAging, permissions.reportUnassignedLoans, permissions.reportClientListing, permissions.reportSavingsAccountListing],
   "Treasury Signer": [permissions.treasuryView, permissions.treasuryApprove, permissions.ledgerView, permissions.auditView, ...accountingReportPermissions, permissions.reportOutstandingBalances, permissions.reportProvisioning],
   Auditor: [permissions.clientView, permissions.loanView, permissions.savingsView, permissions.treasuryView, permissions.ledgerView, permissions.reportView, permissions.auditView, ...allReportPermissions],
   Investor: [permissions.treasuryView],

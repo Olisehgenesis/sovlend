@@ -5,7 +5,7 @@ import { Breadcrumbs } from "@/components/breadcrumbs";
 import { EditClientForm } from "@/components/edit-client-form";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { getUserDataScope, officeWhere } from "@/modules/identity/application/data-scope";
+import { clientScopeWhere, getUserDataScope } from "@/modules/identity/application/data-scope";
 
 export default async function EditClientPage({ params }: { params: Promise<{ accountNumber: string }> }) {
   const session = await auth.api.getSession({ headers: await headers() });
@@ -13,7 +13,7 @@ export default async function EditClientPage({ params }: { params: Promise<{ acc
   const scope = await getUserDataScope(prisma, session.user.id);
   if (!scope) redirect("/");
   const { accountNumber } = await params;
-  const client = await prisma.client.findFirst({ where: { accountNumber, organizationId: scope.organizationId, ...officeWhere(scope) } });
+  const client = await prisma.client.findFirst({ where: { accountNumber, organizationId: scope.organizationId, ...clientScopeWhere(scope) } });
   if (!client) notFound();
 
   const fullName = [client.firstName, client.middleName, client.lastName].filter(Boolean).join(" ");

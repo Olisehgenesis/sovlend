@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { transactionTypeVariants } from "@/lib/loan-transaction-type-variants";
 import { principalOutstandingMinor as principalOutstandingHelper } from "@/modules/lending/domain/loan-outstanding";
 export { formatMinor } from "@/modules/money/domain/format-minor";
-import { getUserDataScope, officeWhere } from "@/modules/identity/application/data-scope";
+import { getUserDataScope, loanScopeWhere } from "@/modules/identity/application/data-scope";
 
 // Matches iLend's own "Active Loans" definition (Up To Date + In Arrears). Overpaid loans
 // have their own separate list/tab in iLend and should not inflate the active portfolio
@@ -39,7 +39,7 @@ export async function loadDashboard(userId: string) {
   const fiatFreshAfter = new Date(now.getTime() - fiatFreshSnapshotWindowMs);
   const loanScope = {
     office: { organizationId: user.organizationId },
-    ...officeWhere(scope),
+    ...loanScopeWhere(scope),
   };
 
   const [
@@ -181,7 +181,7 @@ export async function loadDashboard(userId: string) {
 
   return {
     organizationName: user.organization.name,
-    officeName: scope.officeIds ? "Assigned offices" : "All offices",
+    officeName: scope.officerUserId ? "Your assigned portfolio" : scope.officeIds ? "Assigned offices" : "All offices",
     baseCurrency: user.organization.baseCurrency,
     generatedAt: now,
     metrics: {
