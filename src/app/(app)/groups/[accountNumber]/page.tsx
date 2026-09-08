@@ -158,10 +158,12 @@ export default async function GroupDetailPage({ params, searchParams }: { params
   );
   const groupOwnedActiveLoanCount = group.loans.filter((loan) => ACTIVE_MEMBER_LOAN_STATUSES.has(loan.status)).length;
 
-  const totalSavingsMinor = [...memberSavingsSummary.values()].reduce((sum, summary) => sum + summary.totalBalanceMinor, 0n) + groupOwnedSavingsMinor;
+  const memberSavingsMinor = [...memberSavingsSummary.values()].reduce((sum, summary) => sum + summary.totalBalanceMinor, 0n);
+  const memberSavingsAccountCount = [...memberSavingsSummary.values()].reduce((sum, summary) => sum + summary.accountCount, 0);
+  const totalSavingsMinor = memberSavingsMinor + groupOwnedSavingsMinor;
   const totalLoanOutstandingMinor = [...memberLoanSummary.values()].reduce((sum, summary) => sum + summary.outstandingPrincipalMinor, 0n) + groupOwnedLoanOutstandingMinor;
   const totalActiveLoans = [...memberLoanSummary.values()].reduce((sum, summary) => sum + summary.activeLoanCount, 0) + groupOwnedActiveLoanCount;
-  const totalSavingsAccountCount = [...memberSavingsSummary.values()].reduce((sum, summary) => sum + summary.accountCount, 0) + group.savingsAccounts.length;
+  const totalSavingsAccountCount = memberSavingsAccountCount + group.savingsAccounts.length;
   const summaryCurrencyCode =
     group.savingsAccounts[0]?.currencyCode ??
     memberSavingsAccounts[0]?.currencyCode ??
@@ -316,56 +318,76 @@ export default async function GroupDetailPage({ params, searchParams }: { params
       ) : null}
 
       {activeTab === "savings" ? (
-        <section className="panel">
-          <div className="panel-heading">
-            <div>
-              <h2>Group savings</h2>
-              <p>These are savings accounts owned by the group itself, separate from the members&apos; personal savings on the Members tab.</p>
+        <>
+          <section className="loan-summary-metrics" aria-label="Group savings breakdown">
+            <article>
+              <span>Total Savings</span>
+              <strong>{formatMinor(totalSavingsMinor, summaryCurrencyCode)}</strong>
+              <small>{totalSavingsAccountCount.toLocaleString()} account(s)</small>
+            </article>
+            <article>
+              <span>Members&apos; Savings</span>
+              <strong>{formatMinor(memberSavingsMinor, summaryCurrencyCode)}</strong>
+              <small>{memberSavingsAccountCount.toLocaleString()} account(s) &middot; see Members tab</small>
+            </article>
+            <article>
+              <span>Group-Owned Savings</span>
+              <strong>{formatMinor(groupOwnedSavingsMinor, summaryCurrencyCode)}</strong>
+              <small>{group.savingsAccounts.length.toLocaleString()} account(s) &middot; listed below</small>
+            </article>
+          </section>
+
+          <section className="panel">
+            <div className="panel-heading">
+              <div>
+                <h2>Group savings</h2>
+                <p>These are savings accounts owned by the group itself, separate from the members&apos; personal savings on the Members tab.</p>
+              </div>
             </div>
-          </div>
-          {group.savingsAccounts.length === 0 ? (
-            <div className="empty-state compact-empty">
-              <PiggyBank size={26} />
-              <strong>No direct group-owned savings accounts yet</strong>
-              <p>Any savings account opened in the group&apos;s own name will appear here separately from members&apos; personal savings.</p>
-            </div>
-          ) : (
-            <div className="table-scroll">
-              <table className="clickable-rows">
-                <thead>
-                  <tr>
-                    <th>Account #</th>
-                    <th>Product</th>
-                    <th>Type</th>
-                    <th>Status</th>
-                    <th>Balance</th>
-                    <th>Currency</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {group.savingsAccounts.map((account) => {
-                    const balanceMinor = account.transactions.reduce((sum, transaction) => sum + transaction.amountMinor, 0n);
-                    return (
-                      <tr key={account.id}>
-                        <td className="mono">
-                          {account.accountNumber}
-                          <Link className="row-link" href={`/savings-accounts/${account.accountNumber}`} aria-label={`Open savings account ${account.accountNumber}`} />
-                        </td>
-                        <td>{account.product?.name ?? "Unlinked product"}</td>
-                        <td>{savingsAccountTypeLabel(account.accountType)}</td>
-                        <td>
-                          <span className={`status ${savingsStatusTone(account.status)}`}>{savingsStatusLabel(account.status)}</span>
-                        </td>
-                        <td className="mono">{formatMinor(balanceMinor, account.currencyCode)}</td>
-                        <td>{account.currencyCode}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </section>
+            {group.savingsAccounts.length === 0 ? (
+              <div className="empty-state compact-empty">
+                <PiggyBank size={26} />
+                <strong>No direct group-owned savings accounts yet</strong>
+                <p>Any savings account opened in the group&apos;s own name will appear here separately from members&apos; personal savings.</p>
+              </div>
+            ) : (
+              <div className="table-scroll">
+                <table className="clickable-rows">
+                  <thead>
+                    <tr>
+                      <th>Account #</th>
+                      <th>Product</th>
+                      <th>Type</th>
+                      <th>Status</th>
+                      <th>Balance</th>
+                      <th>Currency</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {group.savingsAccounts.map((account) => {
+                      const balanceMinor = account.transactions.reduce((sum, transaction) => sum + transaction.amountMinor, 0n);
+                      return (
+                        <tr key={account.id}>
+                          <td className="mono">
+                            {account.accountNumber}
+                            <Link className="row-link" href={`/savings-accounts/${account.accountNumber}`} aria-label={`Open savings account ${account.accountNumber}`} />
+                          </td>
+                          <td>{account.product?.name ?? "Unlinked product"}</td>
+                          <td>{savingsAccountTypeLabel(account.accountType)}</td>
+                          <td>
+                            <span className={`status ${savingsStatusTone(account.status)}`}>{savingsStatusLabel(account.status)}</span>
+                          </td>
+                          <td className="mono">{formatMinor(balanceMinor, account.currencyCode)}</td>
+                          <td>{account.currencyCode}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
+        </>
       ) : null}
 
       {activeTab === "loans" ? (

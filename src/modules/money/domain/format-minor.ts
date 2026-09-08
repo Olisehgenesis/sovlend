@@ -7,7 +7,14 @@ export function formatMinor(amount: bigint, currencyCode: string) {
     const fraction = (abs % 100_000_000n).toString().padStart(8, "0");
     return `${sign}${whole}.${fraction} BTC`;
   }
-  if (currencyCode === "USDC" || currencyCode === "USD" || currencyCode === "UGX") {
+  // UGX is never used with sub-shilling precision day-to-day (unlike USD cents), so round to the
+  // nearest whole shilling and show no decimal places — matches how every other UGX figure in the
+  // app (dashboard stat cards, wallet summaries) is already displayed.
+  if (currencyCode === "UGX") {
+    const rounded = (abs + 50n) / 100n;
+    return `${sign}UGX ${rounded.toLocaleString("en-UG")}`;
+  }
+  if (currencyCode === "USDC" || currencyCode === "USD") {
     const exponent = currencyCode === "USDC" ? 1_000_000n : 100n;
     const decimals = currencyCode === "USDC" ? 6 : 2;
     const whole = abs / exponent;
