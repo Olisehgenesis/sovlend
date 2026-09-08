@@ -86,7 +86,7 @@ export default async function GroupDetailPage({ params, searchParams }: { params
         },
       },
       notes: { orderBy: { createdAt: "desc" }, include: { author: { select: { name: true } } } },
-      loans: { orderBy: { createdAt: "desc" }, include: { product: true } },
+      loans: { orderBy: { createdAt: "desc" }, include: { product: true, installments: { select: { principalDueMinor: true, principalPaidMinor: true, principalWaivedMinor: true } } } },
       savingsAccounts: {
         orderBy: { createdAt: "desc" },
         include: {
@@ -147,6 +147,28 @@ export default async function GroupDetailPage({ params, searchParams }: { params
     memberSavingsSummary.set(account.clientId, summary);
   }
 
+  // Group-level status card totals: members' own accounts plus any rare accounts held directly by the group.
+  const groupOwnedSavingsMinor = group.savingsAccounts.reduce(
+    (sum, account) => sum + account.transactions.reduce((accSum, transaction) => accSum + transaction.amountMinor, 0n),
+    0n,
+  );
+  const groupOwnedLoanOutstandingMinor = group.loans.reduce(
+    (sum, loan) => sum + (ACTIVE_MEMBER_LOAN_STATUSES.has(loan.status) ? outstandingPrincipalMinor(loan.installments, loan.principalWrittenOffMinor) : 0n),
+    0n,
+  );
+  const groupOwnedActiveLoanCount = group.loans.filter((loan) => ACTIVE_MEMBER_LOAN_STATUSES.has(loan.status)).length;
+
+  const totalSavingsMinor = [...memberSavingsSummary.values()].reduce((sum, summary) => sum + summary.totalBalanceMinor, 0n) + groupOwnedSavingsMinor;
+  const totalLoanOutstandingMinor = [...memberLoanSummary.values()].reduce((sum, summary) => sum + summary.outstandingPrincipalMinor, 0n) + groupOwnedLoanOutstandingMinor;
+  const totalActiveLoans = [...memberLoanSummary.values()].reduce((sum, summary) => sum + summary.activeLoanCount, 0) + groupOwnedActiveLoanCount;
+  const totalSavingsAccountCount = [...memberSavingsSummary.values()].reduce((sum, summary) => sum + summary.accountCount, 0) + group.savingsAccounts.length;
+  const summaryCurrencyCode =
+    group.savingsAccounts[0]?.currencyCode ??
+    memberSavingsAccounts[0]?.currencyCode ??
+    memberLoans[0]?.denominationCurrency ??
+    group.loans[0]?.denominationCurrency ??
+    "UGX";
+
   return (
     <main className="directory-page">
       <Breadcrumbs items={[{ label: "Groups", href: "/groups" }, { label: group.name }]} />
@@ -159,6 +181,26 @@ export default async function GroupDetailPage({ params, searchParams }: { params
           </p>
         </div>
       </header>
+
+      <section className="loan-summary-metrics" aria-label="Group summary">
+        <article>
+          <span>Total Members</span>
+          <strong>{group.members.length.toLocaleString()}</strong>
+        </article>
+        <article>
+          <span>Active Loans</span>
+          <strong>{totalActiveLoans.toLocaleString()}</strong>
+        </article>
+        <article>
+          <span>Total Savings</span>
+          <strong>{formatMinor(totalSavingsMinor, summaryCurrencyCode)}</strong>
+          <small>{totalSavingsAccountCount.toLocaleString()} account(s)</small>
+        </article>
+        <article>
+          <span>Total Loan Outstanding</span>
+          <strong>{formatMinor(totalLoanOutstandingMinor, summaryCurrencyCode)}</strong>
+        </article>
+      </section>
 
       <nav className="client-tabs" aria-label="Group record sections">
         {tabs.map((item) => {

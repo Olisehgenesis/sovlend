@@ -12,7 +12,7 @@ export type ClientWalletSummary = Readonly<{
   netBalanceMinor: bigint;
 }>;
 
-const OPEN_LOAN_STATUSES = ["ACTIVE", "IN_ARREARS", "OVERPAID"] as const;
+export const OPEN_LOAN_STATUSES = ["ACTIVE", "IN_ARREARS", "OVERPAID"] as const;
 
 export async function getClientWalletSummary(prisma: PrismaClient, clientId: string): Promise<ClientWalletSummary> {
   const [savingsAccounts, loans] = await Promise.all([
