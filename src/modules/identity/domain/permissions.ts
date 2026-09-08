@@ -48,6 +48,7 @@ export const permissions = {
   reportDisbursalLedger: "REPORT_VIEW_DISBURSAL_REPORT",
   reportOutstandingBalances: "REPORT_VIEW_OUTSTANDING_BALANCES",
   reportClientListing: "REPORT_VIEW_CLIENT_LISTING",
+  reportClientStatement: "REPORT_VIEW_CLIENT_STATEMENT",
 
   reportGroupPortfolio: "REPORT_VIEW_GROUP_PORTFOLIO",
   reportGuarantorExposure: "REPORT_VIEW_GUARANTOR_EXPOSURE",
@@ -64,7 +65,7 @@ export type PermissionCode = (typeof permissions)[keyof typeof permissions];
 
 const accountingReportPermissions = [permissions.reportBalanceSheet, permissions.reportIncomeStatement, permissions.reportTrialBalance, permissions.reportGeneralLedger, permissions.reportJournalReconciliation] as const;
 const riskReportPermissions = [permissions.reportAging, permissions.reportArrears, permissions.reportNonPerformingLoans, permissions.reportProvisioning, permissions.reportRecoveries, permissions.reportParRollRate] as const;
-const operationsReportPermissions = [permissions.reportActiveLoans, permissions.reportCollectionByOfficer, permissions.reportCollectionsLog, permissions.reportUnassignedLoans, permissions.reportBranchPortfolio, permissions.reportDisbursalCohort, permissions.reportDisbursalLedger, permissions.reportOutstandingBalances, permissions.reportClientListing] as const;
+const operationsReportPermissions = [permissions.reportActiveLoans, permissions.reportCollectionByOfficer, permissions.reportCollectionsLog, permissions.reportUnassignedLoans, permissions.reportBranchPortfolio, permissions.reportDisbursalCohort, permissions.reportDisbursalLedger, permissions.reportOutstandingBalances, permissions.reportClientListing, permissions.reportClientStatement] as const;
 const insightsReportPermissions = [permissions.reportGroupPortfolio, permissions.reportGuarantorExposure, permissions.reportFeeRevenue, permissions.reportDocumentCompleteness, permissions.reportAuditTrail] as const;
 const savingsReportPermissions = [permissions.reportSavingsAccountListing, permissions.reportSavingsTransactions, permissions.reportSavingsPortfolioByOfficer] as const;
 
@@ -84,8 +85,8 @@ export const defaultPermissionGroups: Record<string, readonly PermissionCode[]> 
     permissions.clientView, permissions.clientManage, permissions.loanView, permissions.loanApply, permissions.loanApprove, permissions.loanDisburse, permissions.loanRepayment, permissions.loanClose, permissions.loanReverse, permissions.savingsView, permissions.savingsTransact, permissions.savingsApprove, permissions.ledgerView, permissions.reportView, permissions.productManage,
     ...allReportPermissions,
   ],
-  Teller: [permissions.clientView, permissions.loanView, permissions.loanRepayment, permissions.savingsView, permissions.savingsTransact, permissions.reportView, permissions.reportSavingsAccountListing, permissions.reportSavingsTransactions],
-  "Loan Officer": [permissions.clientView, permissions.clientManage, permissions.loanView, permissions.loanApply, permissions.reportView, permissions.reportActiveLoans, permissions.reportCollectionByOfficer, permissions.reportCollectionsLog, permissions.reportAging, permissions.reportUnassignedLoans, permissions.reportClientListing, permissions.reportSavingsAccountListing],
+  Teller: [permissions.clientView, permissions.loanView, permissions.loanRepayment, permissions.savingsView, permissions.savingsTransact, permissions.reportView, permissions.reportClientStatement, permissions.reportSavingsAccountListing, permissions.reportSavingsTransactions],
+  "Loan Officer": [permissions.clientView, permissions.clientManage, permissions.loanView, permissions.loanApply, permissions.reportView, permissions.reportActiveLoans, permissions.reportCollectionByOfficer, permissions.reportCollectionsLog, permissions.reportAging, permissions.reportUnassignedLoans, permissions.reportClientListing, permissions.reportClientStatement, permissions.reportSavingsAccountListing],
   "Treasury Signer": [permissions.treasuryView, permissions.treasuryApprove, permissions.ledgerView, permissions.auditView, ...accountingReportPermissions, permissions.reportOutstandingBalances, permissions.reportProvisioning],
   Auditor: [permissions.clientView, permissions.loanView, permissions.savingsView, permissions.treasuryView, permissions.ledgerView, permissions.reportView, permissions.auditView, ...allReportPermissions],
   Investor: [permissions.treasuryView],

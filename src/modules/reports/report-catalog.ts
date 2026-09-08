@@ -10,6 +10,10 @@ export type ReportLink = Readonly<{
   permission: (typeof permissions)[keyof typeof permissions];
   title: string;
   description: string;
+  /** False for reports that are a client-lookup flow rather than a filterable table -- hides
+   * the CSV export action on the "All reports" registry, which otherwise assumes every report
+   * has a matching `/api${href}?format=csv` route. Defaults to true (exportable) when omitted. */
+  exportable?: boolean;
 }>;
 
 export type ReportSection = Readonly<{
@@ -73,6 +77,7 @@ export const reportSections: readonly ReportSection[] = [
       { href: "/reports/operations/disbursal-report", permission: permissions.reportDisbursalLedger, title: "Disbursal Report", description: "Chronological ledger of individual loan disbursements." },
       { href: "/reports/operations/outstanding-balances", permission: permissions.reportOutstandingBalances, title: "Outstanding Balances", description: "Current OLB across active loan accounts." },
       { href: "/reports/operations/client-listing", permission: permissions.reportClientListing, title: "Client Listing", description: "Exportable roster of clients in scope." },
+      { href: "/reports/client-statement", permission: permissions.reportClientStatement, title: "Client Statement", description: "Search a client and print a full financial statement (loans, savings, charges).", exportable: false },
     ],
   },
   {
