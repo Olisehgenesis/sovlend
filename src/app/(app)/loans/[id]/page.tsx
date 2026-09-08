@@ -6,6 +6,7 @@ import { notFound, redirect } from "next/navigation";
 import { LoanCollateralPanel } from "@/components/loan-collateral-panel";
 import { LoanChargesPanel } from "@/components/loan-charge-panel";
 import { LoanDocumentsPanel, LoanNotesPanel } from "@/components/loan-record-forms";
+import { LoanOfficerAssignment } from "@/components/loan-officer-assignment";
 import { LoanServiceActionsPanel } from "@/components/loan-service-actions-panel";
 import { RepaymentForm } from "@/components/repayment-form";
 import { Breadcrumbs } from "@/components/breadcrumbs";
@@ -67,7 +68,7 @@ export default async function LoanPage({
       },
       installments: { orderBy: { installmentNumber: "asc" } },
       transactions: {
-        include: { allocations: true },
+        include: { allocations: true, recordedBy: { select: { name: true } } },
         orderBy: { createdAt: "desc" },
       },
     },
@@ -123,6 +124,11 @@ export default async function LoanPage({
     select: { id: true, name: true, type: true },
     orderBy: [{ type: "asc" }, { name: "asc" }],
   });
+  const officeOfficers = await prisma.user.findMany({
+    where: { organizationId: scope.organizationId, officeId: loan.officeId },
+    select: { id: true, name: true },
+    orderBy: { name: "asc" },
+  });
   const serviceRequests = await prisma.loanServiceRequest.findMany({
     where: { loanId: loan.id },
     include: { requestedBy: { select: { name: true } }, decidedBy: { select: { name: true } } },
@@ -133,6 +139,10 @@ export default async function LoanPage({
     Boolean(loan.disbursedOn) &&
     loan.transactions.every((item) => item.transactionType === "DISBURSEMENT");
   const isOpenLoan = ["ACTIVE", "IN_ARREARS", "OVERPAID"].includes(loan.status);
+  const nextDueInstallment = [...loan.installments]
+    .sort((left, right) => left.dueOn.getTime() - right.dueOn.getTime() || left.installmentNumber - right.installmentNumber)
+    .find((installment) => installmentOutstandingMinor(installment) > 0n);
+  const nextDueAmountMinor = nextDueInstallment ? installmentOutstandingMinor(nextDueInstallment) : 0n;
   const repaymentTransactions = loan.transactions
     .filter((item) => item.transactionType === "REPAYMENT" && !item.reversedById)
     .map((item) => ({
@@ -199,6 +209,7 @@ export default async function LoanPage({
           <RepaymentForm
             loanId={loan.id}
             settlementAccounts={settlementAccounts}
+            defaultAmountMinor={nextDueAmountMinor.toString()}
           />
         </section>
       ) : null}
@@ -233,7 +244,13 @@ export default async function LoanPage({
             </div>
             <div>
               <dt>Loan officer</dt>
-              <dd>{loan.loanOfficer?.name ?? "Unassigned"}</dd>
+              <dd>
+                {canManageCharges ? (
+                  <LoanOfficerAssignment currentOfficerId={loan.loanOfficerId} loanId={loan.id} officers={officeOfficers} />
+                ) : (
+                  loan.loanOfficer?.name ?? "Unassigned"
+                )}
+              </dd>
             </div>
             <div>
               <dt>Currency</dt>
@@ -631,6 +648,7 @@ export default async function LoanPage({
                     <th>Channel</th>
                     <th>Amount</th>
                     <th>Reference</th>
+                    <th>Recorded by</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -646,6 +664,7 @@ export default async function LoanPage({
                         {formatMinor(item.denominationAmountMinor, loan.denominationCurrency)}
                       </td>
                       <td>{item.externalReference ?? "-"}</td>
+                      <td>{item.recordedBy?.name ?? "-"}</td>
                     </tr>
                   ))}
                 </tbody>

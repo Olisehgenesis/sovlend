@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 
 import { Breadcrumbs } from "@/components/breadcrumbs";
 import { ReportPicker } from "@/components/report-picker";
+import { ReportZeroToggle } from "@/components/report-zero-toggle";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { permissions } from "@/modules/identity/domain/permissions";
@@ -16,7 +17,7 @@ import { loadReportPickerOptions } from "@/modules/reports/report-catalog";
 export default async function SavingsPortfolioByOfficerPage({
   searchParams,
 }: {
-  searchParams: Promise<{ officeId?: string }>;
+  searchParams: Promise<{ officeId?: string; showZero?: string }>;
 }) {
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session) redirect("/sign-in");
@@ -31,13 +32,19 @@ export default async function SavingsPortfolioByOfficerPage({
   if (!context.allowed) redirect("/reports");
 
   const params = await searchParams;
+  const showZero = params.showZero === "1";
   const [report, pickerOptions] = await Promise.all([
-    loadSavingsPortfolioByOfficerReport(prisma, context.scope, { officeId: params.officeId }),
+    loadSavingsPortfolioByOfficerReport(prisma, context.scope, {
+      officeId: params.officeId,
+      hideZeroBalances: !showZero,
+    }),
     loadReportPickerOptions(prisma, session.user.id, context.scope.organizationId),
   ]);
-  const exportHref = params.officeId
-    ? `/api/reports/savings/portfolio-by-officer?officeId=${encodeURIComponent(params.officeId)}&format=csv`
-    : "/api/reports/savings/portfolio-by-officer?format=csv";
+  const exportQuery = new URLSearchParams();
+  if (params.officeId) exportQuery.set("officeId", params.officeId);
+  if (showZero) exportQuery.set("showZero", "1");
+  exportQuery.set("format", "csv");
+  const exportHref = `/api/reports/savings/portfolio-by-officer?${exportQuery.toString()}`;
 
   return (
     <main className="directory-page">
@@ -88,6 +95,11 @@ export default async function SavingsPortfolioByOfficerPage({
                 </select>
               </label>
             </div>
+            <ReportZeroToggle
+              defaultChecked={showZero}
+              label="Show officers with zero balance"
+              name="showZero"
+            />
           </fieldset>
           <div className="form-actions">
             <button className="invest-button" type="submit">
@@ -104,7 +116,10 @@ export default async function SavingsPortfolioByOfficerPage({
         <div className="panel-heading">
           <div>
             <h2>Officer roll-up</h2>
-            <p>{report.rows.length.toLocaleString()} officer/currency row(s)</p>
+            <p>
+              {report.rows.length.toLocaleString()} officer/currency row(s)
+              {!showZero ? " · zero-balance rows hidden" : ""}
+            </p>
           </div>
           <Users size={19} />
         </div>

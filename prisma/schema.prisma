@@ -249,6 +249,7 @@ model User {
   loanServiceRequestsMade    LoanServiceRequest[]       @relation("LoanServiceRequestRequestedBy")
   loanServiceRequestsDecided LoanServiceRequest[]       @relation("LoanServiceRequestDecidedBy")
   loanExportJobsRequested    LoanExportJob[]
+  recordedLoanTransactions   LoanTransaction[]          @relation("RecordedLoanTransactions")
   createdAt                  DateTime                   @default(now())
   updatedAt                  DateTime                   @updatedAt
 
@@ -786,11 +787,13 @@ model LoanTransaction {
   externalReference       String?
   idempotencyKey          String                      @unique
   reversedById            String?                     @unique @db.Uuid
+  recordedByUserId        String?
   loan                    Loan                        @relation(fields: [loanId], references: [id])
   settlementAccount       SettlementAccount?          @relation(fields: [settlementAccountId], references: [id])
   priceSnapshot           PriceSnapshot?              @relation(fields: [priceSnapshotId], references: [id])
   reversedBy              LoanTransaction?            @relation("TransactionReversal", fields: [reversedById], references: [id])
   reverses                LoanTransaction?            @relation("TransactionReversal")
+  recordedBy              User?                       @relation("RecordedLoanTransactions", fields: [recordedByUserId], references: [id])
   allocations             LoanTransactionAllocation[]
   serviceRequest          LoanServiceRequest?
   createdAt               DateTime                    @default(now())
@@ -798,6 +801,7 @@ model LoanTransaction {
   @@index([loanId, businessDate])
   @@index([externalReference])
   @@index([settlementAccountId])
+  @@index([recordedByUserId])
 }
 
 model LoanTransactionAllocation {

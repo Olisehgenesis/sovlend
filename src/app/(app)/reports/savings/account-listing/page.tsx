@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 
 import { Breadcrumbs } from "@/components/breadcrumbs";
 import { ReportPicker } from "@/components/report-picker";
+import { ReportZeroToggle } from "@/components/report-zero-toggle";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { permissions } from "@/modules/identity/domain/permissions";
@@ -21,7 +22,7 @@ import { loadReportPickerOptions } from "@/modules/reports/report-catalog";
 export default async function SavingsAccountListingPage({
   searchParams,
 }: {
-  searchParams: Promise<{ officeId?: string }>;
+  searchParams: Promise<{ officeId?: string; showZero?: string }>;
 }) {
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session) redirect("/sign-in");
@@ -36,13 +37,20 @@ export default async function SavingsAccountListingPage({
   if (!context.allowed) redirect("/reports");
 
   const params = await searchParams;
+  const showZero = params.showZero === "1";
   const [report, pickerOptions] = await Promise.all([
-    loadSavingsAccountListingReport(prisma, context.scope, { officeId: params.officeId }),
+    loadSavingsAccountListingReport(prisma, context.scope, {
+      officeId: params.officeId,
+      hideZeroBalances: !showZero,
+    }),
     loadReportPickerOptions(prisma, session.user.id, context.scope.organizationId),
   ]);
-  const exportHref = params.officeId
-    ? `/api/reports/savings/account-listing?officeId=${encodeURIComponent(params.officeId)}&format=csv`
-    : "/api/reports/savings/account-listing?format=csv";
+  const exportQuery = new URLSearchParams();
+  if (params.officeId) exportQuery.set("officeId", params.officeId);
+  if (showZero) exportQuery.set("showZero", "1");
+  exportQuery.set("format", "csv");
+  const exportHref = `/api/reports/savings/account-listing?${exportQuery.toString()}`;
+
 
   return (
     <main className="directory-page">
@@ -93,6 +101,11 @@ export default async function SavingsAccountListingPage({
                 </select>
               </label>
             </div>
+            <ReportZeroToggle
+              defaultChecked={showZero}
+              label="Show zero-balance accounts"
+              name="showZero"
+            />
           </fieldset>
           <div className="form-actions">
             <button className="invest-button" type="submit">
@@ -109,7 +122,10 @@ export default async function SavingsAccountListingPage({
         <div className="panel-heading">
           <div>
             <h2>Savings accounts</h2>
-            <p>{report.rows.length.toLocaleString()} account(s) in scope</p>
+            <p>
+              {report.rows.length.toLocaleString()} account(s) in scope
+              {!showZero ? " · zero-balance accounts hidden" : ""}
+            </p>
           </div>
           <PiggyBank size={19} />
         </div>

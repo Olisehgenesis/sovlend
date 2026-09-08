@@ -156,7 +156,7 @@ async function executeUndoDisbursal(tx: Tx, loanId: string, payload: UndoDisburs
       settlementCurrency: disbursement.settlementCurrency, settlementChannel: disbursement.settlementChannel,
       settlementAccountId: disbursement.settlementAccountId, settlementAmountMinor: disbursement.settlementAmountMinor,
       denominationAmountMinor: disbursement.denominationAmountMinor, externalReference: disbursement.externalReference,
-      idempotencyKey,
+      idempotencyKey, recordedByUserId: actorUserId,
     },
   });
   await tx.loanTransaction.update({ where: { id: disbursement.id }, data: { reversedById: reversal.id } });
@@ -198,7 +198,7 @@ async function executeFullSettlement(tx: Tx, loanId: string, payload: PrepayPayl
       loanId: current.id, transactionType, businessDate, settlementCurrency: current.denominationCurrency,
       settlementChannel: settlement.name, settlementAccountId: settlement.id,
       settlementAmountMinor: quote.totalPayoffMinor, denominationAmountMinor: quote.totalPayoffMinor,
-      idempotencyKey,
+      idempotencyKey, recordedByUserId: actorUserId,
     },
   });
 
@@ -268,7 +268,7 @@ async function executeTransactionReversal(tx: Tx, loanId: string, payload: Rever
       settlementCurrency: original.settlementCurrency, settlementChannel: original.settlementChannel,
       settlementAccountId: original.settlementAccountId, settlementAmountMinor: original.settlementAmountMinor,
       denominationAmountMinor: original.denominationAmountMinor, externalReference: original.externalReference,
-      idempotencyKey,
+      idempotencyKey, recordedByUserId: actorUserId,
     },
   });
   await tx.loanTransaction.update({ where: { id: original.id }, data: { reversedById: reversal.id } });

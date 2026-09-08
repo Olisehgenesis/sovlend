@@ -67,9 +67,10 @@ export type SavingsAccountListingReport = {
 export async function loadSavingsAccountListingReport(
   prisma: PrismaClient,
   scope: UserDataScope,
-  params: { officeId?: string | null },
+  params: { officeId?: string | null; hideZeroBalances?: boolean },
 ): Promise<SavingsAccountListingReport> {
   const officeId = normalizeString(params.officeId);
+  const hideZeroBalances = params.hideZeroBalances ?? true;
 
   const accounts = await prisma.savingsAccount.findMany({
     where: {
@@ -150,7 +151,9 @@ export async function loadSavingsAccountListingReport(
     };
   });
 
-  return { officeId, rows };
+  const filteredRows = hideZeroBalances ? rows.filter((row) => row.balanceMinor !== 0n) : rows;
+
+  return { officeId, rows: filteredRows };
 }
 
 export function savingsAccountListingReportCsv(report: SavingsAccountListingReport) {
@@ -334,9 +337,10 @@ export type SavingsPortfolioByOfficerReport = {
 export async function loadSavingsPortfolioByOfficerReport(
   prisma: PrismaClient,
   scope: UserDataScope,
-  params: { officeId?: string | null },
+  params: { officeId?: string | null; hideZeroBalances?: boolean },
 ): Promise<SavingsPortfolioByOfficerReport> {
   const officeId = normalizeString(params.officeId);
+  const hideZeroBalances = params.hideZeroBalances ?? true;
 
   const accounts = await prisma.savingsAccount.findMany({
     where: {
@@ -382,6 +386,7 @@ export async function loadSavingsPortfolioByOfficerReport(
       ...row,
       averageBalanceMinor: row.accountCount > 0 ? row.totalBalanceMinor / BigInt(row.accountCount) : 0n,
     }))
+    .filter((row) => !hideZeroBalances || row.totalBalanceMinor !== 0n)
     .sort(
       (left, right) =>
         left.officerName.localeCompare(right.officerName) || left.currencyCode.localeCompare(right.currencyCode),

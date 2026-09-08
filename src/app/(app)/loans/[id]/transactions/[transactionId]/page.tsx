@@ -44,6 +44,9 @@ export default async function LoanTransactionPage({
       settlementAccount: {
         select: { name: true, type: true },
       },
+      recordedBy: {
+        select: { name: true },
+      },
     },
   });
 
@@ -116,6 +119,10 @@ export default async function LoanTransactionPage({
           <div>
             <dt>Recorded at</dt>
             <dd>{formatUgDateTime(transaction.createdAt)}</dd>
+          </div>
+          <div>
+            <dt>Recorded by</dt>
+            <dd>{transaction.recordedBy?.name ?? "—"}</dd>
           </div>
           <div>
             <dt>Settlement channel</dt>

@@ -1,6 +1,6 @@
 "use client";
 
-import { Ban, ChevronDown, Coins, Edit3, Signature, ShieldOff } from "lucide-react";
+import { Ban, ChevronDown, Coins, Edit3, Signature, ShieldOff, UserRound } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
@@ -14,9 +14,10 @@ type ClientActionsMenuProps = Readonly<{
   hasSignature: boolean;
   canManage: boolean;
   canTransact: boolean;
+  officers: ReadonlyArray<{ id: string; name: string }>;
 }>;
 
-export function ClientActionsMenu({ clientId, accountNumber, status, hasOfficer, hasSignature, canManage, canTransact }: ClientActionsMenuProps) {
+export function ClientActionsMenu({ clientId, accountNumber, status, hasOfficer, hasSignature, canManage, canTransact, officers }: ClientActionsMenuProps) {
   const router = useRouter();
   const [pendingAction, setPendingAction] = useState<string | null>(null);
 
@@ -29,6 +30,12 @@ export function ClientActionsMenu({ clientId, accountNumber, status, hasOfficer,
     if (!response.ok) { toast.error(result.error ?? "Action failed"); return; }
     toast.success("Done");
     router.refresh();
+  }
+
+  async function assignStaff(formData: FormData) {
+    const officerId = String(formData.get("officerId") || "");
+    if (!officerId) { toast.error("Choose a staff member"); return; }
+    await post("assign-staff", `/api/clients/${clientId}/assign-staff`, { body: { officerId } });
   }
 
   async function uploadSignature(formData: FormData) {
@@ -52,6 +59,15 @@ export function ClientActionsMenu({ clientId, accountNumber, status, hasOfficer,
       {canManage ? <Link className="client-action" href={`/clients/${accountNumber}/edit`}><Edit3 size={15} /> Edit</Link> : null}
       {canManage ? <Link className="client-action" href={`/clients/${accountNumber}?tab=charges`}><Coins size={15} /> Add charge</Link> : null}
       {canManage ? <Link className="client-action" href={`/clients/${accountNumber}/transfer`}><ShieldOff size={15} /> Transfer client</Link> : null}
+      {canManage && officers.length > 0 ? (
+        <form action={assignStaff} className="client-action-assign-staff">
+          <label><UserRound size={15} /><select name="officerId" defaultValue="">
+            <option disabled value="">{hasOfficer ? "Reassign staff" : "Assign staff"}</option>
+            {officers.map((officer) => <option key={officer.id} value={officer.id}>{officer.name}</option>)}
+          </select></label>
+          <button className="client-action" disabled={pendingAction === "assign-staff"} type="submit">Assign</button>
+        </form>
+      ) : null}
       {canManage && hasOfficer ? <button className="client-action" disabled={pendingAction === "unassign"} onClick={() => post("unassign", `/api/clients/${clientId}/unassign-staff`, { confirmMessage: "Unassign the loan officer from this client?" })} type="button"><ShieldOff size={15} /> Unassign staff</button> : null}
       {canManage && status !== "CLOSED" ? <button className="client-action danger" disabled={pendingAction === "close"} onClick={() => post("close", `/api/clients/${clientId}/close`, { confirmMessage: "Close this client? This cannot be undone from here." })} type="button"><Ban size={15} /> Close client</button> : null}
 

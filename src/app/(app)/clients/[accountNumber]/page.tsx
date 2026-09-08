@@ -234,7 +234,7 @@ export default async function ClientDetailPage({ params, searchParams }: { param
 
         <aside className="client-side">
           <div className="panel-heading"><h2>Actions</h2></div>
-          <ClientActionsMenu accountNumber={client.accountNumber} canManage={canManage} canTransact={canTransact} clientId={client.id} hasOfficer={Boolean(client.assignedOfficerId)} hasSignature={Boolean(client.signatureDocumentId)} status={client.status} />
+          <ClientActionsMenu accountNumber={client.accountNumber} canManage={canManage} canTransact={canTransact} clientId={client.id} hasOfficer={Boolean(client.assignedOfficerId)} hasSignature={Boolean(client.signatureDocumentId)} officers={officers} status={client.status} />
         </aside>
       </div>
     </main>
