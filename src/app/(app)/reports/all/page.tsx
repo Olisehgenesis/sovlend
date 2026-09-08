@@ -75,15 +75,17 @@ export default async function AllReportsPage() {
                       <Link aria-label={`Open ${report.title}`} className="row-link" href={report.href} />
                     </td>
                     <td>{report.sectionTitle}</td>
-                    <td>Table</td>
+                    <td>{report.exportable === false ? "Client lookup" : "Table"}</td>
                     <td>{report.description}</td>
                     <td className="reports-all-actions">
                       <Link className="secondary-action" href={report.href}>
                         <Table2 size={14} /> Open
                       </Link>
-                      <Link className="secondary-action" href={`${report.apiHref}?format=csv`}>
-                        <Download size={14} /> CSV
-                      </Link>
+                      {report.exportable === false ? null : (
+                        <Link className="secondary-action" href={`${report.apiHref}?format=csv`}>
+                          <Download size={14} /> CSV
+                        </Link>
+                      )}
                     </td>
                   </tr>
                 ))}
