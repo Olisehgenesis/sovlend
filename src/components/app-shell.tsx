@@ -14,9 +14,10 @@ export async function AppShell({ children }: { children: React.ReactNode }) {
 
   const user = await prisma.user.findUnique({
     where: { id: session.user.id },
-    select: { systemRole: true, organizationId: true, organization: { select: { name: true } }, office: { select: { name: true } } },
+    select: { systemRole: true, organizationId: true, mustChangePassword: true, organization: { select: { name: true } }, office: { select: { name: true } } },
   });
   if (user?.systemRole === "CLIENT") redirect("/portal");
+  if (user?.mustChangePassword) redirect("/change-password");
   const admin = session.user.role === "admin";
   const { allowed: products } = admin ? { allowed: true } : await canManageProducts(session);
   const visibleReportSections = user?.organizationId

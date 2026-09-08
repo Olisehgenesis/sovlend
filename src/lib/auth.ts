@@ -35,6 +35,7 @@ export const auth = betterAuth({
       organizationId: { type: "string", required: false, input: true },
       officeId: { type: "string", required: false, input: true },
       systemRole: { type: "string", required: false, defaultValue: "CLIENT", input: true },
+      mustChangePassword: { type: "boolean", required: false, defaultValue: false, input: false },
     },
   },
   plugins: [
