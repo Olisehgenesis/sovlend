@@ -22,6 +22,10 @@
     "migration:import-all-clients": "tsx src/migration/cli.ts import-all-clients",
     "migration:backfill-officer-assignments": "tsx src/migration/backfill-officer-assignments.ts",
     "migration:backfill-ledger-bootstrap": "tsx src/migration/backfill-ledger-bootstrap.ts",
+    "migration:backfill-ledger-disbursements": "tsx src/migration/backfill-ledger-disbursements.ts",
+    "migration:backfill-ledger-collections": "tsx src/migration/backfill-ledger-collections.ts",
+    "migration:backfill-ledger-writeoffs": "tsx src/migration/backfill-ledger-writeoffs.ts",
+    "migration:backfill-ledger-savings": "tsx src/migration/backfill-ledger-savings.ts",
     "admin:bootstrap": "tsx src/scripts/bootstrap-admin.ts",
     "permissions:reseed": "tsx src/scripts/reseed-permissions.ts"
   },
