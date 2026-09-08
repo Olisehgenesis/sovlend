@@ -42,13 +42,24 @@ export async function loadDashboard(userId: string) {
     ...officeWhere(scope),
   };
 
-  const [portfolio, dueInstallments, repayments, disbursements, attentionLoans, principalLoans, ownershipPools, btcUsdPrice, usdUgxPrice] =
-    await Promise.all([
+  const [
+    portfolio,
+    arrearsLoanCount,
+    dueInstallments,
+    repayments,
+    disbursements,
+    attentionLoans,
+    principalLoans,
+    ownershipPools,
+    btcUsdPrice,
+    usdUgxPrice,
+  ] = await Promise.all([
       prisma.loan.aggregate({
         where: { ...loanScope, status: { in: [...activeStatuses] } },
         _sum: { principalMinor: true },
         _count: true,
       }),
+      prisma.loan.count({ where: { ...loanScope, status: "IN_ARREARS" } }),
       prisma.loanInstallment.findMany({
         where: { dueOn: { gte: today, lt: tomorrow }, loan: loanScope },
         select: {
@@ -178,6 +189,7 @@ export async function loadDashboard(userId: string) {
       principalOutstandingMinor,
       principalOverdueMinor,
       activeLoanCount: portfolio._count,
+      arrearsLoanCount,
       dueTodayMinor,
       dueTodayCount: dueInstallments.length,
       collectedTodayMinor: repayments._sum.denominationAmountMinor ?? 0n,

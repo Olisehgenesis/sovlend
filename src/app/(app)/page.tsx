@@ -93,6 +93,12 @@ export default async function Home() {
       value: `${(dashboard.metrics.portfolioAtRiskBps / 100).toFixed(2)}%`,
       detail: `${formatWholeUgx(dashboard.metrics.principalOverdueMinor)} principal overdue`,
     },
+    {
+      href: "/loans?status=IN_ARREARS",
+      label: "Principal overdue",
+      value: formatWholeUgx(dashboard.metrics.principalOverdueMinor),
+      detail: `${dashboard.metrics.arrearsLoanCount} loans in arrears`,
+    },
   ];
 
   return (
