@@ -571,7 +571,6 @@ strong.negative { color: #a44831; }
   body { background: white; }
 }
 
-
 .inline-assign-form { display: flex; align-items: center; gap: 8px; }
 .inline-assign-form select { min-height: 34px; padding: 0 8px; color: var(--ink); background: white; border: 1px solid #cfd7d1; border-radius: 4px; font: 12px var(--font-body); }
 .inline-assign-form .secondary-action { min-height: 34px; padding: 0 10px; }
