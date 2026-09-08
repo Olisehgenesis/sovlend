@@ -644,18 +644,18 @@ export function balanceSheetReportCsv(report: BalanceSheetReport) {
   return rowsToCsv(
     [
       ...report.sections.flatMap((section) => [
-        { account: section.label, balanceMinor: "" },
+        { Account: section.label, Balance: "" },
         ...section.rows.map((row) => ({
-          account: `${row.code} · ${row.name}`,
-          balanceMinor: row.balanceMinor.toString(),
+          Account: `${row.code} · ${row.name}`,
+          Balance: row.balanceMinor.toString(),
         })),
-        { account: `Total ${section.label}`, balanceMinor: section.totalMinor.toString() },
+        { Account: `Total ${section.label}`, Balance: section.totalMinor.toString() },
       ]),
-      { account: "Assets", balanceMinor: report.assetsTotalMinor.toString() },
-      { account: "Liabilities + Equity", balanceMinor: report.liabilitiesAndEquityTotalMinor.toString() },
-      { account: "Difference", balanceMinor: report.differenceMinor.toString() },
+      { Account: "Assets", Balance: report.assetsTotalMinor.toString() },
+      { Account: "Liabilities + Equity", Balance: report.liabilitiesAndEquityTotalMinor.toString() },
+      { Account: "Difference", Balance: report.differenceMinor.toString() },
     ],
-    ["account", "balanceMinor"],
+    ["Account", "Balance"],
   );
 }
 
@@ -691,21 +691,21 @@ export function serializeBalanceSheetReport(report: BalanceSheetReport) {
 export function incomeStatementReportCsv(report: IncomeStatementReport) {
   return rowsToCsv(
     [
-      { account: report.revenue.label, amountMinor: "" },
+      { Account: report.revenue.label, Amount: "" },
       ...report.revenue.rows.map((row) => ({
-        account: `${row.code} · ${row.name}`,
-        amountMinor: row.balanceMinor.toString(),
+        Account: `${row.code} · ${row.name}`,
+        Amount: row.balanceMinor.toString(),
       })),
-      { account: `Total ${report.revenue.label}`, amountMinor: report.revenue.totalMinor.toString() },
-      { account: report.expenses.label, amountMinor: "" },
+      { Account: `Total ${report.revenue.label}`, Amount: report.revenue.totalMinor.toString() },
+      { Account: report.expenses.label, Amount: "" },
       ...report.expenses.rows.map((row) => ({
-        account: `${row.code} · ${row.name}`,
-        amountMinor: row.balanceMinor.toString(),
+        Account: `${row.code} · ${row.name}`,
+        Amount: row.balanceMinor.toString(),
       })),
-      { account: `Total ${report.expenses.label}`, amountMinor: report.expenses.totalMinor.toString() },
-      { account: "Net income", amountMinor: report.netIncomeMinor.toString() },
+      { Account: `Total ${report.expenses.label}`, Amount: report.expenses.totalMinor.toString() },
+      { Account: "Net Income", Amount: report.netIncomeMinor.toString() },
     ],
-    ["account", "amountMinor"],
+    ["Account", "Amount"],
   );
 }
 
@@ -726,15 +726,15 @@ export function serializeIncomeStatementReport(report: IncomeStatementReport) {
 export function trialBalanceReportCsv(report: TrialBalanceReport) {
   return rowsToCsv(
     report.rows.map((row) => ({
-      accountCode: row.code,
-      accountName: row.name,
-      accountType: row.type,
-      debitTotalMinor: row.debitTotalMinor.toString(),
-      creditTotalMinor: row.creditTotalMinor.toString(),
-      balanceMinor: row.balanceMinor.toString(),
-      balanceSide: row.balanceSide,
+      "Account Code": row.code,
+      "Account Name": row.name,
+      "Account Type": row.type,
+      "Total Debits": row.debitTotalMinor.toString(),
+      "Total Credits": row.creditTotalMinor.toString(),
+      Balance: row.balanceMinor.toString(),
+      "Balance Side": row.balanceSide,
     })),
-    ["accountCode", "accountName", "accountType", "debitTotalMinor", "creditTotalMinor", "balanceMinor", "balanceSide"],
+    ["Account Code", "Account Name", "Account Type", "Total Debits", "Total Credits", "Balance", "Balance Side"],
   );
 }
 
@@ -766,28 +766,28 @@ export function serializeTrialBalanceReport(report: TrialBalanceReport) {
 export function generalLedgerReportCsv(report: GeneralLedgerReport) {
   return rowsToCsv(
     report.entries.map((entry) => ({
-      businessDate: dateToString(entry.businessDate),
-      referenceType: entry.referenceType,
-      referenceId: entry.referenceId ?? "",
-      journalId: entry.journalId,
-      officeName: entry.officeName,
-      memo: entry.memo ?? entry.narration,
-      debitMinor: entry.direction === "DEBIT" ? entry.amountMinor.toString() : "",
-      creditMinor: entry.direction === "CREDIT" ? entry.amountMinor.toString() : "",
-      runningBalanceMinor: entry.runningBalanceMinor.toString(),
-      runningBalanceSide: entry.runningBalanceSide,
+      Date: dateToString(entry.businessDate),
+      "Reference Type": entry.referenceType,
+      "Reference ID": entry.referenceId ?? "",
+      "Journal ID": entry.journalId,
+      "Office/Branch": entry.officeName,
+      Memo: entry.memo ?? entry.narration,
+      Debit: entry.direction === "DEBIT" ? entry.amountMinor.toString() : "",
+      Credit: entry.direction === "CREDIT" ? entry.amountMinor.toString() : "",
+      "Running Balance": entry.runningBalanceMinor.toString(),
+      "Running Balance Side": entry.runningBalanceSide,
     })),
     [
-      "businessDate",
-      "referenceType",
-      "referenceId",
-      "journalId",
-      "officeName",
-      "memo",
-      "debitMinor",
-      "creditMinor",
-      "runningBalanceMinor",
-      "runningBalanceSide",
+      "Date",
+      "Reference Type",
+      "Reference ID",
+      "Journal ID",
+      "Office/Branch",
+      "Memo",
+      "Debit",
+      "Credit",
+      "Running Balance",
+      "Running Balance Side",
     ],
   );
 }
@@ -834,33 +834,33 @@ export function journalReconciliationReportCsv(report: JournalReconciliationRepo
   return rowsToCsv(
     report.journals.flatMap((journal) =>
       journal.lines.map((line) => ({
-        businessDate: dateToString(journal.businessDate),
-        officeName: journal.officeName,
-        referenceType: journal.referenceType,
-        referenceId: journal.referenceId ?? "",
-        journalId: journal.id,
-        status: journal.status,
-        accountCode: line.code,
-        accountName: line.name,
-        accountType: line.type,
-        debitMinor: line.direction === "DEBIT" ? line.amountMinor.toString() : "",
-        creditMinor: line.direction === "CREDIT" ? line.amountMinor.toString() : "",
-        memo: line.memo ?? "",
+        Date: dateToString(journal.businessDate),
+        "Office/Branch": journal.officeName,
+        "Reference Type": journal.referenceType,
+        "Reference ID": journal.referenceId ?? "",
+        "Journal ID": journal.id,
+        Status: journal.status,
+        "Account Code": line.code,
+        "Account Name": line.name,
+        "Account Type": line.type,
+        Debit: line.direction === "DEBIT" ? line.amountMinor.toString() : "",
+        Credit: line.direction === "CREDIT" ? line.amountMinor.toString() : "",
+        Memo: line.memo ?? "",
       })),
     ),
     [
-      "businessDate",
-      "officeName",
-      "referenceType",
-      "referenceId",
-      "journalId",
-      "status",
-      "accountCode",
-      "accountName",
-      "accountType",
-      "debitMinor",
-      "creditMinor",
-      "memo",
+      "Date",
+      "Office/Branch",
+      "Reference Type",
+      "Reference ID",
+      "Journal ID",
+      "Status",
+      "Account Code",
+      "Account Name",
+      "Account Type",
+      "Debit",
+      "Credit",
+      "Memo",
     ],
   );
 }
