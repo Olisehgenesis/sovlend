@@ -5,6 +5,8 @@ import { Building2, LoaderCircle, ShieldCheck, UsersRound } from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 
+import { EntityAvatar } from "@/components/entity-avatar";
+
 type PermissionGroupSummary = {
   id: string;
   name: string;
@@ -255,8 +257,13 @@ export function TeamPermissionsPanel({
                 return (
                   <tr key={user.id}>
                     <td>
-                      <strong>{user.name}</strong>
-                      <small>{user.email}</small>
+                      <div className="person-cell">
+                        <EntityAvatar name={user.name} seed={user.id} size={28} />
+                        <span className="person-copy">
+                          <strong>{user.name}</strong>
+                          <small>{user.email}</small>
+                        </span>
+                      </div>
                     </td>
                     <td>{user.systemRole.replaceAll("_", " ")}</td>
                     <td>{user.officeName ?? "Organization-wide"}</td>

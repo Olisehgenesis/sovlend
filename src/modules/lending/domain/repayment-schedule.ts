@@ -5,6 +5,7 @@ export type RepaymentFrequency = Readonly<{ every: number; unit: "DAYS" | "WEEKS
 export type ScheduleTerms = Readonly<{
   principalMinor: bigint;
   annualRateBps: number;
+  monitoringFeeAnnualRateBps?: number;
   repaymentCount: number;
   repaymentFrequency: string;
   interestMethod: string;
@@ -16,20 +17,25 @@ export type ScheduledInstallment = Readonly<{
   dueOn: Date;
   principalDueMinor: bigint;
   interestDueMinor: bigint;
+  feesDueMinor: bigint;
 }>;
 
 export function generateRepaymentSchedule(terms: ScheduleTerms): ScheduledInstallment[] {
   if (terms.principalMinor <= 0n) throw new Error("Principal must be positive");
   if (!Number.isInteger(terms.repaymentCount) || terms.repaymentCount <= 0) throw new Error("Repayment count must be positive");
   if (!Number.isInteger(terms.annualRateBps) || terms.annualRateBps < 0) throw new Error("Annual rate must be non-negative basis points");
+  const monitoringFeeAnnualRateBps = terms.monitoringFeeAnnualRateBps ?? 0;
+  if (!Number.isInteger(monitoringFeeAnnualRateBps) || monitoringFeeAnnualRateBps < 0) throw new Error("Monitoring fee rate must be non-negative basis points");
   const frequency = parseRepaymentFrequency(terms.repaymentFrequency);
   const periodicRate = getPeriodicRate(terms.annualRateBps, frequency);
+  const monitoringPeriodicRate = getPeriodicRate(monitoringFeeAnnualRateBps, frequency);
   const method = normalizeInterestMethod(terms.interestMethod);
   const installments = method === "FLAT"
     ? flatSchedule(terms.principalMinor, terms.repaymentCount, periodicRate)
     : decliningSchedule(terms.principalMinor, terms.repaymentCount, periodicRate);
+  const installmentsWithFees = addMonitoringFees(installments, terms.principalMinor, monitoringPeriodicRate, method);
 
-  return installments.map((installment, index) => ({
+  return installmentsWithFees.map((installment, index) => ({
     installmentNumber: index + 1,
     dueOn: addFrequency(terms.disbursedOn, frequency, index + 1),
     ...installment,
@@ -72,6 +78,28 @@ function decliningSchedule(principal: bigint, count: number, periodicRate: Decim
     const principalDue = index === count - 1 ? balance : minBigInt(scheduledPrincipal, balance);
     balance -= principalDue;
     return { principalDueMinor: principalDue, interestDueMinor: interest };
+  });
+}
+
+function addMonitoringFees(
+  installments: readonly { principalDueMinor: bigint; interestDueMinor: bigint }[],
+  principal: bigint,
+  periodicRate: Decimal,
+  method: "FLAT" | "DECLINING_BALANCE",
+) {
+  if (periodicRate.isZero()) return installments.map((installment) => ({ ...installment, feesDueMinor: 0n }));
+  if (method === "FLAT") {
+    const count = installments.length;
+    const totalFees = decimalToMinor(new Decimal(principal.toString()).mul(periodicRate).mul(count));
+    const feesBase = totalFees / BigInt(count);
+    const feesRemainder = totalFees - feesBase * BigInt(count);
+    return installments.map((installment, index) => ({ ...installment, feesDueMinor: feesBase + (index === count - 1 ? feesRemainder : 0n) }));
+  }
+  let balance = principal;
+  return installments.map((installment) => {
+    const feesDueMinor = decimalToMinor(new Decimal(balance.toString()).mul(periodicRate));
+    balance -= installment.principalDueMinor;
+    return { ...installment, feesDueMinor };
   });
 }
 

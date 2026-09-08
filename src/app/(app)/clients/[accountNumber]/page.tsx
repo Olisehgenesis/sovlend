@@ -1,4 +1,4 @@
-import { CircleUserRound, Coins, FileText, IdCard, PiggyBank, StickyNote, UserRound, Users, Wallet } from "lucide-react";
+import { CircleUserRound, Coins, FileText, IdCard, PiggyBank, StickyNote, Users, Wallet } from "lucide-react";
 import { headers } from "next/headers";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
@@ -6,6 +6,7 @@ import { notFound, redirect } from "next/navigation";
 import { Breadcrumbs } from "@/components/breadcrumbs";
 import { AddChargeForm, ApplyForLoanButton, ApproveSavingsAccountButton, ChargesList, DepositWithdrawForm } from "@/components/client-account-panel";
 import { ClientActionsMenu } from "@/components/client-actions-menu";
+import { EntityAvatar } from "@/components/entity-avatar";
 import { AddFamilyMemberForm, AddIdentifierForm, AddNoteForm, UploadDocumentForm } from "@/components/client-record-forms";
 import { NewSavingsAccountWizard } from "@/components/new-savings-account-wizard";
 import { auth } from "@/lib/auth";
@@ -50,7 +51,7 @@ export default async function ClientDetailPage({ params, searchParams }: { param
       familyMembers: { orderBy: { createdAt: "desc" }, include: { documents: { orderBy: { createdAt: "desc" } } } },
       identifiers: { orderBy: { createdAt: "desc" }, include: { documents: { orderBy: { createdAt: "desc" } } } },
       documents: { orderBy: { createdAt: "desc" } },
-      loans: { orderBy: { createdAt: "desc" }, include: { product: { select: { name: true } }, installments: { select: { principalDueMinor: true, principalPaidMinor: true, interestDueMinor: true, interestPaidMinor: true, feesDueMinor: true, feesPaidMinor: true, penaltiesDueMinor: true, penaltiesPaidMinor: true } } } },
+      loans: { orderBy: { createdAt: "desc" }, include: { product: { select: { name: true } }, installments: { select: { dueOn: true, principalDueMinor: true, principalPaidMinor: true, interestDueMinor: true, interestPaidMinor: true, feesDueMinor: true, feesPaidMinor: true, penaltiesDueMinor: true, penaltiesPaidMinor: true } } } },
       savingsAccounts: { orderBy: { createdAt: "desc" }, include: { product: { select: { name: true } }, transactions: { select: { amountMinor: true } } } },
       charges: { orderBy: { createdAt: "desc" } },
       notes: { orderBy: { createdAt: "desc" }, include: { author: { select: { name: true } } } },
@@ -59,21 +60,24 @@ export default async function ClientDetailPage({ params, searchParams }: { param
   if (!client) notFound();
 
   const authorization = new AuthorizationService(prisma);
-  const [canManage, canApplyLoan, canTransact, canApproveSavings, wallet, savingsProducts, officers, savingsCharges] = await Promise.all([
+  const [canManage, canApplyLoan, canTransact, canRecordRepayment, canApproveSavings, wallet, savingsProducts, officers, savingsCharges, settlementAccounts] = await Promise.all([
     authorization.isAllowed({ actorUserId: session.user.id, permission: permissions.clientManage, organizationId: scope.organizationId, officeId: client.officeId }),
     authorization.isAllowed({ actorUserId: session.user.id, permission: permissions.loanApply, organizationId: scope.organizationId, officeId: client.officeId }),
     authorization.isAllowed({ actorUserId: session.user.id, permission: permissions.savingsTransact, organizationId: scope.organizationId, officeId: client.officeId }),
+    authorization.isAllowed({ actorUserId: session.user.id, permission: permissions.loanRepayment, organizationId: scope.organizationId, officeId: client.officeId }),
     authorization.isAllowed({ actorUserId: session.user.id, permission: permissions.savingsApprove, organizationId: scope.organizationId, officeId: client.officeId }),
     getClientWalletSummary(prisma, client.id),
     prisma.savingsProduct.findMany({ where: { organizationId: scope.organizationId, active: true }, orderBy: { name: "asc" } }),
     prisma.user.findMany({ where: { organizationId: scope.organizationId, officeId: client.officeId, systemRole: { in: [...STAFF_SYSTEM_ROLES] } }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
     prisma.chargeDefinition.findMany({ where: { organizationId: scope.organizationId, appliesTo: "SAVINGS", active: true }, orderBy: { name: "asc" } }),
+    prisma.settlementAccount.findMany({ where: { organizationId: scope.organizationId, active: true }, select: { id: true, name: true, type: true, provider: true, accountReference: true, currencyCode: true }, orderBy: [{ type: "asc" }, { name: "asc" }] }),
   ]);
 
   const fullName = [client.firstName, client.middleName, client.lastName].filter(Boolean).join(" ");
   const walletFormatted = formatMinor(wallet.netBalanceMinor, wallet.currencyCode);
   const idPhoto = client.identifiers.flatMap((identifier) => identifier.documents).find((document) => document.mediaType.startsWith("image/"));
   const primarySavingsAccount = client.savingsAccounts.find((account) => account.accountType === "SAVINGS" && account.status === "ACTIVE") ?? null;
+  const businessDate = new Date(`${new Date().toISOString().slice(0, 10)}T00:00:00.000Z`);
 
   const loanRows = client.loans.map((loan) => {
     const totalPaidMinor = loan.installments.reduce(
@@ -91,7 +95,15 @@ export default async function ClientDetailPage({ params, searchParams }: { param
       const penalties = installment.penaltiesDueMinor - installment.penaltiesPaidMinor;
       return sum + principal + interest + fees + penalties;
     }, 0n);
-    return { loan, totalPaidMinor, interestOutstandingMinor, outstandingMinor };
+    const overdueOutstandingMinor = loan.installments.reduce((sum, installment) => {
+      if (installment.dueOn >= businessDate) return sum;
+      const principal = installment.principalDueMinor - installment.principalPaidMinor;
+      const interest = installment.interestDueMinor - installment.interestPaidMinor;
+      const fees = installment.feesDueMinor - installment.feesPaidMinor;
+      const penalties = installment.penaltiesDueMinor - installment.penaltiesPaidMinor;
+      return sum + principal + interest + fees + penalties;
+    }, 0n);
+    return { loan, totalPaidMinor, interestOutstandingMinor, outstandingMinor, overdueOutstandingMinor };
   });
 
   const savingsRows = client.savingsAccounts.map((account) => ({
@@ -101,12 +113,33 @@ export default async function ClientDetailPage({ params, searchParams }: { param
 
   const activeLoanCount = client.loans.filter((loan) => (OPEN_LOAN_STATUSES as readonly string[]).includes(loan.status)).length;
   const activeSavingsCount = client.savingsAccounts.filter((account) => account.status === "ACTIVE").length;
+  const loanPaymentTargets = canRecordRepayment
+    ? loanRows
+        .filter(({ loan }) => (OPEN_LOAN_STATUSES as readonly string[]).includes(loan.status))
+        .sort((left, right) => {
+          const leftOverdue = left.overdueOutstandingMinor > 0n ? 1 : 0;
+          const rightOverdue = right.overdueOutstandingMinor > 0n ? 1 : 0;
+          if (leftOverdue !== rightOverdue) return rightOverdue - leftOverdue;
+          if (left.overdueOutstandingMinor !== right.overdueOutstandingMinor) return left.overdueOutstandingMinor > right.overdueOutstandingMinor ? -1 : 1;
+          if (left.outstandingMinor !== right.outstandingMinor) return left.outstandingMinor > right.outstandingMinor ? -1 : 1;
+          return left.loan.accountNumber.localeCompare(right.loan.accountNumber);
+        })
+        .map(({ loan, outstandingMinor, overdueOutstandingMinor }) => ({
+          id: loan.id,
+          accountNumber: loan.accountNumber,
+          productName: loan.product.name,
+          currencyCode: loan.denominationCurrency,
+          status: loan.status,
+          outstandingMinor: outstandingMinor.toString(),
+          overdueMinor: overdueOutstandingMinor.toString(),
+        }))
+    : [];
 
   return (
     <main className="directory-page">
       <Breadcrumbs items={[{ label: "Clients", href: "/clients" }, { label: fullName }]} />
       <header className="client-header">
-        {client.photoDocument ? <img alt={fullName} className="client-photo" src={`/api/documents/${client.photoDocument.id}`} /> : <span className="client-photo client-photo-placeholder"><UserRound size={22} /></span>}
+        <EntityAvatar className="client-photo" genderCode={client.genderCode} name={fullName} photoUrl={client.photoDocument ? `/api/documents/${client.photoDocument.id}` : null} seed={client.id} size={52} />
         <div>
           <h1>{fullName} <span className={`wallet-balance ${wallet.netBalanceMinor < 0n ? "negative" : ""}`}>{walletFormatted}</span></h1>
           <p>Client #: <span className="mono">{client.accountNumber}</span> | External id: {client.externalId ?? "None"} | Staff: {client.assignedOfficer?.name ?? "Unassigned"}</p>
@@ -185,7 +218,7 @@ export default async function ClientDetailPage({ params, searchParams }: { param
         <section className="panel">
           <div className="panel-heading"><div><h2>Savings</h2><p>Savings, share and deposit accounts held by this client</p></div>{canTransact && client.status === "ACTIVE" && client.savingsAccounts.length === 0 ? <NewSavingsAccountWizard charges={savingsCharges.map((charge) => ({ id: charge.id, name: charge.name, calculationType: charge.calculationType, amountMinor: charge.amountMinor?.toString() ?? null, percentageBps: charge.percentageBps, currencyCode: charge.currencyCode }))} clientId={client.id} officers={officers} products={savingsProducts.map((product) => ({ id: product.id, name: product.name, shortName: product.shortName, currencyCode: product.currencyCode, nominalAnnualRateBps: product.nominalAnnualRateBps, minOpeningBalanceMinor: product.minOpeningBalanceMinor.toString() }))} /> : null}</div>
           {client.savingsAccounts.length === 0 ? <div className="empty-state compact-empty"><PiggyBank size={26} /><strong>No savings accounts yet</strong><p>Open one above to start recording deposits.</p></div> : <div className="table-scroll"><table><thead><tr><th>Account</th><th>Type</th><th>Product</th><th>Currency</th><th>Balance</th><th>Status</th><th>Opened</th><th></th></tr></thead><tbody>{savingsRows.map(({ account, balanceMinor }) => <tr key={account.id}><td className="mono"><Link className="green-link" href={`/savings-accounts/${account.accountNumber}`}>{account.accountNumber}</Link></td><td>{account.accountType.replaceAll("_", " ")}</td><td>{account.product?.name ?? "\u2014"}</td><td>{account.currencyCode}</td><td>{formatMinor(balanceMinor, account.currencyCode)}</td><td><span className={`status ${account.status === "ACTIVE" ? "up-to-date" : "review"}`}>{account.status === "SUBMITTED" ? "Pending approval" : account.status}</span></td><td>{new Intl.DateTimeFormat("en-UG", { dateStyle: "medium" }).format(account.createdAt)}</td><td>{account.status === "SUBMITTED" && canApproveSavings && account.submittedById !== session.user.id ? <ApproveSavingsAccountButton clientId={client.id} savingsAccountId={account.id} /> : null}</td></tr>)}</tbody></table></div>}
-          {canTransact && client.status === "ACTIVE" && primarySavingsAccount ? <DepositWithdrawForm clientId={client.id} savingsAccountId={primarySavingsAccount.id} /> : null}
+          {client.status === "ACTIVE" && ((canTransact && primarySavingsAccount) || loanPaymentTargets.length > 0) ? <DepositWithdrawForm clientId={client.id} currentUserName={session.user.name ?? "Signed in user"} loanTargets={loanPaymentTargets} savingsTarget={canTransact && primarySavingsAccount ? { id: primarySavingsAccount.id, accountNumber: primarySavingsAccount.accountNumber, currencyCode: primarySavingsAccount.currencyCode } : null} settlementAccounts={settlementAccounts} /> : null}
         </section>
       ) : null}
 
@@ -201,7 +234,7 @@ export default async function ClientDetailPage({ params, searchParams }: { param
       {activeTab === "family" ? (
         <section className="panel">
           <div className="panel-heading"><div><h2>Family members</h2><p>Next of kin and dependents on record</p></div></div>
-          {client.familyMembers.length === 0 ? <div className="empty-state compact-empty"><Users size={26} /><strong>No family members yet</strong><p>Add the client&apos;s next of kin or dependents below.</p></div> : <div className="table-scroll"><table><thead><tr><th>Name</th><th>Relationship</th><th>Gender</th><th>Mobile</th><th>Age</th><th>Dependent</th><th>Attached files</th></tr></thead><tbody>{client.familyMembers.map((member) => <tr key={member.id}><td><strong>{[member.firstName, member.middleName, member.lastName].filter(Boolean).join(" ")}</strong></td><td>{member.relationship ?? "\u2014"}</td><td>{member.genderCode ?? "\u2014"}</td><td>{member.mobileNumber ?? "\u2014"}</td><td>{member.age ?? "\u2014"}</td><td>{member.isDependent ? "Yes" : "No"}</td><td>{member.documents.length === 0 ? <span className="muted-text">None</span> : <div className="identity-files">{member.documents.map((document) => document.mediaType.startsWith("image/") ? <a href={`/api/documents/${document.id}`} key={document.id} rel="noreferrer" target="_blank"><img alt={document.name} className="identity-thumb" src={`/api/documents/${document.id}`} /></a> : <a className="green-link" href={`/api/documents/${document.id}`} key={document.id}>{document.name}</a>)}</div>}</td></tr>)}</tbody></table></div>}
+          {client.familyMembers.length === 0 ? <div className="empty-state compact-empty"><Users size={26} /><strong>No family members yet</strong><p>Add the client&apos;s next of kin or dependents below.</p></div> : <div className="table-scroll"><table><thead><tr><th>Name</th><th>Relationship</th><th>Gender</th><th>Mobile</th><th>Age</th><th>Dependent</th><th>Attached files</th></tr></thead><tbody>{client.familyMembers.map((member) => { const memberName = [member.firstName, member.middleName, member.lastName].filter(Boolean).join(" "); return <tr key={member.id}><td><div className="person-cell"><EntityAvatar genderCode={member.genderCode} name={memberName} seed={member.id} size={28} /><span className="person-copy"><strong>{memberName}</strong></span></div></td><td>{member.relationship ?? "\u2014"}</td><td>{member.genderCode ?? "\u2014"}</td><td>{member.mobileNumber ?? "\u2014"}</td><td>{member.age ?? "\u2014"}</td><td>{member.isDependent ? "Yes" : "No"}</td><td>{member.documents.length === 0 ? <span className="muted-text">None</span> : <div className="identity-files">{member.documents.map((document) => document.mediaType.startsWith("image/") ? <a href={`/api/documents/${document.id}`} key={document.id} rel="noreferrer" target="_blank"><img alt={document.name} className="identity-thumb" src={`/api/documents/${document.id}`} /></a> : <a className="green-link" href={`/api/documents/${document.id}`} key={document.id}>{document.name}</a>)}</div>}</td></tr>; })}</tbody></table></div>}
           <AddFamilyMemberForm clientId={client.id} />
           {client.familyMembers.length > 0 ? <UploadDocumentForm clientId={client.id} familyMembers={client.familyMembers.map((member) => ({ id: member.id, name: [member.firstName, member.middleName, member.lastName].filter(Boolean).join(" ") }))} title="Attach document to a family member" /> : null}
         </section>

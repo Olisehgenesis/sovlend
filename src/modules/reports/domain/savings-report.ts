@@ -246,6 +246,7 @@ export async function loadSavingsTransactionsReport(
       id: true,
       transactionType: true,
       amountMinor: true,
+      reason: true,
       externalReference: true,
       createdAt: true,
       savingsAccount: {
@@ -285,7 +286,7 @@ export async function loadSavingsTransactionsReport(
       transactionType: transaction.transactionType,
       amountMinor: transaction.amountMinor,
       currencyCode: account.currencyCode,
-      externalReference: transaction.externalReference,
+      externalReference: transaction.reason ?? transaction.externalReference,
     };
   });
 

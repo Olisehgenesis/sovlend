@@ -14,8 +14,8 @@ export function AddGroupMemberForm({ groupId }: { groupId: string }) {
     const response = await fetch(`/api/groups/${groupId}/members`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ clientAccountNumber: formData.get("clientAccountNumber") }) });
     const result = await response.json().catch(() => ({}));
     setPending(false);
-    if (!response.ok) { toast.error(result.error ?? "Could not add member"); return; }
-    toast.success("Member added");
+    if (!response.ok) { toast.error(result.error ?? "Could not add this client to the group"); return; }
+    toast.success("Client added to the group");
     router.refresh();
   }
 
@@ -31,8 +31,8 @@ export function AddGroupNoteForm({ groupId }: { groupId: string }) {
     const response = await fetch(`/api/groups/${groupId}/notes`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ body: formData.get("body") }) });
     const result = await response.json().catch(() => ({}));
     setPending(false);
-    if (!response.ok) { toast.error(result.error ?? "Could not add note"); return; }
-    toast.success("Note added");
+    if (!response.ok) { toast.error(result.error ?? "Could not save this group note"); return; }
+    toast.success("Note added to the group record");
     router.refresh();
   }
 

@@ -88,11 +88,28 @@ export default async function ClientStatementSearchPage({
           </div>
           <FileSearch size={19} />
         </div>
-        {query && results.length === 0 ? (
+        {!query ? (
+          <div className="empty-state">
+            <FileSearch size={28} />
+            <strong>Start with a client search</strong>
+            <p>Search by name, account number, mobile number, or external id to open a printable statement.</p>
+            <Link className="invest-button empty-action" href="/clients">
+              Browse clients
+            </Link>
+          </div>
+        ) : results.length === 0 ? (
           <div className="empty-state">
             <FileSearch size={28} />
             <strong>No matching clients</strong>
-            <p>Check the spelling or try a different account number.</p>
+            <p>Check the spelling, try a different account number, or browse the client directory first.</p>
+            <div className="header-actions">
+              <Link className="invest-button empty-action" href="/reports/client-statement">
+                Clear search
+              </Link>
+              <Link className="secondary-action empty-action" href="/clients">
+                Browse clients
+              </Link>
+            </div>
           </div>
         ) : (
           <div className="statement-search-results" style={{ padding: results.length ? "14px 18px" : 0 }}>

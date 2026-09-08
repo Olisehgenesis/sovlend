@@ -13,7 +13,7 @@ function minorToAmountString(amountMinor: string): string {
   return fraction === "00" ? whole.toString() : `${whole}.${fraction}`;
 }
 
-export function RepaymentForm({ loanId, settlementAccounts, defaultAmountMinor }: { loanId: string; settlementAccounts: Array<{ id: string; name: string; type: string }>; defaultAmountMinor?: string }) {
+export function RepaymentForm({ loanId, settlementAccounts, defaultAmountMinor, onSuccess }: { loanId: string; settlementAccounts: Array<{ id: string; name: string; type: string }>; defaultAmountMinor?: string; onSuccess?: () => void }) {
   const router = useRouter();
   const [pending, setPending] = useState(false);
   const defaultAmount = minorToAmountString(defaultAmountMinor ?? "0");
@@ -26,7 +26,7 @@ export function RepaymentForm({ loanId, settlementAccounts, defaultAmountMinor }
     const response = await fetch(`/api/loans/${loanId}/repayments`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ amountMinor, settlementAccountId: formData.get("settlementAccountId"), businessDate: formData.get("businessDate"), externalReference: formData.get("externalReference") || undefined, idempotencyKey: crypto.randomUUID() }) });
     const result = await response.json(); setPending(false);
     if (!response.ok) { toast.error(result.error ?? "Repayment could not be recorded"); return; }
-    toast.success("Repayment recorded and allocated"); router.refresh();
+    toast.success("Repayment recorded and allocated"); router.refresh(); onSuccess?.();
   }
   return <form action={repay} className="entity-form compact-mapping"><fieldset><legend>Record repayment</legend><label>Amount (UGX)<input defaultValue={defaultAmount || undefined} inputMode="decimal" name="amount" pattern="[0-9]+([.][0-9]{1,2})?" required /></label>{defaultAmount ? <p className="field-help">Defaults to the next installment due &mdash; change it if the borrower is paying a different amount.</p> : null}{settlementAccounts.length === 0 ? <aside className="configuration-note"><strong>Settlement setup required</strong><span>Add the receiving cash, bank, Airtel Money, MTN MoMo, or other account in Backoffice → Accounting mappings.</span></aside> : <label>Received into<select name="settlementAccountId" required>{settlementAccounts.map((account) => <option key={account.id} value={account.id}>{account.name} · {account.type.replaceAll("_", " ")}</option>)}</select></label>}<div className="form-row"><label>Business date<input name="businessDate" type="date" defaultValue={new Date().toISOString().slice(0, 10)} required /></label><label>Receipt / reference<input name="externalReference" /></label></div></fieldset><div className="form-actions"><button className="invest-button" disabled={pending || settlementAccounts.length === 0}>{pending ? <LoaderCircle className="spin" size={18} /> : <Banknote size={18} />} Record repayment</button></div></form>;
 }

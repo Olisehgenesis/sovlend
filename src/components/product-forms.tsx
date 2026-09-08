@@ -13,6 +13,7 @@ type LoanProductDraft = Readonly<{
   principalMin: string;
   principalMax: string;
   annualRate: string;
+  monitoringFeeAnnualRate: string;
   repaymentCount: number;
   repaymentFrequency: string;
   amortizationMethod: string;
@@ -62,6 +63,7 @@ export function CreateLoanProductForm() {
         principalMin: formData.get("principalMin") || 0,
         principalMax: formData.get("principalMax") || 0,
         annualRate: formData.get("annualRate") || 0,
+        monitoringFeeAnnualRate: formData.get("monitoringFeeAnnualRate") || 0,
         repaymentCount: formData.get("repaymentCount") || 1,
         repaymentFrequency: formData.get("repaymentFrequency"),
         amortizationMethod: formData.get("amortizationMethod"),
@@ -90,6 +92,9 @@ export function CreateLoanProductForm() {
         <label>Minimum principal<input inputMode="decimal" min={0} name="principalMin" required step="0.01" type="number" /></label>
         <label>Maximum principal<input inputMode="decimal" min={0} name="principalMax" required step="0.01" type="number" /></label>
         <label>Annual rate %<input min={0} name="annualRate" required step="0.01" type="number" /></label>
+      </div>
+      <div className="form-row">
+        <label>Monitoring fee %<input min={0} name="monitoringFeeAnnualRate" step="0.01" type="number" /></label>
       </div>
       <div className="form-row three">
         <label>Repayment count<input min={1} name="repaymentCount" required step={1} type="number" /></label>
@@ -120,6 +125,7 @@ export function EditLoanProductForm({ product }: { product: LoanProductDraft }) 
         principalMin: formData.get("principalMin") || 0,
         principalMax: formData.get("principalMax") || 0,
         annualRate: formData.get("annualRate") || 0,
+        monitoringFeeAnnualRate: formData.get("monitoringFeeAnnualRate") || 0,
         repaymentCount: formData.get("repaymentCount") || 1,
         repaymentFrequency: formData.get("repaymentFrequency"),
         amortizationMethod: formData.get("amortizationMethod"),
@@ -148,6 +154,9 @@ export function EditLoanProductForm({ product }: { product: LoanProductDraft }) 
         <label>Minimum principal<input defaultValue={product.principalMin} inputMode="decimal" min={0} name="principalMin" required step="0.01" type="number" /></label>
         <label>Maximum principal<input defaultValue={product.principalMax} inputMode="decimal" min={0} name="principalMax" required step="0.01" type="number" /></label>
         <label>Annual rate %<input defaultValue={product.annualRate} min={0} name="annualRate" required step="0.01" type="number" /></label>
+      </div>
+      <div className="form-row">
+        <label>Monitoring fee %<input defaultValue={product.monitoringFeeAnnualRate} min={0} name="monitoringFeeAnnualRate" step="0.01" type="number" /></label>
       </div>
       <div className="form-row three">
         <label>Repayment count<input defaultValue={product.repaymentCount} min={1} name="repaymentCount" required step={1} type="number" /></label>

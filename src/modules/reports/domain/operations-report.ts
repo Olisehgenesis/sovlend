@@ -204,6 +204,27 @@ export type ActiveLoansReport = {
   totals: ActiveLoanTotal[];
 };
 
+export type ActiveLoanFundBreakdownRow = {
+  fundId: string | null;
+  fundName: string;
+  currencyCode: string;
+  loanCount: number;
+  principalMinor: bigint;
+};
+
+export type ActiveLoanFundBreakdownTotal = {
+  currencyCode: string;
+  loanCount: number;
+  principalMinor: bigint;
+};
+
+export type ActiveLoanFundBreakdownReport = {
+  officeId: string | null;
+  loanOfficerId: string | null;
+  rows: ActiveLoanFundBreakdownRow[];
+  totals: ActiveLoanFundBreakdownTotal[];
+};
+
 export type DisbursalReportRow = {
   loanId: string;
   accountNumber: string;
@@ -934,6 +955,78 @@ export async function loadActiveLoansReport(
     officeId,
     loanOfficerId,
     rows,
+    totals: [...totalsMap.values()].sort((left, right) => left.currencyCode.localeCompare(right.currencyCode)),
+  };
+}
+
+export async function loadActiveLoanFundBreakdownReport(
+  prisma: PrismaClient,
+  scope: UserDataScope,
+  params: {
+    officeId?: string | null;
+    loanOfficerId?: string | null;
+  },
+): Promise<ActiveLoanFundBreakdownReport> {
+  const officeId = normalizeString(params.officeId);
+  const loanOfficerId = normalizeString(params.loanOfficerId);
+  const loans = await prisma.loan.findMany({
+    where: {
+      office: { organizationId: scope.organizationId },
+      ...loanScopeWhere(scope),
+      ...(officeId ? { officeId } : {}),
+      ...(!scope.officerUserId && loanOfficerId ? { loanOfficerId } : {}),
+      status: { in: reportableLoanStatuses },
+    },
+    select: {
+      fundId: true,
+      denominationCurrency: true,
+      principalMinor: true,
+      fund: { select: { name: true } },
+    },
+  });
+
+  const rows = new Map<string, ActiveLoanFundBreakdownRow>();
+  for (const loan of loans) {
+    const fundName = loan.fund?.name ?? "Unassigned";
+    const key = `${loan.fundId ?? "UNASSIGNED"}:${loan.denominationCurrency}`;
+    const row =
+      rows.get(key) ?? {
+        fundId: loan.fundId,
+        fundName,
+        currencyCode: loan.denominationCurrency,
+        loanCount: 0,
+        principalMinor: 0n,
+      };
+    row.loanCount += 1;
+    row.principalMinor += loan.principalMinor;
+    rows.set(key, row);
+  }
+
+  const sortedRows = [...rows.values()].sort(
+    (left, right) =>
+      compareBigIntDesc(left.principalMinor, right.principalMinor) ||
+      right.loanCount - left.loanCount ||
+      left.fundName.localeCompare(right.fundName) ||
+      left.currencyCode.localeCompare(right.currencyCode),
+  );
+
+  const totalsMap = new Map<string, ActiveLoanFundBreakdownTotal>();
+  for (const row of sortedRows) {
+    const total =
+      totalsMap.get(row.currencyCode) ?? {
+        currencyCode: row.currencyCode,
+        loanCount: 0,
+        principalMinor: 0n,
+      };
+    total.loanCount += row.loanCount;
+    total.principalMinor += row.principalMinor;
+    totalsMap.set(row.currencyCode, total);
+  }
+
+  return {
+    officeId,
+    loanOfficerId,
+    rows: sortedRows,
     totals: [...totalsMap.values()].sort((left, right) => left.currencyCode.localeCompare(right.currencyCode)),
   };
 }

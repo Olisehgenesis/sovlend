@@ -4,6 +4,7 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 
 import { Breadcrumbs } from "@/components/breadcrumbs";
+import { EntityAvatar } from "@/components/entity-avatar";
 import { AddGroupMemberForm, AddGroupNoteForm } from "@/components/group-record-forms";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
@@ -78,8 +79,10 @@ export default async function GroupDetailPage({ params, searchParams }: { params
             select: {
               accountNumber: true,
               firstName: true,
+              genderCode: true,
               middleName: true,
               lastName: true,
+              photoDocumentId: true,
               status: true,
             },
           },
@@ -292,8 +295,11 @@ export default async function GroupDetailPage({ params, searchParams }: { params
                       <tr key={member.id}>
                         <td className="mono">{member.client.accountNumber}</td>
                         <td>
-                          <strong>{memberName}</strong>
-                          <Link className="row-link" href={`/clients/${member.client.accountNumber}`} aria-label={`Open ${memberName}`} />
+                          <div className="person-cell">
+                            <EntityAvatar genderCode={member.client.genderCode} name={memberName} photoUrl={member.client.photoDocumentId ? `/api/documents/${member.client.photoDocumentId}` : null} seed={member.clientId} size={28} />
+                            <span className="person-copy"><strong>{memberName}</strong></span>
+                            <Link className="row-link" href={`/clients/${member.client.accountNumber}`} aria-label={`Open ${memberName}`} />
+                          </div>
                         </td>
                         <td><span className={`status ${member.client.status === "ACTIVE" ? "up-to-date" : "review"}`}>{member.client.status}</span></td>
                         <td>

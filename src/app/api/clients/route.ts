@@ -8,6 +8,7 @@ import { prisma } from "@/lib/prisma";
 import { AuthorizationService, PermissionDeniedError } from "@/modules/identity/application/authorization-service";
 import { getUserDataScope } from "@/modules/identity/application/data-scope";
 import { permissions } from "@/modules/identity/domain/permissions";
+import { nextSubAccountNumber } from "@/modules/lending/domain/sub-account-numbering";
 
 const clientSchema = z.object({
   officeId: z.string().uuid(),
@@ -74,7 +75,8 @@ export async function POST(request: Request) {
     });
     await transaction.auditEvent.create({ data: { actorId: session.user.id, action: "client.created", entityType: "Client", entityId: created.id, correlationId, metadata, eventHash } });
     await transaction.outboxEvent.create({ data: { aggregateType: "Client", aggregateId: created.id, eventType: "client.created", payload: metadata } });
-    await transaction.savingsAccount.create({ data: { clientId: created.id, accountNumber: created.accountNumber, currencyCode: "UGX", status: "ACTIVE" } });
+    // Every new client opens with a default savings sub-account, e.g. "000000926" -> "000000926S".
+    await transaction.savingsAccount.create({ data: { clientId: created.id, accountNumber: nextSubAccountNumber(created.accountNumber, "S", 0), currencyCode: "UGX", status: "ACTIVE" } });
     return created;
   });
   return NextResponse.json({ id: client.id, accountNumber: client.accountNumber }, { status: 201 });

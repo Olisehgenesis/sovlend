@@ -11,6 +11,17 @@ import { prisma } from "@/lib/prisma";
 import { getUserDataScope, officeWhere } from "@/modules/identity/application/data-scope";
 import { formatMinor } from "@/modules/money/domain/format-minor";
 
+const supportedStatusFilters = [
+  "SUBMITTED",
+  "APPROVED",
+  "DISBURSED",
+  "REJECTED",
+  "WITHDRAWN",
+  "DRAFT",
+] as const;
+
+type SupportedLoanApplicationStatusFilter = (typeof supportedStatusFilters)[number];
+
 const statusAliasToValue: Record<string, LoanApplicationStatus> = {
   approved: "APPROVED",
   disbursed: "DISBURSED",
@@ -20,10 +31,64 @@ const statusAliasToValue: Record<string, LoanApplicationStatus> = {
   withdrawn: "WITHDRAWN",
 };
 
+const applicationStatusFilterMeta: Record<
+  SupportedLoanApplicationStatusFilter,
+  {
+    heading: string;
+    countLabel: string;
+    emptyTitle: string;
+    emptyDescription: string;
+    tone: string;
+  }
+> = {
+  SUBMITTED: {
+    heading: "Needs review",
+    countLabel: "submitted applications awaiting action",
+    emptyTitle: "No submitted applications match",
+    emptyDescription: "Change the filter and try again.",
+    tone: "review",
+  },
+  APPROVED: {
+    heading: "Approved",
+    countLabel: "approved applications",
+    emptyTitle: "No approved applications match",
+    emptyDescription: "Change the filter and try again.",
+    tone: "up-to-date",
+  },
+  DISBURSED: {
+    heading: "Disbursed",
+    countLabel: "disbursed applications",
+    emptyTitle: "No disbursed applications match",
+    emptyDescription: "Change the filter and try again.",
+    tone: "up-to-date",
+  },
+  REJECTED: {
+    heading: "Rejected",
+    countLabel: "rejected applications",
+    emptyTitle: "No rejected applications match",
+    emptyDescription: "Change the filter and try again.",
+    tone: "in-arrears",
+  },
+  WITHDRAWN: {
+    heading: "Withdrawn",
+    countLabel: "withdrawn applications",
+    emptyTitle: "No withdrawn applications match",
+    emptyDescription: "Change the filter and try again.",
+    tone: "review",
+  },
+  DRAFT: {
+    heading: "Draft",
+    countLabel: "draft applications",
+    emptyTitle: "No draft applications match",
+    emptyDescription: "Change the filter and try again.",
+    tone: "review",
+  },
+};
+
 export default async function LoanApplicationsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ query?: string; page?: string }>;
+  searchParams: Promise<{ query?: string; page?: string; status?: string }>;
 }) {
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session) redirect("/sign-in");
@@ -33,6 +98,8 @@ export default async function LoanApplicationsPage({
 
   const params = await searchParams;
   const query = params.query?.trim() ?? "";
+  const requestedStatus = parseLoanApplicationStatusFilter(params.status);
+  const activeStatusMeta = requestedStatus ? applicationStatusFilterMeta[requestedStatus] : null;
   const page = Math.max(1, Number.parseInt(params.page ?? "1", 10) || 1);
   const pageSize = 20;
 
@@ -53,9 +120,8 @@ export default async function LoanApplicationsPage({
 
   const where: Prisma.LoanApplicationWhereInput = {
     office: { organizationId: scope.organizationId },
-    // LoanApplication has no loanOfficerId column -- for officer-scoped users, narrow to
-    // applications they submitted themselves instead of the whole office.
     ...(scope.officerUserId ? { submittedById: scope.officerUserId } : officeWhere(scope)),
+    ...(requestedStatus ? { status: requestedStatus } : {}),
     ...(searchFilters.length > 0 ? { AND: [{ OR: searchFilters }] } : {}),
   };
 
@@ -83,6 +149,20 @@ export default async function LoanApplicationsPage({
       : `Group: ${application.group?.name ?? "Unknown"}`;
   const borrowerAccount = (application: (typeof applications)[number]) =>
     application.client?.accountNumber ?? application.group?.accountNumber ?? "—";
+  const clearStatusHref = query ? `/loans/applications?query=${encodeURIComponent(query)}` : "/loans/applications";
+  const pageHref = (targetPage: number) => {
+    const nextParams = new URLSearchParams();
+    if (query) nextParams.set("query", query);
+    if (requestedStatus) nextParams.set("status", requestedStatus);
+    nextParams.set("page", String(targetPage));
+    return `/loans/applications?${nextParams.toString()}`;
+  };
+  const statusFilterHref = (status: SupportedLoanApplicationStatusFilter) => {
+    const nextParams = new URLSearchParams();
+    if (query) nextParams.set("query", query);
+    nextParams.set("status", status);
+    return `/loans/applications?${nextParams.toString()}`;
+  };
 
   return (
     <main className="directory-page">
@@ -92,8 +172,12 @@ export default async function LoanApplicationsPage({
       <header className="directory-header">
         <div>
           <p className="eyebrow">Lending operations</p>
-          <h1>Loan applications</h1>
-          <p>{total.toLocaleString()} applications in your office scope</p>
+          <h1>{activeStatusMeta ? `Loan applications — ${activeStatusMeta.heading}` : "Loan applications"}</h1>
+          <p>
+            {activeStatusMeta
+              ? `${total.toLocaleString()} ${activeStatusMeta.countLabel}`
+              : `${total.toLocaleString()} applications in your office scope`}
+          </p>
         </div>
         <div className="header-actions">
           <Link className="secondary-action" href="/loans">
@@ -104,13 +188,36 @@ export default async function LoanApplicationsPage({
           </Link>
         </div>
       </header>
-      <LiveSearchInput placeholder="Search borrower, office, product, loan account or status" />
+      <div className="directory-toolbar">
+        <LiveSearchInput placeholder="Search borrower, office, product, loan account or status" />
+        <div className="directory-filter-chip">
+          <span className="muted-text">Status:</span>
+          {supportedStatusFilters.map((status) => {
+            const statusMeta = applicationStatusFilterMeta[status];
+            return (
+              <Link
+                aria-current={requestedStatus === status ? "page" : undefined}
+                className={`status ${requestedStatus === status ? statusMeta.tone : "review"}`}
+                href={statusFilterHref(status)}
+                key={status}
+              >
+                {statusMeta.heading}
+              </Link>
+            );
+          })}
+          {activeStatusMeta ? (
+            <Link className="green-link" href={clearStatusHref}>
+              Clear filter
+            </Link>
+          ) : null}
+        </div>
+      </div>
       <section className="panel">
         {applications.length === 0 ? (
           <div className="empty-state">
             <CircleDollarSign size={28} />
-            <strong>No matching applications</strong>
-            <p>Change the search and try again.</p>
+            <strong>{activeStatusMeta ? activeStatusMeta.emptyTitle : "No matching applications"}</strong>
+            <p>{activeStatusMeta ? activeStatusMeta.emptyDescription : "Change the search and try again."}</p>
           </div>
         ) : (
           <div className="table-scroll">
@@ -143,15 +250,12 @@ export default async function LoanApplicationsPage({
                       <td>{application.product.name}</td>
                       <td>
                         {formatMinor(
-                          application.approvedPrincipalMinor ??
-                            application.proposedPrincipalMinor,
+                          application.approvedPrincipalMinor ?? application.proposedPrincipalMinor,
                           application.product.denominationCurrency,
                         )}
                       </td>
                       <td>
-                        <span
-                          className={`status ${application.status === "APPROVED" || application.status === "DISBURSED" ? "up-to-date" : application.status === "REJECTED" ? "in-arrears" : "review"}`}
-                        >
+                        <span className={`status ${applicationStatusTone(application.status)}`}>
                           {application.status.replaceAll("_", " ")}
                         </span>
                       </td>
@@ -178,7 +282,7 @@ export default async function LoanApplicationsPage({
         <nav className="pagination" aria-label="Loan application pages">
           <Link
             aria-disabled={page <= 1}
-            href={`/loans/applications?query=${encodeURIComponent(query)}&page=${Math.max(1, page - 1)}`}
+            href={pageHref(Math.max(1, page - 1))}
           >
             Previous
           </Link>
@@ -187,7 +291,7 @@ export default async function LoanApplicationsPage({
           </span>
           <Link
             aria-disabled={page >= pages}
-            href={`/loans/applications?query=${encodeURIComponent(query)}&page=${Math.min(pages, page + 1)}`}
+            href={pageHref(Math.min(pages, page + 1))}
           >
             Next
           </Link>
@@ -195,4 +299,18 @@ export default async function LoanApplicationsPage({
       </section>
     </main>
   );
+}
+
+function parseLoanApplicationStatusFilter(
+  status?: string,
+): SupportedLoanApplicationStatusFilter | null {
+  const normalized = status?.trim().toUpperCase();
+  if (!normalized) return null;
+  return supportedStatusFilters.find((value) => value === normalized) ?? null;
+}
+
+function applicationStatusTone(status: LoanApplicationStatus) {
+  if (status === "APPROVED" || status === "DISBURSED") return "up-to-date";
+  if (status === "REJECTED") return "in-arrears";
+  return "review";
 }

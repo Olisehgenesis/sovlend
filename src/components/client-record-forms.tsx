@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
 
-function useSubmitJson(url: string, successMessage: string) {
+function useSubmitJson(url: string, successMessage: string, errorMessage: string) {
   const router = useRouter();
   const [pending, setPending] = useState(false);
   async function submit(body: unknown, form?: HTMLFormElement) {
@@ -13,7 +13,7 @@ function useSubmitJson(url: string, successMessage: string) {
     const response = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
     const result = await response.json().catch(() => ({}));
     setPending(false);
-    if (!response.ok) { toast.error(result.error ?? "Request failed"); return; }
+    if (!response.ok) { toast.error(result.error ?? errorMessage); return; }
     toast.success(successMessage);
     form?.reset();
     router.refresh();
@@ -22,7 +22,7 @@ function useSubmitJson(url: string, successMessage: string) {
 }
 
 export function AddFamilyMemberForm({ clientId }: { clientId: string }) {
-  const { submit, pending } = useSubmitJson(`/api/clients/${clientId}/family-members`, "Family member added");
+  const { submit, pending } = useSubmitJson(`/api/clients/${clientId}/family-members`, "Family member added to the client record", "Could not add this family member");
   return <form action={(formData) => { const form = document.getElementById(`family-form-${clientId}`) as HTMLFormElement; submit({ firstName: formData.get("firstName"), middleName: formData.get("middleName") || undefined, lastName: formData.get("lastName"), relationship: formData.get("relationship") || undefined, genderCode: formData.get("genderCode") || undefined, mobileNumber: formData.get("mobileNumber") || undefined, age: formData.get("age") ? Number(formData.get("age")) : undefined, isDependent: formData.get("isDependent") === "on" }, form); }} className="entity-form compact-mapping" id={`family-form-${clientId}`}>
     <fieldset><legend>Add family member</legend><div className="form-row three"><label>First name<input name="firstName" required /></label><label>Middle name<input name="middleName" /></label><label>Last name<input name="lastName" required /></label></div><div className="form-row three"><label>Relationship<input name="relationship" placeholder="Spouse, parent, sibling" /></label><label>Gender<select name="genderCode" defaultValue=""><option value="">Not specified</option><option>Female</option><option>Male</option><option>Other</option></select></label><label>Mobile number<input name="mobileNumber" inputMode="tel" /></label></div><div className="form-row"><label>Age<input name="age" type="number" min={0} max={130} /></label><label className="check-row"><input name="isDependent" type="checkbox" /> Is a dependent</label></div></fieldset>
     <div className="form-actions"><button className="invest-button" disabled={pending}>{pending ? <LoaderCircle className="spin" size={16} /> : <Plus size={16} />} Add family member</button></div>
@@ -30,7 +30,7 @@ export function AddFamilyMemberForm({ clientId }: { clientId: string }) {
 }
 
 export function AddIdentifierForm({ clientId }: { clientId: string }) {
-  const { submit, pending } = useSubmitJson(`/api/clients/${clientId}/identifiers`, "Identity added");
+  const { submit, pending } = useSubmitJson(`/api/clients/${clientId}/identifiers`, "Identity record added to the client profile", "Could not save this identity record");
   return <form action={(formData) => { const form = document.getElementById(`identifier-form-${clientId}`) as HTMLFormElement; submit({ documentType: formData.get("documentType"), status: formData.get("status"), uniqueNumber: formData.get("uniqueNumber"), description: formData.get("description") || undefined }, form); }} className="entity-form compact-mapping" id={`identifier-form-${clientId}`}>
     <fieldset><legend>Add identity</legend><div className="form-row three"><label>Document type<input name="documentType" placeholder="Passport, National ID" required /></label><label>Status<select name="status" defaultValue="ACTIVE"><option value="ACTIVE">Active</option><option value="INACTIVE">Inactive</option></select></label><label>Unique ID #<input name="uniqueNumber" required /></label></div><label>Description<input name="description" /></label></fieldset>
     <div className="form-actions"><button className="invest-button" disabled={pending}>{pending ? <LoaderCircle className="spin" size={16} /> : <Plus size={16} />} Add identity</button></div>
@@ -38,7 +38,7 @@ export function AddIdentifierForm({ clientId }: { clientId: string }) {
 }
 
 export function AddNoteForm({ clientId }: { clientId: string }) {
-  const { submit, pending } = useSubmitJson(`/api/clients/${clientId}/notes`, "Note added");
+  const { submit, pending } = useSubmitJson(`/api/clients/${clientId}/notes`, "Note added to the client record", "Could not save this client note");
   return <form action={(formData) => { const form = document.getElementById(`note-form-${clientId}`) as HTMLFormElement; submit({ body: formData.get("body") }, form); }} className="entity-form compact-mapping" id={`note-form-${clientId}`}>
     <fieldset><legend>Add note</legend><label>Note<textarea name="body" rows={3} required /></label></fieldset>
     <div className="form-actions"><button className="invest-button" disabled={pending}>{pending ? <LoaderCircle className="spin" size={16} /> : <Plus size={16} />} Add note</button></div>
@@ -53,8 +53,8 @@ export function UploadDocumentForm({ clientId, title, identifiers, familyMembers
     const response = await fetch(`/api/clients/${clientId}/documents`, { method: "POST", body: formData });
     const result = await response.json().catch(() => ({}));
     setPending(false);
-    if (!response.ok) { toast.error(result.error ?? "Upload failed"); return; }
-    toast.success("Document uploaded");
+    if (!response.ok) { toast.error(result.error ?? "Could not upload this client document"); return; }
+    toast.success("Document uploaded to the client record");
     router.refresh();
   }
   return <form action={upload} className="entity-form compact-mapping">

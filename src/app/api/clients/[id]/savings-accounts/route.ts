@@ -7,6 +7,7 @@ import { prisma } from "@/lib/prisma";
 import { AuthorizationService, PermissionDeniedError } from "@/modules/identity/application/authorization-service";
 import { clientScopeWhere, getUserDataScope } from "@/modules/identity/application/data-scope";
 import { permissions } from "@/modules/identity/domain/permissions";
+import { nextSubAccountNumber } from "@/modules/lending/domain/sub-account-numbering";
 
 const schema = z.object({
   accountType: z.enum(["SAVINGS", "SHARE", "FIXED_DEPOSIT", "RECURRING_DEPOSIT"]).default("SAVINGS"),
@@ -55,7 +56,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   }
 
   const existingCount = await prisma.savingsAccount.count({ where: { clientId: client.id } });
-  const accountNumber = existingCount === 0 ? client.accountNumber : `${client.accountNumber}-S${existingCount + 1}`;
+  const accountNumber = nextSubAccountNumber(client.accountNumber, "S", existingCount);
 
   // Snapshot product terms at opening time so later edits to the product never change this account's terms.
   const termsSnapshot = product ? { productId: product.id, name: product.name, shortName: product.shortName, nominalAnnualRateBps: product.nominalAnnualRateBps, minOpeningBalanceMinor: product.minOpeningBalanceMinor.toString() } : undefined;
