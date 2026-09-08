@@ -6,6 +6,7 @@ import Decimal from "decimal.js";
 import type { PrismaClient } from "@prisma/client";
 
 import { deterministicUuid } from "./import-foundation";
+import { normalizeLegacyLoanTransactionType } from "./backfill-ledger-bootstrap";
 
 /**
  * Imports groups, group membership, and full loan history (schedule + transactions)
@@ -207,7 +208,7 @@ async function importLoans(prisma: PrismaClient, root: string, organizationId: s
           const created = await transaction.loanTransaction.create({
             data: {
               loanId: createdLoan.id,
-              transactionType: String((txn.type as Record<string, unknown> | undefined)?.code ?? "unknown"),
+              transactionType: normalizeLegacyLoanTransactionType(String((txn.type as Record<string, unknown> | undefined)?.code ?? "unknown")),
               businessDate: dateFromParts(txn.date) ?? new Date(),
               settlementCurrency: currency,
               settlementChannel: "CASH",
@@ -232,7 +233,7 @@ async function importLoans(prisma: PrismaClient, root: string, organizationId: s
           const reversal = await transaction.loanTransaction.create({
             data: {
               loanId: createdLoan.id,
-              transactionType: `${originalType}.reversal`,
+              transactionType: normalizeLegacyLoanTransactionType(`${originalType}.reversal`),
               businessDate: dateFromParts(txn.date) ?? new Date(),
               settlementCurrency: currency,
               settlementChannel: "CASH",

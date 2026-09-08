@@ -1,6 +1,7 @@
 import type { AccountType, OwnershipType, PriceStatus } from "@prisma/client";
 
 import { prisma } from "@/lib/prisma";
+import { transactionTypeVariants } from "@/lib/loan-transaction-type-variants";
 export { formatMinor } from "@/modules/money/domain/format-minor";
 import { getUserDataScope, officeWhere } from "@/modules/identity/application/data-scope";
 
@@ -62,7 +63,7 @@ export async function loadDashboard(userId: string) {
     prisma.loanTransaction.aggregate({
       where: {
         businessDate: { gte: today, lt: tomorrow },
-        transactionType: "REPAYMENT",
+        transactionType: { in: transactionTypeVariants("REPAYMENT") },
         loan: loanScope,
       },
       _sum: { denominationAmountMinor: true },
@@ -71,7 +72,7 @@ export async function loadDashboard(userId: string) {
     prisma.loanTransaction.findMany({
       where: {
         businessDate: { gte: today, lt: tomorrow },
-        transactionType: "DISBURSEMENT",
+        transactionType: { in: transactionTypeVariants("DISBURSEMENT") },
         loan: loanScope,
       },
       select: { loanId: true, denominationAmountMinor: true },

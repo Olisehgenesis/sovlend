@@ -6,6 +6,7 @@ import { redirect } from "next/navigation";
 
 import { Breadcrumbs } from "@/components/breadcrumbs";
 import { auth } from "@/lib/auth";
+import { transactionTypeVariants } from "@/lib/loan-transaction-type-variants";
 import { prisma } from "@/lib/prisma";
 import { getUserDataScope, officeWhere } from "@/modules/identity/application/data-scope";
 import { formatMinor } from "@/modules/money/domain/format-minor";
@@ -23,7 +24,7 @@ export default async function LoansDisbursedTodayPage() {
   const transactions = await prisma.loanTransaction.findMany({
     where: {
       businessDate: { gte: today, lt: tomorrow },
-      transactionType: "DISBURSEMENT",
+      transactionType: { in: transactionTypeVariants("DISBURSEMENT") },
       loan: {
         office: { organizationId: userScope.organizationId },
         ...officeWhere(userScope),
