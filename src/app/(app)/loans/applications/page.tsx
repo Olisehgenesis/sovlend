@@ -53,7 +53,9 @@ export default async function LoanApplicationsPage({
 
   const where: Prisma.LoanApplicationWhereInput = {
     office: { organizationId: scope.organizationId },
-    ...officeWhere(scope),
+    // LoanApplication has no loanOfficerId column -- for officer-scoped users, narrow to
+    // applications they submitted themselves instead of the whole office.
+    ...(scope.officerUserId ? { submittedById: scope.officerUserId } : officeWhere(scope)),
     ...(searchFilters.length > 0 ? { AND: [{ OR: searchFilters }] } : {}),
   };
 

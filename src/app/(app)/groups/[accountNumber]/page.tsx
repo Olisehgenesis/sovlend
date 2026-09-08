@@ -7,7 +7,7 @@ import { Breadcrumbs } from "@/components/breadcrumbs";
 import { AddGroupMemberForm, AddGroupNoteForm } from "@/components/group-record-forms";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { getUserDataScope, officeWhere } from "@/modules/identity/application/data-scope";
+import { getUserDataScope, groupScopeWhere } from "@/modules/identity/application/data-scope";
 import { formatMinor } from "@/modules/money/domain/format-minor";
 
 const tabs = [
@@ -67,7 +67,7 @@ export default async function GroupDetailPage({ params, searchParams }: { params
   const activeTab: TabKey = tabs.some((item) => item.key === tab) ? (tab as TabKey) : "general";
 
   const group = await prisma.group.findFirst({
-    where: { accountNumber, organizationId: scope.organizationId, ...officeWhere(scope) },
+    where: { accountNumber, organizationId: scope.organizationId, ...groupScopeWhere(scope) },
     include: {
       office: { select: { name: true } },
       assignedOfficer: { select: { name: true } },

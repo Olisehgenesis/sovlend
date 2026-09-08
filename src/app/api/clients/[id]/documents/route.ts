@@ -5,7 +5,7 @@ import { auth } from "@/lib/auth";
 import { storeDocumentBytes } from "@/lib/document-storage";
 import { prisma } from "@/lib/prisma";
 import { AuthorizationService, PermissionDeniedError } from "@/modules/identity/application/authorization-service";
-import { getUserDataScope, officeWhere } from "@/modules/identity/application/data-scope";
+import { clientScopeWhere, getUserDataScope } from "@/modules/identity/application/data-scope";
 import { permissions } from "@/modules/identity/domain/permissions";
 
 const MAX_BYTES = 15 * 1024 * 1024;
@@ -16,7 +16,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   const scope = await getUserDataScope(prisma, session.user.id);
   if (!scope) return NextResponse.json({ error: "Workspace assignment required" }, { status: 403 });
   const { id } = await params;
-  const client = await prisma.client.findFirst({ where: { id, organizationId: scope.organizationId, ...officeWhere(scope) } });
+  const client = await prisma.client.findFirst({ where: { id, organizationId: scope.organizationId, ...clientScopeWhere(scope) } });
   if (!client) return NextResponse.json({ error: "Client not found" }, { status: 404 });
 
   try {

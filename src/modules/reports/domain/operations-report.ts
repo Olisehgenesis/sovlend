@@ -2,7 +2,9 @@ import type { ClientStatus, KycStatus, LoanStatus, PrismaClient } from "@prisma/
 
 import { AuthorizationService } from "@/modules/identity/application/authorization-service";
 import {
+  clientScopeWhere,
   getUserDataScope,
+  loanScopeWhere,
   officeWhere,
   type UserDataScope,
 } from "@/modules/identity/application/data-scope";
@@ -428,7 +430,7 @@ export async function loadCollectionByOfficerReport(
     prisma.loan.findMany({
       where: {
         office: { organizationId: scope.organizationId },
-        ...officeWhere(scope),
+        ...loanScopeWhere(scope),
         status: { in: reportableLoanStatuses },
       },
       select: {
@@ -443,7 +445,7 @@ export async function loadCollectionByOfficerReport(
         dueOn: { lte: businessDate },
         loan: {
           office: { organizationId: scope.organizationId },
-          ...officeWhere(scope),
+          ...loanScopeWhere(scope),
           status: { in: reportableLoanStatuses },
         },
       },
@@ -1048,7 +1050,7 @@ export async function loadCollectionsReport(
       transactionType: { in: transactionTypeVariants("REPAYMENT") },
       loan: {
         office: { organizationId: scope.organizationId },
-        ...officeWhere(scope),
+        ...loanScopeWhere(scope),
         ...(officeId ? { officeId } : {}),
       },
       ...(range.startDate ? { businessDate: { gte: range.startDate } } : {}),
@@ -1331,7 +1333,7 @@ export async function loadClientListingReport(
   const clients = await prisma.client.findMany({
     where: {
       organizationId: scope.organizationId,
-      ...officeWhere(scope),
+      ...clientScopeWhere(scope),
       ...(officeId ? { officeId } : {}),
     },
     select: {

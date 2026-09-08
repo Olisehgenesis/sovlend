@@ -10,6 +10,7 @@ import { prisma } from "@/lib/prisma";
 import { formatMinor } from "@/modules/reporting/application/dashboard";
 import {
   getUserDataScope,
+  loanScopeWhere,
   officeWhere,
 } from "@/modules/identity/application/data-scope";
 
@@ -119,7 +120,7 @@ export default async function LoansPage({
 
   const loanWhere: Prisma.LoanWhereInput = {
     office: { organizationId: userScope.organizationId },
-    ...officeWhere(userScope),
+    ...loanScopeWhere(userScope),
     status: requestedStatus ? requestedStatus : { in: activeLoanStatuses },
     ...(searchFilters.length > 0 ? { AND: [{ OR: searchFilters }] } : {}),
   };
@@ -132,7 +133,9 @@ export default async function LoansPage({
     prisma.loanApplication.findMany({
       where: {
         office: { organizationId: userScope.organizationId },
-        ...officeWhere(userScope),
+        // LoanApplication has no loanOfficerId column -- for officer-scoped users, narrow to
+        // applications they submitted themselves instead of the whole office.
+        ...(userScope.officerUserId ? { submittedById: userScope.officerUserId } : officeWhere(userScope)),
       },
       include: { client: true, group: true, product: true },
       orderBy: { createdAt: "desc" },

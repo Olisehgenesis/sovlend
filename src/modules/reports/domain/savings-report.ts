@@ -1,6 +1,6 @@
 import type { PrismaClient } from "@prisma/client";
 
-import { officeWhere, type UserDataScope } from "@/modules/identity/application/data-scope";
+import { clientScopeWhere, groupScopeWhere, officeWhere, type UserDataScope } from "@/modules/identity/application/data-scope";
 import { rowsToCsv } from "@/modules/lending/domain/loan-export";
 
 /**
@@ -74,8 +74,8 @@ export async function loadSavingsAccountListingReport(
   const accounts = await prisma.savingsAccount.findMany({
     where: {
       OR: [
-        { client: { is: { organizationId: scope.organizationId, ...officeWhere(scope), ...(officeId ? { officeId } : {}) } } },
-        { group: { is: { organizationId: scope.organizationId, ...officeWhere(scope), ...(officeId ? { officeId } : {}) } } },
+        { client: { is: { organizationId: scope.organizationId, ...clientScopeWhere(scope), ...(officeId ? { officeId } : {}) } } },
+        { group: { is: { organizationId: scope.organizationId, ...groupScopeWhere(scope), ...(officeId ? { officeId } : {}) } } },
       ],
     },
     select: {

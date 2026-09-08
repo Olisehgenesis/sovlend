@@ -9,7 +9,7 @@ import {
   AuthorizationService,
   PermissionDeniedError,
 } from "@/modules/identity/application/authorization-service";
-import { getUserDataScope, officeWhere } from "@/modules/identity/application/data-scope";
+import { getUserDataScope, loanScopeWhere } from "@/modules/identity/application/data-scope";
 import { permissions } from "@/modules/identity/domain/permissions";
 
 const scopeLabels: Record<string, string> = {
@@ -89,7 +89,7 @@ export default async function LoanExportJobPage({
         where: {
           id: singleLoanId,
           office: { organizationId: scope.organizationId },
-          ...officeWhere(scope),
+          ...loanScopeWhere(scope),
         },
         select: { id: true, accountNumber: true },
       })

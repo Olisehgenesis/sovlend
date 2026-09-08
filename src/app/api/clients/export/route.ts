@@ -4,7 +4,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { AuthorizationService, PermissionDeniedError } from "@/modules/identity/application/authorization-service";
-import { getUserDataScope, officeWhere } from "@/modules/identity/application/data-scope";
+import { clientScopeWhere, getUserDataScope } from "@/modules/identity/application/data-scope";
 import { permissions } from "@/modules/identity/domain/permissions";
 
 export async function GET() {
@@ -20,7 +20,7 @@ export async function GET() {
   }
 
   const clients = await prisma.client.findMany({
-    where: { organizationId: scope.organizationId, ...officeWhere(scope) },
+    where: { organizationId: scope.organizationId, ...clientScopeWhere(scope) },
     include: { office: { select: { name: true } } },
     orderBy: [{ firstName: "asc" }, { lastName: "asc" }],
   });

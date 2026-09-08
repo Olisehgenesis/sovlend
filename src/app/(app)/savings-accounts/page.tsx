@@ -8,7 +8,7 @@ import { Breadcrumbs } from "@/components/breadcrumbs";
 import { LiveSearchInput } from "@/components/live-search-input";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { getUserDataScope, officeWhere } from "@/modules/identity/application/data-scope";
+import { clientScopeWhere, getUserDataScope, groupScopeWhere } from "@/modules/identity/application/data-scope";
 import { formatMinor } from "@/modules/money/domain/format-minor";
 
 const pageSize = 25;
@@ -78,11 +78,11 @@ export default async function SavingsAccountsPage({
 
   const clientScope: Prisma.ClientWhereInput = {
     organizationId: userScope.organizationId,
-    ...officeWhere(userScope),
+    ...clientScopeWhere(userScope),
   };
   const groupScope: Prisma.GroupWhereInput = {
     organizationId: userScope.organizationId,
-    ...officeWhere(userScope),
+    ...groupScopeWhere(userScope),
   };
 
   const searchFilters: Prisma.SavingsAccountWhereInput[] = [];

@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { getUserDataScope, officeWhere } from "@/modules/identity/application/data-scope";
+import { getUserDataScope, groupScopeWhere } from "@/modules/identity/application/data-scope";
 
 export default async function GroupsPage() {
   const session = await auth.api.getSession({ headers: await headers() });
@@ -13,7 +13,7 @@ export default async function GroupsPage() {
   const scope = await getUserDataScope(prisma, session.user.id);
   if (!scope) redirect("/");
   const groups = await prisma.group.findMany({
-    where: { organizationId: scope.organizationId, ...officeWhere(scope) },
+    where: { organizationId: scope.organizationId, ...groupScopeWhere(scope) },
     include: { office: { select: { name: true } }, assignedOfficer: { select: { name: true } }, _count: { select: { members: true } } },
     orderBy: { createdAt: "desc" },
   });

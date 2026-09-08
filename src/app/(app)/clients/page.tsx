@@ -6,7 +6,7 @@ import { redirect } from "next/navigation";
 import { LiveSearchInput } from "@/components/live-search-input";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { getUserDataScope, officeWhere } from "@/modules/identity/application/data-scope";
+import { clientScopeWhere, getUserDataScope } from "@/modules/identity/application/data-scope";
 
 export default async function ClientsPage({ searchParams }: { searchParams: Promise<{ query?: string; page?: string }> }) {
   const session = await auth.api.getSession({ headers: await headers() });
@@ -17,7 +17,7 @@ export default async function ClientsPage({ searchParams }: { searchParams: Prom
   const query = params.query?.trim() ?? "";
   const page = Math.max(1, Number.parseInt(params.page ?? "1", 10) || 1);
   const pageSize = 25;
-  const scope = { organizationId: userScope.organizationId, ...officeWhere(userScope) };
+  const scope = { organizationId: userScope.organizationId, ...clientScopeWhere(userScope) };
   const search = query ? { OR: [{ firstName: { contains: query, mode: "insensitive" as const } }, { lastName: { contains: query, mode: "insensitive" as const } }, { accountNumber: { contains: query } }, { mobileNumber: { contains: query } }] } : {};
   const [clients, total] = await Promise.all([
     prisma.client.findMany({ where: { ...scope, ...search }, include: { office: { select: { name: true } } }, orderBy: [{ firstName: "asc" }, { lastName: "asc" }], skip: (page - 1) * pageSize, take: pageSize }),

@@ -4,7 +4,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { readDocumentBytes } from "@/lib/document-storage";
 import { prisma } from "@/lib/prisma";
-import { getUserDataScope, officeWhere } from "@/modules/identity/application/data-scope";
+import { clientScopeWhere, getUserDataScope, loanScopeWhere } from "@/modules/identity/application/data-scope";
 
 export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await auth.api.getSession({ headers: await headers() });
@@ -12,13 +12,12 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   const scope = await getUserDataScope(prisma, session.user.id);
   if (!scope) return NextResponse.json({ error: "Workspace assignment required" }, { status: 403 });
   const { id } = await params;
-  const inOfficeScope = officeWhere(scope);
   const document = await prisma.document.findFirst({
     where: {
       id,
       OR: [
-        { client: { organizationId: scope.organizationId, ...inOfficeScope } },
-        { loan: { office: { organizationId: scope.organizationId }, ...inOfficeScope } },
+        { client: { organizationId: scope.organizationId, ...clientScopeWhere(scope) } },
+        { loan: { office: { organizationId: scope.organizationId }, ...loanScopeWhere(scope) } },
       ],
     },
   });
