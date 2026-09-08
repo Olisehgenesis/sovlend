@@ -225,6 +225,7 @@ model User {
   organizationId             String?                    @db.Uuid
   officeId                   String?                    @db.Uuid
   systemRole                 UserRole                   @default(CLIENT)
+  mustChangePassword         Boolean                    @default(false)
   organization               Organization?              @relation(fields: [organizationId], references: [id])
   office                     Office?                    @relation(fields: [officeId], references: [id])
   sessions                   Session[]
