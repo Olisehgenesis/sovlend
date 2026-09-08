@@ -5,6 +5,7 @@ import Decimal from "decimal.js";
 import { prisma as defaultPrisma } from "@/lib/prisma";
 
 import type { ReadOnlyFineractClient } from "./fineract-client";
+import { normalizeLegacyLoanTransactionType } from "./backfill-ledger-bootstrap";
 
 type PrismaLike = typeof defaultPrisma;
 
@@ -169,7 +170,7 @@ async function importLegacyLoanAccounts(
           await transaction.loanTransaction.create({
             data: {
               loanId: createdLoan.id,
-              transactionType: String((txn.type as Record<string, unknown> | undefined)?.code ?? "unknown"),
+              transactionType: normalizeLegacyLoanTransactionType(String((txn.type as Record<string, unknown> | undefined)?.code ?? "unknown")),
               businessDate: dateFromParts(txn.date) ?? new Date(),
               settlementCurrency: currency,
               settlementChannel: "CASH",

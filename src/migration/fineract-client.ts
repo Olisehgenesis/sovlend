@@ -128,6 +128,18 @@ export class ReadOnlyFineractClient {
     return response.json();
   }
 
+  /** Lightweight loan lookup (no schedule/transactions) — used to read attribution fields like loanOfficerId cheaply. */
+  async getLoanSummary(loanId: number): Promise<unknown> {
+    const response = await this.fetchWithRetry(this.buildUrl(`loans/${loanId}`), "application/json");
+    return response.json();
+  }
+
+  /** Flat list of all staff (loan officers, tellers, etc.) for the tenant. */
+  async getStaff(): Promise<unknown> {
+    const response = await this.fetchWithRetry(this.buildUrl("staff"), "application/json");
+    return response.json();
+  }
+
   async downloadClientDocument(clientId: number, documentId: number): Promise<{ bytes: Buffer; contentType: string }> {
     const response = await this.fetchWithRetry(this.buildUrl(`clients/${clientId}/documents/${documentId}/attachment`), "*/*");
     const arrayBuffer = await response.arrayBuffer();

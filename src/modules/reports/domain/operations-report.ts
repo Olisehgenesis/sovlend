@@ -7,6 +7,7 @@ import {
   type UserDataScope,
 } from "@/modules/identity/application/data-scope";
 import type { PermissionCode } from "@/modules/identity/domain/permissions";
+import { transactionTypeVariants } from "@/lib/loan-transaction-type-variants";
 import { rowsToCsv } from "@/modules/lending/domain/loan-export";
 import { loadPortfolioLoans, type AgingBucketKey, type BranchPortfolioBucketKey, branchPortfolioBucket, branchPortfolioBucketLabels, branchPortfolioBucketOrder } from "@/modules/reports/domain/risk-report";
 
@@ -1020,7 +1021,7 @@ export async function loadCollectionsReport(
 
   const transactions = await prisma.loanTransaction.findMany({
     where: {
-      transactionType: "REPAYMENT",
+      transactionType: { in: transactionTypeVariants("REPAYMENT") },
       loan: {
         office: { organizationId: scope.organizationId },
         ...officeWhere(scope),
