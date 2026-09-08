@@ -132,6 +132,13 @@ type PortfolioLoanSnapshot = {
   productName: string;
   disbursedOn: Date | null;
   maturesOn: Date | null;
+  annualRateBps: number;
+  // Repaid-to-date per component (sum of installment *PaidMinor across the whole schedule),
+  // matching iLend's canned "Active Loans" report columns (Principal/Interest/Fees/Penalties Repaid).
+  principalRepaidMinor: bigint;
+  interestRepaidMinor: bigint;
+  feesRepaidMinor: bigint;
+  penaltiesRepaidMinor: bigint;
   outstandingPrincipalMinor: bigint;
   outstandingInterestMinor: bigint;
   outstandingFeesMinor: bigint;
@@ -887,7 +894,7 @@ export async function loadPortfolioLoans(
       disbursedOn: true,
       maturesOn: true,
       office: { select: { name: true } },
-      product: { select: { name: true } },
+      product: { select: { name: true, annualRateBps: true } },
       loanOfficerId: true,
       loanOfficer: { select: { name: true } },
       client: { select: { firstName: true, middleName: true, lastName: true } },
@@ -931,6 +938,10 @@ export async function loadPortfolioLoans(
     const overdueInterestMinor = sumBigInt(overdueInstallments.map(outstandingInterestMinor));
     const overdueFeesMinor = sumBigInt(overdueInstallments.map(outstandingFeesMinor));
     const overduePenaltiesMinor = sumBigInt(overdueInstallments.map(outstandingPenaltiesMinor));
+    const principalRepaidMinor = sumBigInt(loan.installments.map((installment) => installment.principalPaidMinor));
+    const interestRepaidMinor = sumBigInt(loan.installments.map((installment) => installment.interestPaidMinor));
+    const feesRepaidMinor = sumBigInt(loan.installments.map((installment) => installment.feesPaidMinor));
+    const penaltiesRepaidMinor = sumBigInt(loan.installments.map((installment) => installment.penaltiesPaidMinor));
 
     return {
       id: loan.id,
@@ -946,6 +957,11 @@ export async function loadPortfolioLoans(
       productName: loan.product.name,
       disbursedOn: loan.disbursedOn,
       maturesOn: loan.maturesOn,
+      annualRateBps: loan.product.annualRateBps,
+      principalRepaidMinor,
+      interestRepaidMinor,
+      feesRepaidMinor,
+      penaltiesRepaidMinor,
       outstandingPrincipalMinor: loanOutstandingPrincipalMinor,
       outstandingInterestMinor: loanOutstandingInterestMinor,
       outstandingFeesMinor: loanOutstandingFeesMinor,

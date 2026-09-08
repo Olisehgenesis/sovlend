@@ -142,51 +142,79 @@ export default async function ActiveLoansPage({
             <table className="clickable-rows">
               <thead>
                 <tr>
-                  <th>Borrower</th>
-                  <th>Loan account</th>
-                  <th>Office</th>
-                  <th>Officer</th>
+                  <th>Office/Branch</th>
+                  <th>Currency</th>
+                  <th>Loan Officer</th>
+                  <th>Client</th>
+                  <th>Loan Account No.</th>
                   <th>Product</th>
                   <th>Status</th>
-                  <th>Principal</th>
-                  <th>Outstanding principal</th>
-                  <th>Total outstanding</th>
+                  <th>Loan Amount</th>
+                  <th>Annual Nominal Interest Rate</th>
+                  <th>Disbursed Date</th>
+                  <th>Expected Matured On</th>
+                  <th>Principal Repaid</th>
+                  <th>Principal Outstanding</th>
+                  <th>Principal Overdue</th>
+                  <th>Interest Repaid</th>
+                  <th>Interest Outstanding</th>
+                  <th>Interest Overdue</th>
+                  <th>Fees Repaid</th>
+                  <th>Fees Outstanding</th>
+                  <th>Fees Overdue</th>
+                  <th>Penalties Repaid</th>
+                  <th>Penalties Outstanding</th>
+                  <th>Penalties Overdue</th>
+                  <th>Total Outstanding</th>
                   <th>Days overdue</th>
-                  <th>Disbursed</th>
-                  <th>Matures</th>
                 </tr>
               </thead>
               <tbody>
                 {report.rows.map((row) => (
                   <tr key={row.loanId}>
+                    <td>{row.officeName}</td>
+                    <td>{row.currencyCode}</td>
+                    <td>{row.loanOfficerName}</td>
                     <td>
                       <strong>{row.borrowerName}</strong>
                       <Link aria-label={`Open loan ${row.accountNumber}`} className="row-link" href={`/loans/${row.loanId}`} />
                     </td>
                     <td className="mono">{row.accountNumber}</td>
-                    <td>{row.officeName}</td>
-                    <td>{row.loanOfficerName}</td>
                     <td>{row.productName}</td>
                     <td>
                       <span className={`status ${loanStatusTone(row.status)}`}>{formatLoanStatus(row.status)}</span>
                     </td>
                     <td>{formatMinor(row.principalMinor, row.currencyCode)}</td>
-                    <td>{formatMinor(row.outstandingPrincipalMinor, row.currencyCode)}</td>
-                    <td>{formatMinor(row.outstandingTotalMinor, row.currencyCode)}</td>
-                    <td>{row.daysOverdue.toLocaleString()}</td>
+                    <td>{(row.annualRateBps / 100).toFixed(2)}%</td>
                     <td>{row.disbursedOn ? formatReportDate(row.disbursedOn) : "—"}</td>
                     <td>{row.maturesOn ? formatReportDate(row.maturesOn) : "—"}</td>
+                    <td>{formatMinor(row.principalRepaidMinor, row.currencyCode)}</td>
+                    <td>{formatMinor(row.outstandingPrincipalMinor, row.currencyCode)}</td>
+                    <td>{formatMinor(row.overduePrincipalMinor, row.currencyCode)}</td>
+                    <td>{formatMinor(row.interestRepaidMinor, row.currencyCode)}</td>
+                    <td>{formatMinor(row.outstandingInterestMinor, row.currencyCode)}</td>
+                    <td>{formatMinor(row.overdueInterestMinor, row.currencyCode)}</td>
+                    <td>{formatMinor(row.feesRepaidMinor, row.currencyCode)}</td>
+                    <td>{formatMinor(row.outstandingFeesMinor, row.currencyCode)}</td>
+                    <td>{formatMinor(row.overdueFeesMinor, row.currencyCode)}</td>
+                    <td>{formatMinor(row.penaltiesRepaidMinor, row.currencyCode)}</td>
+                    <td>{formatMinor(row.outstandingPenaltiesMinor, row.currencyCode)}</td>
+                    <td>{formatMinor(row.overduePenaltiesMinor, row.currencyCode)}</td>
+                    <td>{formatMinor(row.outstandingTotalMinor, row.currencyCode)}</td>
+                    <td>{row.daysOverdue.toLocaleString()}</td>
                   </tr>
                 ))}
               </tbody>
               <tfoot>
                 {report.totals.map((row) => (
                   <tr key={`total-${row.currencyCode}`}>
-                    <th colSpan={6}>Grand total ({row.loanCount.toLocaleString()} loans)</th>
+                    <th colSpan={7}>Grand total ({row.loanCount.toLocaleString()} loans)</th>
                     <th>{formatMinor(row.principalMinor, row.currencyCode)}</th>
+                    <th colSpan={4}>{row.currencyCode}</th>
                     <th>{formatMinor(row.outstandingPrincipalMinor, row.currencyCode)}</th>
+                    <th colSpan={10} />
                     <th>{formatMinor(row.outstandingTotalMinor, row.currencyCode)}</th>
-                    <th colSpan={3}>{row.currencyCode}</th>
+                    <th />
                   </tr>
                 ))}
               </tfoot>

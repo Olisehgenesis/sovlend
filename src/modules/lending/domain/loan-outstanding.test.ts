@@ -8,6 +8,7 @@ import {
   isLoanSettledStatus,
   loanOutstandingMinor,
   loanWrittenOffMinor,
+  principalOutstandingMinor,
 } from "./loan-outstanding";
 
 const baseInstallment = {
@@ -98,5 +99,24 @@ describe("isLoanSettledStatus", () => {
     expect(isLoanSettledStatus("ACTIVE")).toBe(false);
     expect(isLoanSettledStatus("IN_ARREARS")).toBe(false);
     expect(isLoanSettledStatus("OVERPAID")).toBe(false);
+  });
+});
+
+describe("principalOutstandingMinor", () => {
+  it("ignores interest/fees/penalties, unlike loanOutstandingMinor", () => {
+    // Interest is fully due and unpaid here, but PAR only cares about the principal leg.
+    const installments = [{ principalDueMinor: 100_000n, principalPaidMinor: 40_000n }];
+    expect(principalOutstandingMinor(installments, 0n)).toBe(60_000n);
+  });
+
+  it("subtracts waived principal and never goes negative", () => {
+    const installments = [{ principalDueMinor: 100_000n, principalPaidMinor: 40_000n, principalWaivedMinor: 60_000n }];
+    expect(principalOutstandingMinor(installments, 0n)).toBe(0n);
+    expect(principalOutstandingMinor(installments, 500_000n)).toBe(0n);
+  });
+
+  it("subtracts written-off principal at the loan level, matching loanOutstandingMinor's identity", () => {
+    const installments = [{ principalDueMinor: 100_000n, principalPaidMinor: 10_000n }];
+    expect(principalOutstandingMinor(installments, 90_000n)).toBe(0n);
   });
 });

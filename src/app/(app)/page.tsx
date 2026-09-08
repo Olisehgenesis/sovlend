@@ -17,6 +17,12 @@ const ugxCurrencyFormatter = new Intl.NumberFormat("en-UG", {
   maximumFractionDigits: 0,
 });
 
+/** Rounds a UGX minor-unit amount to whole shillings — no cents shown, matching how UGX is
+ * actually used day-to-day (unlike formatMinor, which always shows 2 decimal places). */
+function formatWholeUgx(amountMinor: bigint) {
+  return ugxCurrencyFormatter.format(Number(amountMinor) / 100);
+}
+
 export default async function Home() {
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session) redirect("/sign-in");
@@ -59,8 +65,8 @@ export default async function Home() {
   const metricCards = [
     {
       href: "/loans",
-      label: "Active portfolio",
-      value: formatMinor(dashboard.metrics.portfolioMinor, dashboard.baseCurrency),
+      label: "Principal outstanding",
+      value: formatMinor(dashboard.metrics.principalOutstandingMinor, dashboard.baseCurrency),
       detail: `${dashboard.metrics.activeLoanCount} active loans`,
     },
     {
@@ -85,7 +91,7 @@ export default async function Home() {
       href: "/loans?status=IN_ARREARS",
       label: "Portfolio at risk",
       value: `${(dashboard.metrics.portfolioAtRiskBps / 100).toFixed(2)}%`,
-      detail: "Current overdue exposure",
+      detail: `${formatWholeUgx(dashboard.metrics.principalOverdueMinor)} principal overdue`,
     },
   ];
 
