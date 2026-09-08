@@ -26,12 +26,17 @@
     "migration:backfill-ledger-collections": "tsx src/migration/backfill-ledger-collections.ts",
     "migration:backfill-ledger-writeoffs": "tsx src/migration/backfill-ledger-writeoffs.ts",
     "migration:backfill-ledger-savings": "tsx src/migration/backfill-ledger-savings.ts",
+    "migration:seed-funds": "tsx src/migration/seed-funds.ts",
+    "migration:backfill-loan-funds": "tsx src/migration/backfill-loan-funds.ts",
+    "migration:seed-charge-definitions": "tsx src/migration/seed-charge-definitions.ts",
     "admin:bootstrap": "tsx src/scripts/bootstrap-admin.ts",
     "permissions:reseed": "tsx src/scripts/reseed-permissions.ts"
   },
   "dependencies": {
     "@better-auth/passkey": "^1.7.2",
     "@better-auth/prisma-adapter": "^1.7.2",
+    "@dicebear/collection": "^9.4.2",
+    "@dicebear/core": "^9.4.2",
     "@prisma/client": "6.16.2",
     "archiver": "^7.0.1",
     "better-auth": "^1.7.2",

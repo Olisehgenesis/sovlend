@@ -39,23 +39,24 @@ export function LoanCollateralPanel({ loanId, canManage, items }: { loanId: stri
     const result = await response.json().catch(() => ({}));
     setPendingCreate(false);
     if (!response.ok) {
-      toast.error(result.error ?? "Could not add collateral");
+      toast.error(result.error ?? "Could not add this collateral item");
       return;
     }
-    toast.success("Collateral added");
+    toast.success("Collateral added to the loan record");
     router.refresh();
   }
 
   async function removeCollateral(collateralId: string) {
+    if (!window.confirm("Remove this collateral item from the loan record? Do this only if it was added by mistake or is no longer tied to the loan.")) return;
     setPendingDelete(collateralId);
     const response = await fetch(`/api/loans/${loanId}/collateral/${collateralId}`, { method: "DELETE" });
     const result = await response.json().catch(() => ({}));
     setPendingDelete(null);
     if (!response.ok) {
-      toast.error(result.error ?? "Could not remove collateral");
+      toast.error(result.error ?? "Could not remove this collateral item");
       return;
     }
-    toast.success("Collateral removed");
+    toast.success("Collateral removed from the loan record");
     router.refresh();
   }
 

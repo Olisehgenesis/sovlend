@@ -9,6 +9,8 @@ import { LoanChargesPanel } from "@/components/loan-charge-panel";
 import { LoanDocumentsPanel, LoanNotesPanel } from "@/components/loan-record-forms";
 import { LoanOfficerAssignment } from "@/components/loan-officer-assignment";
 import { LoanServiceActionsPanel } from "@/components/loan-service-actions-panel";
+import { DisburseLoanButton } from "@/components/disburse-loan-button";
+import { RecordPaymentButton } from "@/components/record-payment-button";
 import { RepaymentForm } from "@/components/repayment-form";
 import { Breadcrumbs } from "@/components/breadcrumbs";
 import { auth } from "@/lib/auth";
@@ -16,7 +18,6 @@ import { prisma } from "@/lib/prisma";
 import { AuthorizationService } from "@/modules/identity/application/authorization-service";
 import { getUserDataScope } from "@/modules/identity/application/data-scope";
 import { permissions } from "@/modules/identity/domain/permissions";
-import { STAFF_SYSTEM_ROLES } from "@/modules/identity/domain/staff-roles";
 import { formatMinor } from "@/modules/money/domain/format-minor";
 import {
   installmentOutstandingMinor,
@@ -78,6 +79,7 @@ export default async function LoanPage({
       group: { select: { name: true, accountNumber: true } },
       office: { select: { name: true } },
       loanOfficer: { select: { name: true } },
+      fund: { select: { name: true } },
       product: true,
       charges: { orderBy: { createdAt: "desc" } },
       collateralItems: { orderBy: { createdAt: "desc" } },
@@ -146,7 +148,7 @@ export default async function LoanPage({
     orderBy: [{ type: "asc" }, { name: "asc" }],
   });
   const officeOfficers = await prisma.user.findMany({
-    where: { organizationId: scope.organizationId, officeId: loan.officeId, systemRole: { in: [...STAFF_SYSTEM_ROLES] } },
+    where: { organizationId: scope.organizationId, officeId: loan.officeId, systemRole: "LOAN_OFFICER" },
     select: { id: true, name: true },
     orderBy: { name: "asc" },
   });
@@ -155,10 +157,27 @@ export default async function LoanPage({
     include: { requestedBy: { select: { name: true } }, decidedBy: { select: { name: true } } },
     orderBy: { requestedAt: "desc" },
   });
+  const savingsAccounts = loan.clientId
+    ? await prisma.savingsAccount.findMany({
+        where: {
+          clientId: loan.clientId,
+          status: "ACTIVE",
+          currencyCode: loan.denominationCurrency,
+        },
+        select: {
+          id: true,
+          accountNumber: true,
+          isDefault: true,
+          product: { select: { name: true } },
+        },
+        orderBy: [{ isDefault: "desc" }, { createdAt: "asc" }],
+      })
+    : [];
   const hasPendingDisbursement =
     loan.status === "ACTIVE" &&
     Boolean(loan.disbursedOn) &&
     loan.transactions.every((item) => item.transactionType === "DISBURSEMENT");
+  const canDisburseFromHeader = loan.status === "APPROVED" && !loan.disbursedOn;
   const isOpenLoan = ["ACTIVE", "IN_ARREARS", "OVERPAID"].includes(loan.status);
   const nextDueInstallment = [...loan.installments]
     .sort((left, right) => left.dueOn.getTime() - right.dueOn.getTime() || left.installmentNumber - right.installmentNumber)
@@ -183,11 +202,32 @@ export default async function LoanPage({
             {loan.client ? `${loan.client.firstName} ${loan.client.lastName}` : `Group: ${loan.group?.name ?? "Unknown"}`} · {loan.product.name}
           </p>
         </div>
-        <span
-          className={`status status-prominent ${loan.status === "ACTIVE" ? "up-to-date" : loan.status === "IN_ARREARS" ? "in-arrears" : "review"}`}
-        >
-          {loan.status.replaceAll("_", " ")}
-        </span>
+        <div className="header-actions">
+          {canDisburseFromHeader ? (
+            <DisburseLoanButton
+              loanId={loan.id}
+              savingsAccounts={savingsAccounts.map((account) => ({
+                id: account.id,
+                accountNumber: account.accountNumber,
+                isDefault: account.isDefault,
+                productName: account.product?.name ?? null,
+              }))}
+              settlementAccounts={settlementAccounts}
+            />
+          ) : null}
+          {isOpenLoan ? (
+            <RecordPaymentButton
+              defaultAmountMinor={nextDueAmountMinor.toString()}
+              loanId={loan.id}
+              settlementAccounts={settlementAccounts}
+            />
+          ) : null}
+          <span
+            className={`status status-prominent ${loan.status === "ACTIVE" ? "up-to-date" : loan.status === "IN_ARREARS" ? "in-arrears" : "review"}`}
+          >
+            {loan.status.replaceAll("_", " ")}
+          </span>
+        </div>
       </header>
       <section className="loan-summary-metrics">
         <article>
@@ -260,6 +300,10 @@ export default async function LoanPage({
               <dd>{loan.product.name}</dd>
             </div>
             <div>
+              <dt>Fund</dt>
+              <dd>{loan.fund?.name ?? "Unassigned"}</dd>
+            </div>
+            <div>
               <dt>Office</dt>
               <dd>{loan.office?.name ?? loan.client?.office?.name ?? "—"}</dd>
             </div>
@@ -298,6 +342,16 @@ export default async function LoanPage({
                   snapshotString(loan.termsSnapshot, "interestMethod") ??
                   loan.product.interestMethod
                 ).replaceAll("_", " ")}
+              </dd>
+            </div>
+            <div>
+              <dt>Monitoring fee</dt>
+              <dd>
+                {(
+                  (snapshotNumber(loan.termsSnapshot, "monitoringFeeAnnualRateBps") ??
+                    loan.product.monitoringFeeAnnualRateBps) / 100
+                ).toFixed(2)}
+                % per annum
               </dd>
             </div>
             <div>

@@ -15,7 +15,7 @@ import {
 } from "@/modules/identity/application/data-scope";
 
 const activeLoanStatuses: LoanStatus[] = ["ACTIVE", "IN_ARREARS"];
-const supportedStatusFilters = ["IN_ARREARS", "OVERPAID", "WRITTEN_OFF", "CLOSED"] as const;
+const supportedStatusFilters = ["APPROVED", "IN_ARREARS", "OVERPAID", "WRITTEN_OFF", "CLOSED"] as const;
 type SupportedLoanStatusFilter = (typeof supportedStatusFilters)[number];
 
 function clampToZero(value: bigint): bigint {
@@ -26,6 +26,9 @@ const statusAliasToValue: Record<string, LoanStatus> = {
   active: "ACTIVE",
   "up to date": "ACTIVE",
   uptodate: "ACTIVE",
+  approved: "APPROVED",
+  undisbursed: "APPROVED",
+  "not disbursed": "APPROVED",
   "in arrears": "IN_ARREARS",
   arrears: "IN_ARREARS",
   overpaid: "OVERPAID",
@@ -46,6 +49,15 @@ const loanStatusFilterMeta: Record<
     tone: string;
   }
 > = {
+  APPROVED: {
+    heading: "Undisbursed",
+    countLabel: "approved loans awaiting disbursement",
+    panelTitle: "Undisbursed loans",
+    panelDescription: "Approved loan accounts that still need to be disbursed",
+    emptyTitle: "No matching undisbursed loans",
+    emptyDescription: "Change the filter and try again.",
+    tone: "review",
+  },
   IN_ARREARS: {
     heading: "In arrears",
     countLabel: "loan accounts in arrears",
@@ -184,6 +196,12 @@ export default async function LoansPage({
     return `/loans?${nextParams.toString()}`;
   };
   const clearStatusHref = query ? `/loans?query=${encodeURIComponent(query)}` : "/loans";
+  const statusFilterHref = (status: SupportedLoanStatusFilter) => {
+    const nextParams = new URLSearchParams();
+    if (query) nextParams.set("query", query);
+    nextParams.set("status", status);
+    return `/loans?${nextParams.toString()}`;
+  };
 
   return (
     <main className="directory-page">
@@ -214,6 +232,22 @@ export default async function LoansPage({
       </header>
       <div className="directory-toolbar">
         <LiveSearchInput placeholder="Filter display by name, client account, staff, office, loan name or status" />
+        <div className="directory-filter-chip">
+          <span className="muted-text">Views:</span>
+          {supportedStatusFilters.map((status) => {
+            const statusMeta = loanStatusFilterMeta[status];
+            return (
+              <Link
+                aria-current={requestedStatus === status ? "page" : undefined}
+                className={`status ${requestedStatus === status ? statusMeta.tone : "review"}`}
+                href={statusFilterHref(status)}
+                key={status}
+              >
+                {statusMeta.heading}
+              </Link>
+            );
+          })}
+        </div>
         {activeStatusMeta ? (
           <div className="directory-filter-chip">
             <span className={`status ${activeStatusMeta.tone}`}>Status: {activeStatusMeta.heading}</span>

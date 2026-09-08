@@ -112,7 +112,13 @@ export default async function SavingsAccountDetailPage({
       fieldOfficer: { select: { name: true } },
       submittedBy: { select: { name: true } },
       approvedBy: { select: { name: true } },
-      transactions: { orderBy: { createdAt: "desc" } },
+      transactions: {
+        orderBy: { createdAt: "desc" },
+        include: {
+          settlementAccount: { select: { name: true } },
+          recordedBy: { select: { name: true } },
+        },
+      },
       charges: { orderBy: { createdAt: "desc" } },
     },
   });
@@ -316,7 +322,9 @@ export default async function SavingsAccountDetailPage({
                     <th>Recorded</th>
                     <th>Type</th>
                     <th>Amount</th>
-                    <th>Reference</th>
+                    <th>Reason / reference</th>
+                    <th>Payment method</th>
+                    <th>Recorded by</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -329,7 +337,9 @@ export default async function SavingsAccountDetailPage({
                         </span>
                       </td>
                       <td className="mono">{formatMinor(transaction.amountMinor, account.currencyCode)}</td>
-                      <td>{transaction.externalReference ?? "—"}</td>
+                      <td>{transaction.reason ?? transaction.externalReference ?? "—"}</td>
+                      <td>{transaction.settlementAccount?.name ?? "—"}</td>
+                      <td>{transaction.recordedBy?.name ?? "System"}</td>
                     </tr>
                   ))}
                 </tbody>

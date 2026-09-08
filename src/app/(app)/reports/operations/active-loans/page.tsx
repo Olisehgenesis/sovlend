@@ -13,6 +13,7 @@ import { loadReportPickerOptions } from "@/modules/reports/report-catalog";
 import {
   formatLoanStatus,
   formatReportDate,
+  loadActiveLoanFundBreakdownReport,
   loanStatusTone,
   loadActiveLoansReport,
   loadOperationsReportContext,
@@ -37,8 +38,12 @@ export default async function ActiveLoansPage({
 
   const params = await searchParams;
   const query = querySuffix(params);
-  const [report, pickerOptions] = await Promise.all([
+  const [report, fundBreakdown, pickerOptions] = await Promise.all([
     loadActiveLoansReport(prisma, context.scope, {
+      officeId: params.officeId,
+      loanOfficerId: params.loanOfficerId,
+    }),
+    loadActiveLoanFundBreakdownReport(prisma, context.scope, {
       officeId: params.officeId,
       loanOfficerId: params.loanOfficerId,
     }),
@@ -121,6 +126,58 @@ export default async function ActiveLoansPage({
             </Link>
           </div>
         </form>
+      </section>
+
+      <section className="panel loan-table">
+        <div className="panel-heading">
+          <div>
+            <h2>Portfolio by fund</h2>
+            <p>Active-loan principal grouped by assigned fund, including an explicit unassigned bucket.</p>
+          </div>
+          <Wallet size={19} />
+        </div>
+        {fundBreakdown.rows.length === 0 ? (
+          <div className="empty-state">
+            <Wallet size={28} />
+            <strong>No active loans in scope</strong>
+            <p>Once loans are approved and disbursed, their fund allocation will appear here.</p>
+          </div>
+        ) : (
+          <div className="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>Fund</th>
+                  <th>Currency</th>
+                  <th>Loan count</th>
+                  <th>Total principal</th>
+                </tr>
+              </thead>
+              <tbody>
+                {fundBreakdown.rows.map((row) => (
+                  <tr key={`${row.fundId ?? "unassigned"}-${row.currencyCode}`}>
+                    <td>
+                      <strong>{row.fundName}</strong>
+                    </td>
+                    <td>{row.currencyCode}</td>
+                    <td>{row.loanCount.toLocaleString()}</td>
+                    <td>{formatMinor(row.principalMinor, row.currencyCode)}</td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                {fundBreakdown.totals.map((row) => (
+                  <tr key={`fund-total-${row.currencyCode}`}>
+                    <th>Grand total</th>
+                    <th>{row.currencyCode}</th>
+                    <th>{row.loanCount.toLocaleString()}</th>
+                    <th>{formatMinor(row.principalMinor, row.currencyCode)}</th>
+                  </tr>
+                ))}
+              </tfoot>
+            </table>
+          </div>
+        )}
       </section>
 
       <section className="panel loan-table">

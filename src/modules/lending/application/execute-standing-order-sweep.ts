@@ -1,6 +1,7 @@
 import type { PrismaClient } from "@prisma/client";
 
 import { postRepayment } from "./post-repayment";
+import { postSavingsTransaction } from "@/modules/savings/application/post-savings-transaction";
 import { formatMinor } from "@/modules/money/domain/format-minor";
 import { sendSms } from "@/modules/notifications/infrastructure/sms";
 import { computeSweepAmountMinor, standingOrderSweepJobId, type StandingOrderSweepJob } from "@/modules/notifications/domain/standing-order-sweep";
@@ -54,10 +55,15 @@ export async function executeStandingOrderSweep(
   // this insert somehow fails after postRepayment succeeded, the ledger stays correct and the
   // client-facing balance is briefly stale until BullMQ retries this same job (postRepayment is
   // idempotent on repaymentTransaction, so the retry safely reaches this line again).
-  await prisma.savingsTransaction.upsert({
-    where: { idempotencyKey: `${dedupKey}:savings-mirror` },
-    create: { savingsAccountId: savingsAccount.id, transactionType: "WITHDRAWAL", amountMinor: -sweepAmountMinor, externalReference: `Standing order sweep for loan ${job.accountNumber}`, idempotencyKey: `${dedupKey}:savings-mirror` },
-    update: {},
+  await postSavingsTransaction(prisma, {
+    savingsAccountId: savingsAccount.id,
+    actorUserId: systemUser.id,
+    transactionType: "WITHDRAWAL",
+    amountMinor: sweepAmountMinor,
+    settlementAccountId: settlementAccount.id,
+    reason: "Standing order sweep",
+    externalReference: `Standing order sweep for loan ${job.accountNumber}`,
+    idempotencyKey: `${dedupKey}:savings-mirror`,
   });
 
   const amountText = formatMinor(sweepAmountMinor, job.currencyCode);

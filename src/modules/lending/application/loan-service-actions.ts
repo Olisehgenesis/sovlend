@@ -4,6 +4,10 @@ import { z } from "zod";
 
 import { AuthorizationService } from "@/modules/identity/application/authorization-service";
 import { permissions } from "@/modules/identity/domain/permissions";
+import { assertBalancedJournal } from "@/modules/ledger/domain/journal";
+import { recordSavingsTransactionInTransaction } from "@/modules/savings/application/post-savings-transaction";
+import { buildLoanDisbursementSavingsIdempotencyKey } from "@/modules/savings/application/savings-ledger";
+
 import { calculateLoanPayoff, type PayoffInstallment } from "../domain/loan-payoff";
 
 export const loanServiceActionTypes = ["UNDO_DISBURSAL", "PREPAY", "FORECLOSURE", "TRANSACTION_REVERSAL"] as const;
@@ -137,18 +141,28 @@ export async function previewLoanPayoff(
 type Tx = Prisma.TransactionClient;
 
 async function executeUndoDisbursal(tx: Tx, loanId: string, payload: UndoDisbursalPayload, requestId: string, actorUserId: string) {
-  const current = await tx.loan.findUniqueOrThrow({ where: { id: loanId }, include: { transactions: true, product: { include: { accountingMapping: true } } } });
+  const current = await tx.loan.findUniqueOrThrow({
+    where: { id: loanId },
+    include: { transactions: true },
+  });
   if (current.status !== "ACTIVE" || !current.disbursedOn) throw new Error("Loan is not in a disbursed state");
   const nonDisbursement = current.transactions.filter((item) => item.transactionType !== "DISBURSEMENT");
   if (nonDisbursement.length > 0) throw new Error("Cannot undo disbursal after other transactions have been posted against this loan");
   const disbursement = current.transactions.find((item) => item.transactionType === "DISBURSEMENT");
   if (!disbursement || disbursement.reversedById) throw new Error("Disbursement transaction is unavailable for reversal");
-  const mapping = current.product.accountingMapping;
-  if (!mapping) throw new Error("Loan product accounting mapping is required to reverse disbursement");
-  if (!disbursement.settlementAccountId) throw new Error("Original disbursement has no settlement account on record");
-  const settlement = await tx.settlementAccount.findUniqueOrThrow({ where: { id: disbursement.settlementAccountId } });
+  const originalJournal = await tx.journal.findFirst({
+    where: { referenceType: "LOAN_DISBURSEMENT", referenceId: disbursement.id },
+    include: { lines: true },
+  });
+  if (!originalJournal) throw new Error("Original disbursement journal is unavailable for reversal");
   const businessDate = new Date(`${payload.businessDate}T00:00:00.000Z`);
   const idempotencyKey = `service:${requestId}`;
+  const savingsMirror = await tx.savingsTransaction.findUnique({
+    where: {
+      idempotencyKey: buildLoanDisbursementSavingsIdempotencyKey(disbursement.id, "credit"),
+    },
+    select: { id: true, savingsAccountId: true, amountMinor: true },
+  });
 
   const reversal = await tx.loanTransaction.create({
     data: {
@@ -164,11 +178,34 @@ async function executeUndoDisbursal(tx: Tx, loanId: string, payload: UndoDisburs
   // allocation has ever referenced these installments.
   await tx.loanInstallment.deleteMany({ where: { loanId: current.id } });
 
+  if (savingsMirror && savingsMirror.amountMinor > 0n) {
+    await recordSavingsTransactionInTransaction(tx, {
+      savingsAccountId: savingsMirror.savingsAccountId,
+      actorUserId,
+      transactionType: "WITHDRAWAL",
+      amountMinor: savingsMirror.amountMinor,
+      reason: "Undo disbursal",
+      externalReference: `Undo disbursal ${current.accountNumber}`,
+      idempotencyKey: buildLoanDisbursementSavingsIdempotencyKey(disbursement.id, "undo"),
+    });
+  }
+
+  await tx.charge.updateMany({
+    where: { loanId: current.id, dueOn: null, status: "PAID" },
+    data: { status: "PENDING" },
+  });
+
+  const reversalLines = originalJournal.lines.map((line) => ({
+    accountId: line.accountId,
+    currencyCode: current.denominationCurrency,
+    direction: line.direction === "DEBIT" ? "CREDIT" as const : "DEBIT" as const,
+    amountMinor: line.amountMinor,
+    memo: line.memo,
+  }));
+  assertBalancedJournal(reversalLines);
+
   const journal = await tx.journal.create({ data: { officeId: current.officeId, businessDate, referenceType: "LOAN_DISBURSEMENT_REVERSAL", referenceId: reversal.id, narration: `Undo disbursal ${current.accountNumber}`, idempotencyKey: `journal:${idempotencyKey}` } });
-  await tx.journalLine.createMany({ data: [
-    { journalId: journal.id, accountId: settlement.ledgerAccountId, direction: "DEBIT", amountMinor: disbursement.denominationAmountMinor, memo: settlement.name },
-    { journalId: journal.id, accountId: mapping.principalReceivableAccountId, direction: "CREDIT", amountMinor: disbursement.denominationAmountMinor, memo: current.accountNumber },
-  ] });
+  await tx.journalLine.createMany({ data: reversalLines.map(({ currencyCode: _currencyCode, ...line }) => ({ journalId: journal.id, ...line })) });
   await tx.journal.update({ where: { id: journal.id }, data: { status: "POSTED", postedAt: new Date() } });
 
   await tx.loan.update({ where: { id: current.id }, data: { status: "APPROVED", disbursedOn: null, maturesOn: null } });

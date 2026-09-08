@@ -87,25 +87,35 @@ export function AppHeader({
             </Link>
           </div>
         </details>
-        <details open={openMenu === "accounts"}>
+        <details open={openMenu === "loans"}>
           <summary
             onClick={(event) => {
               event.preventDefault();
-              toggleMenu("accounts");
+              toggleMenu("loans");
             }}
           >
-            Accounts
+            Loans
             <ChevronDown size={13} />
           </summary>
           <div className="header-dropdown">
-            <Link href="/loans" onClick={closeMenus}>
-              All active loans
-            </Link>
             <Link href="/loans/new" onClick={closeMenus}>
               New application
             </Link>
-            <Link href="/savings-accounts" onClick={closeMenus}>
-              All savings accounts
+            <hr className="header-dropdown-divider" />
+            <p className="header-dropdown-group">Applications</p>
+            <Link href="/loans/applications?status=SUBMITTED" onClick={closeMenus}>
+              Submitted (needs review)
+            </Link>
+            <Link href="/loans/applications?status=APPROVED" onClick={closeMenus}>
+              Active applications (awaiting disbursement)
+            </Link>
+            <Link href="/loans/applications" onClick={closeMenus}>
+              All loan applications
+            </Link>
+            <hr className="header-dropdown-divider" />
+            <p className="header-dropdown-group">Accounts</p>
+            <Link href="/loans" onClick={closeMenus}>
+              All active loans
             </Link>
             <Link href="/loans?status=IN_ARREARS" onClick={closeMenus}>
               Loans in arrears
@@ -118,6 +128,22 @@ export function AppHeader({
             </Link>
             <Link href="/loans?status=CLOSED" onClick={closeMenus}>
               Loans closed
+            </Link>
+          </div>
+        </details>
+        <details open={openMenu === "accounts"}>
+          <summary
+            onClick={(event) => {
+              event.preventDefault();
+              toggleMenu("accounts");
+            }}
+          >
+            Accounts
+            <ChevronDown size={13} />
+          </summary>
+          <div className="header-dropdown">
+            <Link href="/savings-accounts" onClick={closeMenus}>
+              All savings accounts
             </Link>
           </div>
         </details>

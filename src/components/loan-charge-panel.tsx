@@ -31,7 +31,13 @@ export function LoanChargesPanel({
   const [pendingCreate, setPendingCreate] = useState(false);
 
   async function setStatus(chargeId: string, status: "PAID" | "WAIVED") {
-    setPendingId(chargeId);
+    const confirmed = window.confirm(
+      status === "PAID"
+        ? "Mark this loan charge as paid? Use this only when the amount has already been collected."
+        : "Waive this loan charge? The amount will no longer be due on this loan.",
+    );
+    if (!confirmed) return;
+    setPendingId(`${chargeId}:${status}`);
     const response = await fetch(`/api/loans/${loanId}/charges/${chargeId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -40,10 +46,10 @@ export function LoanChargesPanel({
     const result = await response.json().catch(() => ({}));
     setPendingId(null);
     if (!response.ok) {
-      toast.error(result.error ?? "Update failed");
+      toast.error(result.error ?? (status === "PAID" ? "Could not mark this loan charge as paid" : "Could not waive this loan charge"));
       return;
     }
-    toast.success("Charge updated");
+    toast.success(status === "PAID" ? "Loan charge marked as paid" : "Loan charge waived");
     router.refresh();
   }
 
@@ -61,10 +67,10 @@ export function LoanChargesPanel({
     const result = await response.json().catch(() => ({}));
     setPendingCreate(false);
     if (!response.ok) {
-      toast.error(result.error ?? "Could not add charge");
+      toast.error(result.error ?? "Could not add this loan charge");
       return;
     }
-    toast.success("Charge added");
+    toast.success("Charge added to the loan account");
     router.refresh();
   }
 
@@ -73,7 +79,7 @@ export function LoanChargesPanel({
       {charges.length === 0 ? (
         <div className="empty-state compact-empty">
           <strong>No charges recorded</strong>
-          <p>Add a charge below.</p>
+          <p>Charges raised during approval or servicing will appear here. Use the form below to post a one-off charge.</p>
         </div>
       ) : (
         <div className="table-scroll">
@@ -104,11 +110,11 @@ export function LoanChargesPanel({
                   <td style={{ position: "relative", zIndex: 1 }}>
                     {canManage && charge.status === "PENDING" ? (
                       <div className="account-card-actions">
-                        <button className="icon-action" disabled={pendingId === charge.id} onClick={() => setStatus(charge.id, "PAID")} title="Mark paid" type="button">
-                          {pendingId === charge.id ? <LoaderCircle className="spin" size={14} /> : <CheckCircle2 size={14} />}
+                        <button className="icon-action" disabled={pendingId?.startsWith(`${charge.id}:`) ?? false} onClick={() => setStatus(charge.id, "PAID")} title="Mark paid" type="button">
+                          {pendingId === `${charge.id}:PAID` ? <LoaderCircle className="spin" size={14} /> : <CheckCircle2 size={14} />}
                         </button>
-                        <button className="icon-action" disabled={pendingId === charge.id} onClick={() => setStatus(charge.id, "WAIVED")} title="Waive" type="button">
-                          <XCircle size={14} />
+                        <button className="icon-action" disabled={pendingId?.startsWith(`${charge.id}:`) ?? false} onClick={() => setStatus(charge.id, "WAIVED")} title="Waive" type="button">
+                          {pendingId === `${charge.id}:WAIVED` ? <LoaderCircle className="spin" size={14} /> : <XCircle size={14} />}
                         </button>
                       </div>
                     ) : null}

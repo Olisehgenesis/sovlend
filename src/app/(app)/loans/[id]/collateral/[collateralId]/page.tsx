@@ -2,7 +2,10 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { Breadcrumbs } from "@/components/breadcrumbs";
+import { CollateralDocumentsPanel, CollateralNotesPanel } from "@/components/loan-record-forms";
 import { prisma } from "@/lib/prisma";
+import { AuthorizationService } from "@/modules/identity/application/authorization-service";
+import { permissions } from "@/modules/identity/domain/permissions";
 import { formatMinor } from "@/modules/money/domain/format-minor";
 
 import {
@@ -20,13 +23,32 @@ export default async function LoanCollateralPage({
   params: Promise<{ id: string; collateralId: string }>;
 }) {
   const { id, collateralId } = await params;
-  const { loan } = await getLoanRouteContext(id);
+  const { loan, scope, session } = await getLoanRouteContext(id);
 
   const collateral = await prisma.loanCollateral.findFirst({
     where: { id: collateralId, loanId: loan.id },
   });
 
   if (!collateral) notFound();
+
+  const authorization = new AuthorizationService(prisma);
+  const [canManage, documents, notes] = await Promise.all([
+    authorization.isAllowed({
+      actorUserId: session.user.id,
+      permission: permissions.clientManage,
+      organizationId: scope.organizationId,
+      officeId: loan.officeId,
+    }),
+    prisma.document.findMany({
+      where: { collateralId: collateral.id },
+      orderBy: { createdAt: "desc" },
+    }),
+    prisma.loanNote.findMany({
+      where: { collateralId: collateral.id },
+      include: { author: { select: { name: true } } },
+      orderBy: { createdAt: "desc" },
+    }),
+  ]);
 
   return (
     <main className="directory-page">
@@ -121,6 +143,45 @@ export default async function LoanCollateralPage({
           </pre>
         </section>
       ) : null}
+      <section className="panel">
+        <div className="panel-heading">
+          <div>
+            <h2>Collateral documents</h2>
+            <p>Files captured specifically for this pledged asset.</p>
+          </div>
+        </div>
+        <CollateralDocumentsPanel
+          loanId={loan.id}
+          collateralId={collateral.id}
+          canManage={canManage}
+          documents={documents.map((document) => ({
+            id: document.id,
+            name: document.name,
+            description: document.description,
+            mediaType: document.mediaType,
+            createdAtLabel: formatUgDateTime(document.createdAt),
+          }))}
+        />
+      </section>
+      <section className="panel">
+        <div className="panel-heading">
+          <div>
+            <h2>Collateral notes</h2>
+            <p>Operational context and observations for this collateral item.</p>
+          </div>
+        </div>
+        <CollateralNotesPanel
+          loanId={loan.id}
+          collateralId={collateral.id}
+          canManage={canManage}
+          notes={notes.map((note) => ({
+            id: note.id,
+            body: note.body,
+            authorName: note.author.name,
+            createdAtLabel: formatUgDateTime(note.createdAt),
+          }))}
+        />
+      </section>
     </main>
   );
 }

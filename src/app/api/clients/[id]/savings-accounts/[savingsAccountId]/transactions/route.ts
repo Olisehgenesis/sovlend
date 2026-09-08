@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import { headers } from "next/headers";
 import { NextResponse } from "next/server";
 import { z } from "zod";
@@ -8,10 +7,14 @@ import { prisma } from "@/lib/prisma";
 import { AuthorizationService, PermissionDeniedError } from "@/modules/identity/application/authorization-service";
 import { clientScopeWhere, getUserDataScope } from "@/modules/identity/application/data-scope";
 import { permissions } from "@/modules/identity/domain/permissions";
+import { postSavingsTransaction } from "@/modules/savings/application/post-savings-transaction";
 
 const schema = z.object({
   type: z.enum(["DEPOSIT", "WITHDRAWAL"]),
   amount: z.coerce.number().positive(),
+  settlementAccountId: z.string().uuid(),
+  reason: z.string().trim().max(200).optional(),
+  idempotencyKey: z.string().uuid(),
 });
 
 export async function POST(request: Request, { params }: { params: Promise<{ id: string; savingsAccountId: string }> }) {
@@ -32,19 +35,30 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     throw error;
   }
 
-  const savingsAccount = await prisma.savingsAccount.findFirst({ where: { id: savingsAccountId, clientId: client.id }, include: { transactions: true } });
+  const savingsAccount = await prisma.savingsAccount.findFirst({ where: { id: savingsAccountId, clientId: client.id }, select: { id: true } });
   if (!savingsAccount) return NextResponse.json({ error: "Savings account not found" }, { status: 404 });
-  if (savingsAccount.status !== "ACTIVE") return NextResponse.json({ error: "Savings account is not active" }, { status: 400 });
 
   const amountMinor = BigInt(Math.round(parsed.data.amount * 100));
-  const currentBalance = savingsAccount.transactions.reduce((sum, transaction) => sum + transaction.amountMinor, 0n);
-  const signedAmountMinor = parsed.data.type === "DEPOSIT" ? amountMinor : -amountMinor;
-  if (parsed.data.type === "WITHDRAWAL" && amountMinor > currentBalance) {
-    return NextResponse.json({ error: "Withdrawal exceeds available balance" }, { status: 409 });
+
+  try {
+    await postSavingsTransaction(prisma, {
+      savingsAccountId: savingsAccount.id,
+      actorUserId: session.user.id,
+      transactionType: parsed.data.type,
+      amountMinor,
+      settlementAccountId: parsed.data.settlementAccountId,
+      reason: parsed.data.reason || undefined,
+      idempotencyKey: parsed.data.idempotencyKey,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Transaction failed";
+    if (message === "Withdrawal exceeds available balance") return NextResponse.json({ error: message }, { status: 409 });
+    return NextResponse.json({ error: message }, { status: 400 });
   }
 
-  await prisma.savingsTransaction.create({
-    data: { savingsAccountId: savingsAccount.id, transactionType: parsed.data.type, amountMinor: signedAmountMinor, idempotencyKey: randomUUID() },
+  const balance = await prisma.savingsTransaction.findMany({
+    where: { savingsAccountId: savingsAccount.id },
+    select: { amountMinor: true },
   });
-  return NextResponse.json({ ok: true, balanceMinor: (currentBalance + signedAmountMinor).toString() });
+  return NextResponse.json({ ok: true, balanceMinor: balance.reduce((sum, transaction) => sum + transaction.amountMinor, 0n).toString() });
 }

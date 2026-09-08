@@ -3,7 +3,7 @@
 import { AlertTriangle, Check, LoaderCircle, ShieldAlert, X } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { formatMinor } from "@/modules/money/domain/format-minor";
@@ -59,13 +59,29 @@ export function LoanServiceActionsPanel({
   currencyCode: string;
 }) {
   const router = useRouter();
+  const dialogRef = useRef<HTMLDialogElement>(null);
   const [actionType, setActionType] = useState("PREPAY");
   const [pendingCreate, setPendingCreate] = useState(false);
-  const [decidingId, setDecidingId] = useState<string | null>(null);
+  const [deciding, setDeciding] = useState<{ requestId: string; decision: "APPROVE" | "REJECT" } | null>(null);
   const [quote, setQuote] = useState<PayoffQuote | null>(null);
   const [quoting, setQuoting] = useState(false);
+  const [formVersion, setFormVersion] = useState(0);
 
   const pendingRequest = requests.find((item) => item.status === "PENDING");
+
+  function actionLabel(action: string) {
+    return actionLabels[action] ?? action;
+  }
+
+  function resetRequestDialog() {
+    setActionType("PREPAY");
+    setQuote(null);
+    setFormVersion((current) => current + 1);
+  }
+
+  function closeRequestDialog() {
+    dialogRef.current?.close();
+  }
 
   async function previewPayoff(formData: FormData) {
     const businessDate = String(formData.get("businessDate") || new Date().toISOString().slice(0, 10));
@@ -74,7 +90,7 @@ export function LoanServiceActionsPanel({
     const response = await fetch(`/api/loans/${loanId}/payoff-quote?businessDate=${businessDate}&waivePenalties=${waivePenalties}`);
     const result = await response.json().catch(() => ({}));
     setQuoting(false);
-    if (!response.ok) { toast.error(result.error ?? "Could not compute payoff quote"); return; }
+    if (!response.ok) { toast.error(result.error ?? "Could not preview this payoff amount"); return; }
     setQuote(result);
   }
 
@@ -94,23 +110,31 @@ export function LoanServiceActionsPanel({
     });
     const result = await response.json().catch(() => ({}));
     setPendingCreate(false);
-    if (!response.ok) { toast.error(result.error ?? "Servicing request could not be submitted"); return; }
-    toast.success("Servicing action submitted for approval");
-    setQuote(null);
+    if (!response.ok) { toast.error(result.error ?? `Could not submit the ${actionLabel(actionType).toLowerCase()} request`); return; }
+    toast.success(`${actionLabel(actionType)} request submitted for approval`);
+    closeRequestDialog();
     router.refresh();
   }
 
   async function decide(requestId: string, decision: "APPROVE" | "REJECT") {
-    setDecidingId(requestId);
+    const request = requests.find((item) => item.id === requestId);
+    const label = actionLabel(request?.actionType ?? "servicing action");
+    const confirmed = window.confirm(
+      decision === "APPROVE"
+        ? `Approve and execute the ${label.toLowerCase()} request?`
+        : `Reject the ${label.toLowerCase()} request? The request will remain in the audit trail.`,
+    );
+    if (!confirmed) return;
+    setDeciding({ requestId, decision });
     const response = await fetch(`/api/loans/${loanId}/service-actions/${requestId}/decision`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ decision }),
     });
     const result = await response.json().catch(() => ({}));
-    setDecidingId(null);
-    if (!response.ok) { toast.error(result.error ?? "Decision could not be recorded"); return; }
-    toast.success(decision === "APPROVE" ? "Servicing action approved and executed" : "Servicing action rejected");
+    setDeciding(null);
+    if (!response.ok) { toast.error(result.error ?? (decision === "APPROVE" ? `Could not approve the ${label.toLowerCase()} request` : `Could not reject the ${label.toLowerCase()} request`)); return; }
+    toast.success(decision === "APPROVE" ? `${label} approved and executed` : `${label} request rejected`);
     router.refresh();
   }
 
@@ -141,9 +165,9 @@ export function LoanServiceActionsPanel({
               {requests.map((item) => (
                 <tr key={item.id}>
                   <td>
-                    <strong>{actionLabels[item.actionType] ?? item.actionType}</strong>
+                    <strong>{actionLabel(item.actionType)}</strong>
                     {item.reason ? <p className="muted-text">{item.reason}</p> : null}
-                    <Link className="row-link" href={`/loans/${loanId}/servicing/${item.id}`} aria-label={`Open ${actionLabels[item.actionType] ?? item.actionType} request`} />
+                    <Link className="row-link" href={`/loans/${loanId}/servicing/${item.id}`} aria-label={`Open ${actionLabel(item.actionType)} request`} />
                   </td>
                   <td>
                     <span className={`status ${item.status === "APPROVED" ? "up-to-date" : item.status === "REJECTED" ? "in-arrears" : "review"}`}>{item.status}</span>
@@ -153,11 +177,11 @@ export function LoanServiceActionsPanel({
                   <td style={{ position: "relative", zIndex: 1 }}>
                     {item.canDecide ? (
                       <div className="account-card-actions">
-                        <button className="icon-action" disabled={decidingId === item.id} onClick={() => decide(item.id, "APPROVE")} title="Approve and execute" type="button">
-                          {decidingId === item.id ? <LoaderCircle className="spin" size={14} /> : <Check size={14} />}
+                        <button className="icon-action" disabled={deciding?.requestId === item.id} onClick={() => decide(item.id, "APPROVE")} title="Approve and execute" type="button">
+                          {deciding?.requestId === item.id && deciding.decision === "APPROVE" ? <LoaderCircle className="spin" size={14} /> : <Check size={14} />}
                         </button>
-                        <button className="icon-action" disabled={decidingId === item.id} onClick={() => decide(item.id, "REJECT")} title="Reject" type="button">
-                          <X size={14} />
+                        <button className="icon-action" disabled={deciding?.requestId === item.id} onClick={() => decide(item.id, "REJECT")} title="Reject" type="button">
+                          {deciding?.requestId === item.id && deciding.decision === "REJECT" ? <LoaderCircle className="spin" size={14} /> : <X size={14} />}
                         </button>
                       </div>
                     ) : item.isOwnRequest && item.status === "PENDING" ? (
@@ -171,94 +195,109 @@ export function LoanServiceActionsPanel({
         </div>
       )}
       {canRequest && !pendingRequest ? (
-        <form action={createRequest} className="entity-form compact-mapping">
-          <fieldset>
-            <legend>Request a servicing action</legend>
-            <div className="form-row">
-              <label>
-                Action
-                <select name="actionType" onChange={(event) => { setActionType(event.target.value); setQuote(null); }} value={actionType}>
-                  <option disabled={!hasPendingDisbursement} value="UNDO_DISBURSAL">Undo disbursal</option>
-                  <option disabled={!isOpenLoan} value="PREPAY">Prepay loan</option>
-                  <option disabled={!isOpenLoan} value="FORECLOSURE">Foreclosure</option>
-                  <option disabled={repaymentTransactions.length === 0} value="TRANSACTION_REVERSAL">Reverse transaction</option>
-                </select>
-              </label>
-              <label>
-                Business date
-                <input defaultValue={new Date().toISOString().slice(0, 10)} name="businessDate" required type="date" />
-              </label>
-            </div>
-            {actionType === "PREPAY" || actionType === "FORECLOSURE" ? (
-              settlementAccounts.length === 0 ? (
-                <aside className="configuration-note">
-                  <strong>Settlement setup required</strong>
-                  <span>Add a receiving account in Backoffice → Accounting mappings before settling this loan.</span>
-                </aside>
-              ) : (
-                <label>
-                  Settled into
-                  <select name="settlementAccountId" required>
-                    {settlementAccounts.map((account) => <option key={account.id} value={account.id}>{account.name} · {account.type.replaceAll("_", " ")}</option>)}
-                  </select>
-                </label>
-              )
-            ) : null}
-            {actionType === "PREPAY" ? (
-              <div className="check-row">
-                <label>
-                  <input name="waivePenalties" type="checkbox" /> Waive outstanding penalties
-                </label>
-              </div>
-            ) : null}
-            {actionType === "FORECLOSURE" ? (
-              <aside className="configuration-note">
-                <strong><AlertTriangle size={14} /> Note</strong>
-                <span>Foreclosure always waives outstanding penalties and any interest not yet due.</span>
-              </aside>
-            ) : null}
-            {actionType === "TRANSACTION_REVERSAL" ? (
-              <label>
-                Transaction to reverse
-                <select name="transactionId" required>
-                  {repaymentTransactions.map((transaction) => <option key={transaction.id} value={transaction.id}>{transaction.label}</option>)}
-                </select>
-              </label>
-            ) : null}
-            <label>
-              Reason
-              <textarea maxLength={1000} name="reason" required rows={2} />
-            </label>
-          </fieldset>
-          {(actionType === "PREPAY" || actionType === "FORECLOSURE") && isOpenLoan ? (
-            <div className="form-actions">
-              <button className="secondary-action" disabled={quoting} formAction={previewPayoff} type="submit">
-                {quoting ? <LoaderCircle className="spin" size={16} /> : null} Preview payoff
-              </button>
-            </div>
-          ) : null}
-          {quote ? (
-            <dl className="detail-grid payoff-quote">
-              <div><dt>Principal</dt><dd>{formatMinor(BigInt(quote.principalOutstandingMinor), currencyCode)}</dd></div>
-              <div><dt>Interest accrued</dt><dd>{formatMinor(BigInt(quote.interestAccruedMinor), currencyCode)}</dd></div>
-              <div><dt>Interest waived</dt><dd>{formatMinor(BigInt(quote.interestWaivedMinor), currencyCode)}</dd></div>
-              <div><dt>Fees</dt><dd>{formatMinor(BigInt(quote.feesOutstandingMinor), currencyCode)}</dd></div>
-              <div><dt>Penalties collected</dt><dd>{formatMinor(BigInt(quote.penaltiesCollectedMinor), currencyCode)}</dd></div>
-              <div><dt>Penalties waived</dt><dd>{formatMinor(BigInt(quote.penaltiesWaivedMinor), currencyCode)}</dd></div>
-              <div className="payoff-total"><dt>Total payoff</dt><dd>{formatMinor(BigInt(quote.totalPayoffMinor), currencyCode)}</dd></div>
-            </dl>
-          ) : null}
+        <>
           <div className="form-actions">
-            <button className="invest-button" disabled={pendingCreate}>
-              {pendingCreate ? <LoaderCircle className="spin" size={18} /> : null} Submit for approval
+            <button className="invest-button" onClick={() => dialogRef.current?.showModal()} type="button">
+              Request servicing action
             </button>
           </div>
-        </form>
+          <dialog className="app-modal" onClose={resetRequestDialog} ref={dialogRef}>
+            <div className="app-modal-heading">
+              <h2>Request a servicing action</h2>
+              <button aria-label="Close" className="icon-action" onClick={closeRequestDialog} type="button">
+                <X size={16} />
+              </button>
+            </div>
+            <form action={createRequest} className="entity-form compact-mapping" key={formVersion}>
+              <fieldset>
+                <legend>Request a servicing action</legend>
+                <div className="form-row">
+                  <label>
+                    Action
+                    <select name="actionType" onChange={(event) => { setActionType(event.target.value); setQuote(null); }} value={actionType}>
+                      <option disabled={!hasPendingDisbursement} value="UNDO_DISBURSAL">Undo disbursal</option>
+                      <option disabled={!isOpenLoan} value="PREPAY">Prepay loan</option>
+                      <option disabled={!isOpenLoan} value="FORECLOSURE">Foreclosure</option>
+                      <option disabled={repaymentTransactions.length === 0} value="TRANSACTION_REVERSAL">Reverse transaction</option>
+                    </select>
+                  </label>
+                  <label>
+                    Business date
+                    <input defaultValue={new Date().toISOString().slice(0, 10)} name="businessDate" required type="date" />
+                  </label>
+                </div>
+                {actionType === "PREPAY" || actionType === "FORECLOSURE" ? (
+                  settlementAccounts.length === 0 ? (
+                    <aside className="configuration-note">
+                      <strong>Settlement setup required</strong>
+                      <span>Add a receiving account in Backoffice → Accounting mappings before settling this loan.</span>
+                    </aside>
+                  ) : (
+                    <label>
+                      Settled into
+                      <select name="settlementAccountId" required>
+                        {settlementAccounts.map((account) => <option key={account.id} value={account.id}>{account.name} · {account.type.replaceAll("_", " ")}</option>)}
+                      </select>
+                    </label>
+                  )
+                ) : null}
+                {actionType === "PREPAY" ? (
+                  <div className="check-row">
+                    <label>
+                      <input name="waivePenalties" type="checkbox" /> Waive outstanding penalties
+                    </label>
+                  </div>
+                ) : null}
+                {actionType === "FORECLOSURE" ? (
+                  <aside className="configuration-note">
+                    <strong><AlertTriangle size={14} /> Note</strong>
+                    <span>Foreclosure always waives outstanding penalties and any interest not yet due.</span>
+                  </aside>
+                ) : null}
+                {actionType === "TRANSACTION_REVERSAL" ? (
+                  <label>
+                    Transaction to reverse
+                    <select name="transactionId" required>
+                      {repaymentTransactions.map((transaction) => <option key={transaction.id} value={transaction.id}>{transaction.label}</option>)}
+                    </select>
+                  </label>
+                ) : null}
+                <label>
+                  Reason
+                  <textarea maxLength={1000} name="reason" required rows={2} />
+                </label>
+              </fieldset>
+              {(actionType === "PREPAY" || actionType === "FORECLOSURE") && isOpenLoan ? (
+                <div className="form-actions">
+                  <button className="secondary-action" disabled={quoting} formAction={previewPayoff} type="submit">
+                    {quoting ? <LoaderCircle className="spin" size={16} /> : null} Preview payoff
+                  </button>
+                </div>
+              ) : null}
+              {quote ? (
+                <dl className="detail-grid payoff-quote">
+                  <div><dt>Principal</dt><dd>{formatMinor(BigInt(quote.principalOutstandingMinor), currencyCode)}</dd></div>
+                  <div><dt>Interest accrued</dt><dd>{formatMinor(BigInt(quote.interestAccruedMinor), currencyCode)}</dd></div>
+                  <div><dt>Interest waived</dt><dd>{formatMinor(BigInt(quote.interestWaivedMinor), currencyCode)}</dd></div>
+                  <div><dt>Fees</dt><dd>{formatMinor(BigInt(quote.feesOutstandingMinor), currencyCode)}</dd></div>
+                  <div><dt>Penalties collected</dt><dd>{formatMinor(BigInt(quote.penaltiesCollectedMinor), currencyCode)}</dd></div>
+                  <div><dt>Penalties waived</dt><dd>{formatMinor(BigInt(quote.penaltiesWaivedMinor), currencyCode)}</dd></div>
+                  <div className="payoff-total"><dt>Total payoff</dt><dd>{formatMinor(BigInt(quote.totalPayoffMinor), currencyCode)}</dd></div>
+                </dl>
+              ) : null}
+              <div className="form-actions">
+                <button className="invest-button" disabled={pendingCreate}>
+                  {pendingCreate ? <LoaderCircle className="spin" size={18} /> : null} Submit for approval
+                </button>
+              </div>
+            </form>
+          </dialog>
+        </>
       ) : null}
       {pendingRequest ? (
         <div className="empty-state compact-empty">
           <strong>A servicing action is already pending</strong>
-          <p>Resolve the pending {actionLabels[pendingRequest.actionType] ?? pendingRequest.actionType} request above before submitting another.</p>
+          <p>Resolve the pending {actionLabel(pendingRequest.actionType)} request above before submitting another.</p>
         </div>
       ) : null}
     </>

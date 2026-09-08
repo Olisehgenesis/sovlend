@@ -185,6 +185,7 @@ model Organization {
   investorInvites    InvestorInvite[]
   investorRequests   InvestorAccessRequest[]
   investments        InvestmentCommitment[]
+  funds              Fund[]
   settlementAccounts SettlementAccount[]
   accountingDefaults LoanAccountingDefaults?
   groups             Group[]
@@ -217,45 +218,49 @@ model Office {
 }
 
 model User {
-  id                         String                     @id
-  name                       String
-  email                      String                     @unique
-  emailVerified              Boolean                    @default(false)
-  image                      String?
-  role                       String?
-  banned                     Boolean?                   @default(false)
-  banReason                  String?
-  banExpires                 DateTime?
-  organizationId             String?                    @db.Uuid
-  officeId                   String?                    @db.Uuid
-  systemRole                 UserRole                   @default(CLIENT)
-  mustChangePassword         Boolean                    @default(false)
-  organization               Organization?              @relation(fields: [organizationId], references: [id])
-  office                     Office?                    @relation(fields: [officeId], references: [id])
-  sessions                   Session[]
-  accounts                   Account[]
-  passkeys                   Passkey[]
-  clientProfile              Client?                    @relation("ClientAuthUser")
-  assignedClients            Client[]                   @relation("AssignedOfficer")
-  assignedLoans              Loan[]                     @relation("AssignedLoanOfficer")
-  approvals                  Approval[]
-  auditEvents                AuditEvent[]
-  permissionAssignments      UserPermissionAssignment[]
-  submittedApplications      LoanApplication[]          @relation("ApplicationSubmitter")
-  investorProfile            InvestorProfile?
-  clientNotes                ClientNote[]
-  loanNotes                  LoanNote[]
-  assignedGroups             Group[]                    @relation("AssignedGroupOfficer")
-  groupNotes                 GroupNote[]
-  assignedSavingsAccounts    SavingsAccount[]           @relation("AssignedSavingsOfficer")
-  submittedSavingsAccounts   SavingsAccount[]           @relation("SavingsAccountSubmittedBy")
-  approvedSavingsAccounts    SavingsAccount[]           @relation("SavingsAccountApprovedBy")
-  loanServiceRequestsMade    LoanServiceRequest[]       @relation("LoanServiceRequestRequestedBy")
-  loanServiceRequestsDecided LoanServiceRequest[]       @relation("LoanServiceRequestDecidedBy")
-  loanExportJobsRequested    LoanExportJob[]
-  recordedLoanTransactions   LoanTransaction[]          @relation("RecordedLoanTransactions")
-  createdAt                  DateTime                   @default(now())
-  updatedAt                  DateTime                   @updatedAt
+  id                          String                     @id
+  name                        String
+  email                       String                     @unique
+  emailVerified               Boolean                    @default(false)
+  image                       String?
+  role                        String?
+  banned                      Boolean?                   @default(false)
+  banReason                   String?
+  banExpires                  DateTime?
+  organizationId              String?                    @db.Uuid
+  officeId                    String?                    @db.Uuid
+  systemRole                  UserRole                   @default(CLIENT)
+  mustChangePassword          Boolean                    @default(false)
+  organization                Organization?              @relation(fields: [organizationId], references: [id])
+  office                      Office?                    @relation(fields: [officeId], references: [id])
+  sessions                    Session[]
+  accounts                    Account[]
+  passkeys                    Passkey[]
+  clientProfile               Client?                    @relation("ClientAuthUser")
+  assignedClients             Client[]                   @relation("AssignedOfficer")
+  assignedLoans               Loan[]                     @relation("AssignedLoanOfficer")
+  approvals                   Approval[]
+  auditEvents                 AuditEvent[]
+  permissionAssignments       UserPermissionAssignment[]
+  submittedApplications       LoanApplication[]          @relation("ApplicationSubmitter")
+  investorProfile             InvestorProfile?
+  clientNotes                 ClientNote[]
+  loanNotes                   LoanNote[]
+  assignedGroups              Group[]                    @relation("AssignedGroupOfficer")
+  groupNotes                  GroupNote[]
+  assignedSavingsAccounts     SavingsAccount[]           @relation("AssignedSavingsOfficer")
+  submittedSavingsAccounts    SavingsAccount[]           @relation("SavingsAccountSubmittedBy")
+  approvedSavingsAccounts     SavingsAccount[]           @relation("SavingsAccountApprovedBy")
+  recordedSavingsTransactions SavingsTransaction[]       @relation("RecordedSavingsTransactions")
+  loanServiceRequestsMade     LoanServiceRequest[]       @relation("LoanServiceRequestRequestedBy")
+  loanServiceRequestsDecided  LoanServiceRequest[]       @relation("LoanServiceRequestDecidedBy")
+  loanExportJobsRequested     LoanExportJob[]
+  recordedLoanTransactions    LoanTransaction[]          @relation("RecordedLoanTransactions")
+  loanOfficerApplications     LoanApplication[]          @relation("ApplicationLoanOfficer")
+  applicationDocuments        LoanApplicationDocument[]
+  applicationNotes            LoanApplicationNote[]
+  createdAt                   DateTime                   @default(now())
+  updatedAt                   DateTime                   @updatedAt
 
   @@index([organizationId, officeId, systemRole])
   @@map("user")
@@ -525,39 +530,43 @@ model GroupNote {
 }
 
 model LoanNote {
-  id        String   @id @default(uuid()) @db.Uuid
-  loanId    String   @db.Uuid
-  authorId  String
-  body      String
-  loan      Loan     @relation(fields: [loanId], references: [id], onDelete: Cascade)
-  author    User     @relation(fields: [authorId], references: [id])
-  createdAt DateTime @default(now())
+  id           String          @id @default(uuid()) @db.Uuid
+  loanId       String          @db.Uuid
+  collateralId String?         @db.Uuid
+  authorId     String
+  body         String
+  loan         Loan            @relation(fields: [loanId], references: [id], onDelete: Cascade)
+  collateral   LoanCollateral? @relation(fields: [collateralId], references: [id], onDelete: SetNull)
+  author       User            @relation(fields: [authorId], references: [id])
+  createdAt    DateTime        @default(now())
 
   @@index([loanId])
+  @@index([collateralId])
 }
 
 model LoanProduct {
-  id                   String                        @id @default(uuid()) @db.Uuid
-  organizationId       String                        @db.Uuid
-  name                 String
-  shortName            String
-  denominationCurrency String                        @default("UGX")
-  principalMinMinor    BigInt
-  principalMaxMinor    BigInt
-  annualRateBps        Int
-  repaymentCount       Int
-  repaymentFrequency   String
-  amortizationMethod   String
-  interestMethod       String
-  lateFeeRule          Json?
-  version              Int                           @default(1)
-  active               Boolean                       @default(true)
-  organization         Organization                  @relation(fields: [organizationId], references: [id])
-  applications         LoanApplication[]
-  loans                Loan[]
-  accountingMapping    LoanProductAccountingMapping?
-  createdAt            DateTime                      @default(now())
-  updatedAt            DateTime                      @updatedAt
+  id                         String                        @id @default(uuid()) @db.Uuid
+  organizationId             String                        @db.Uuid
+  name                       String
+  shortName                  String
+  denominationCurrency       String                        @default("UGX")
+  principalMinMinor          BigInt
+  principalMaxMinor          BigInt
+  annualRateBps              Int
+  monitoringFeeAnnualRateBps Int                           @default(0)
+  repaymentCount             Int
+  repaymentFrequency         String
+  amortizationMethod         String
+  interestMethod             String
+  lateFeeRule                Json?
+  version                    Int                           @default(1)
+  active                     Boolean                       @default(true)
+  organization               Organization                  @relation(fields: [organizationId], references: [id])
+  applications               LoanApplication[]
+  loans                      Loan[]
+  accountingMapping          LoanProductAccountingMapping?
+  createdAt                  DateTime                      @default(now())
+  updatedAt                  DateTime                      @updatedAt
 
   @@unique([organizationId, shortName, version])
   @@index([organizationId, active])
@@ -602,34 +611,102 @@ model ChargeDefinition {
   @@index([organizationId, active])
 }
 
+model Fund {
+  id               String            @id @default(uuid()) @db.Uuid
+  organizationId   String            @db.Uuid
+  name             String
+  code             String?
+  ledgerAccountId  String?           @db.Uuid
+  isActive         Boolean           @default(true)
+  organization     Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  ledgerAccount    LedgerAccount?    @relation(fields: [ledgerAccountId], references: [id])
+  loanApplications LoanApplication[]
+  loans            Loan[]
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+
+  @@unique([organizationId, name])
+  @@unique([organizationId, code])
+  @@index([organizationId, isActive])
+  @@index([ledgerAccountId])
+}
+
 model LoanApplication {
-  id                     String                @id @default(uuid()) @db.Uuid
+  id                     String                    @id @default(uuid()) @db.Uuid
   submittedById          String?
-  clientId               String?               @db.Uuid
-  groupId                String?               @db.Uuid
-  officeId               String                @db.Uuid
-  productId              String                @db.Uuid
+  clientId               String?                   @db.Uuid
+  groupId                String?                   @db.Uuid
+  officeId               String                    @db.Uuid
+  productId              String                    @db.Uuid
+  loanOfficerId          String?
+  fundId                 String?                   @db.Uuid
   proposedPrincipalMinor BigInt
   approvedPrincipalMinor BigInt?
-  status                 LoanApplicationStatus @default(DRAFT)
+  status                 LoanApplicationStatus     @default(DRAFT)
   purpose                String?
+  externalId             String?
+  applicationExpiresOn   DateTime?                 @db.Date
+  // Wizard-captured overrides of the product defaults (term, interest rate, amortization, etc.),
+  // mirroring Loan.termsSnapshot's pattern so approval can carry the applicant's chosen terms
+  // forward onto the created loan instead of silently re-reading product defaults.
+  termsSnapshot          Json?
+  // Charges the applicant selected on the Charges step (each references a ChargeDefinition id,
+  // name, and amount at time of application) — copied onto the loan's Charge rows on approval.
+  chargesSnapshot        Json?
+  // Collateral items captured on the Charges step (type/value/description) — copied onto
+  // LoanCollateral rows on approval.
+  collateralSnapshot     Json?
   submittedAt            DateTime?
   approvedAt             DateTime?
-  client                 Client?               @relation(fields: [clientId], references: [id])
-  group                  Group?                @relation(fields: [groupId], references: [id])
-  office                 Office                @relation(fields: [officeId], references: [id])
-  product                LoanProduct           @relation(fields: [productId], references: [id])
-  submittedBy            User?                 @relation("ApplicationSubmitter", fields: [submittedById], references: [id])
+  client                 Client?                   @relation(fields: [clientId], references: [id])
+  group                  Group?                    @relation(fields: [groupId], references: [id])
+  office                 Office                    @relation(fields: [officeId], references: [id])
+  product                LoanProduct               @relation(fields: [productId], references: [id])
+  fund                   Fund?                     @relation(fields: [fundId], references: [id])
+  loanOfficer            User?                     @relation("ApplicationLoanOfficer", fields: [loanOfficerId], references: [id])
+  submittedBy            User?                     @relation("ApplicationSubmitter", fields: [submittedById], references: [id])
   approvals              Approval[]
   loan                   Loan?
-  createdAt              DateTime              @default(now())
-  updatedAt              DateTime              @updatedAt
+  documents              LoanApplicationDocument[]
+  notes                  LoanApplicationNote[]
+  createdAt              DateTime                  @default(now())
+  updatedAt              DateTime                  @updatedAt
 
   @@index([clientId, status])
   @@index([groupId, status])
   @@index([officeId, status])
   @@index([productId, status])
   @@index([submittedById, status])
+  @@index([loanOfficerId, status])
+  @@index([fundId, status])
+}
+
+model LoanApplicationDocument {
+  id            String          @id @default(uuid()) @db.Uuid
+  applicationId String          @db.Uuid
+  uploadedById  String?
+  name          String
+  description   String?
+  objectKey     String          @unique
+  sha256        String
+  mediaType     String
+  application   LoanApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  uploadedBy    User?           @relation(fields: [uploadedById], references: [id])
+  createdAt     DateTime        @default(now())
+
+  @@index([applicationId])
+}
+
+model LoanApplicationNote {
+  id            String          @id @default(uuid()) @db.Uuid
+  applicationId String          @db.Uuid
+  authorId      String
+  body          String
+  application   LoanApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  author        User            @relation(fields: [authorId], references: [id])
+  createdAt     DateTime        @default(now())
+
+  @@index([applicationId])
 }
 
 model PermissionDefinition {
@@ -704,51 +781,54 @@ model Approval {
 }
 
 model Loan {
-  id                   String               @id @default(uuid()) @db.Uuid
-  applicationId        String               @unique @db.Uuid
-  clientId             String?              @db.Uuid
-  groupId              String?              @db.Uuid
-  productId            String               @db.Uuid
-  officeId             String               @db.Uuid
-  loanOfficerId        String?
-  accountNumber        String               @unique
-  denominationCurrency String               @default("UGX")
-  principalMinor       BigInt
-  termsSnapshot        Json?
-  scheduleVersion      Int                  @default(1)
-  status               LoanStatus           @default(APPROVED)
-  disbursedOn          DateTime?            @db.Date
-  maturesOn            DateTime?            @db.Date
+  id                       String               @id @default(uuid()) @db.Uuid
+  applicationId            String               @unique @db.Uuid
+  clientId                 String?              @db.Uuid
+  groupId                  String?              @db.Uuid
+  productId                String               @db.Uuid
+  officeId                 String               @db.Uuid
+  loanOfficerId            String?
+  fundId                   String?              @db.Uuid
+  accountNumber            String               @unique
+  denominationCurrency     String               @default("UGX")
+  principalMinor           BigInt
+  termsSnapshot            Json?
+  scheduleVersion          Int                  @default(1)
+  status                   LoanStatus           @default(APPROVED)
+  disbursedOn              DateTime?            @db.Date
+  maturesOn                DateTime?            @db.Date
   // Set only when a loan is written off (mirrors Fineract's loan-level write-off summary,
   // since a write-off closes out remaining balance at the loan level rather than being
   // allocated back onto individual installment rows). Always 0 for non-written-off loans.
-  principalWrittenOffMinor BigInt            @default(0)
-  interestWrittenOffMinor  BigInt            @default(0)
-  feesWrittenOffMinor      BigInt            @default(0)
-  penaltiesWrittenOffMinor BigInt            @default(0)
-  writtenOffOn         DateTime?            @db.Date
-  writtenOffByName     String?
-  application          LoanApplication      @relation(fields: [applicationId], references: [id])
-  client               Client?              @relation(fields: [clientId], references: [id])
-  group                Group?               @relation(fields: [groupId], references: [id])
-  product              LoanProduct          @relation(fields: [productId], references: [id])
-  office               Office               @relation(fields: [officeId], references: [id])
-  loanOfficer          User?                @relation("AssignedLoanOfficer", fields: [loanOfficerId], references: [id])
-  installments         LoanInstallment[]
-  transactions         LoanTransaction[]
-  charges              Charge[]
-  documents            Document[]
-  notes                LoanNote[]
-  collateralItems      LoanCollateral[]
-  guarantors           Guarantor[]
-  reminders            Reminder[]
-  serviceRequests      LoanServiceRequest[]
-  createdAt            DateTime             @default(now())
-  updatedAt            DateTime             @updatedAt
+  principalWrittenOffMinor BigInt               @default(0)
+  interestWrittenOffMinor  BigInt               @default(0)
+  feesWrittenOffMinor      BigInt               @default(0)
+  penaltiesWrittenOffMinor BigInt               @default(0)
+  writtenOffOn             DateTime?            @db.Date
+  writtenOffByName         String?
+  application              LoanApplication      @relation(fields: [applicationId], references: [id])
+  client                   Client?              @relation(fields: [clientId], references: [id])
+  group                    Group?               @relation(fields: [groupId], references: [id])
+  product                  LoanProduct          @relation(fields: [productId], references: [id])
+  office                   Office               @relation(fields: [officeId], references: [id])
+  fund                     Fund?                @relation(fields: [fundId], references: [id])
+  loanOfficer              User?                @relation("AssignedLoanOfficer", fields: [loanOfficerId], references: [id])
+  installments             LoanInstallment[]
+  transactions             LoanTransaction[]
+  charges                  Charge[]
+  documents                Document[]
+  notes                    LoanNote[]
+  collateralItems          LoanCollateral[]
+  guarantors               Guarantor[]
+  reminders                Reminder[]
+  serviceRequests          LoanServiceRequest[]
+  createdAt                DateTime             @default(now())
+  updatedAt                DateTime             @updatedAt
 
   @@index([officeId, status])
   @@index([clientId, status])
   @@index([groupId, status])
+  @@index([fundId, status])
 }
 
 model LoanInstallment {
@@ -825,18 +905,20 @@ model LoanTransactionAllocation {
 }
 
 model LoanCollateral {
-  id                    String    @id @default(uuid()) @db.Uuid
-  loanId                String    @db.Uuid
+  id                    String     @id @default(uuid()) @db.Uuid
+  loanId                String     @db.Uuid
   type                  String
   description           String?
   estimatedValueMinor   BigInt?
-  valuationCurrencyCode String    @default("UGX")
-  valuationDate         DateTime? @db.Date
-  status                String    @default("ACTIVE")
+  valuationCurrencyCode String     @default("UGX")
+  valuationDate         DateTime?  @db.Date
+  status                String     @default("ACTIVE")
   metadata              Json?
-  loan                  Loan      @relation(fields: [loanId], references: [id], onDelete: Cascade)
-  createdAt             DateTime  @default(now())
-  updatedAt             DateTime  @updatedAt
+  loan                  Loan       @relation(fields: [loanId], references: [id], onDelete: Cascade)
+  documents             Document[]
+  notes                 LoanNote[]
+  createdAt             DateTime   @default(now())
+  updatedAt             DateTime   @updatedAt
 
   @@index([loanId, status])
   @@index([loanId, valuationDate])
@@ -948,16 +1030,23 @@ model SavingsAccount {
 }
 
 model SavingsTransaction {
-  id                String         @id @default(uuid()) @db.Uuid
-  savingsAccountId  String         @db.Uuid
-  transactionType   String
-  amountMinor       BigInt
-  externalReference String?
-  idempotencyKey    String         @unique
-  savingsAccount    SavingsAccount @relation(fields: [savingsAccountId], references: [id])
-  createdAt         DateTime       @default(now())
+  id                  String             @id @default(uuid()) @db.Uuid
+  savingsAccountId    String             @db.Uuid
+  transactionType     String
+  amountMinor         BigInt
+  settlementAccountId String?            @db.Uuid
+  recordedByUserId    String?
+  reason              String?
+  externalReference   String?
+  idempotencyKey      String             @unique
+  savingsAccount      SavingsAccount     @relation(fields: [savingsAccountId], references: [id])
+  settlementAccount   SettlementAccount? @relation(fields: [settlementAccountId], references: [id])
+  recordedBy          User?              @relation("RecordedSavingsTransactions", fields: [recordedByUserId], references: [id])
+  createdAt           DateTime           @default(now())
 
   @@index([savingsAccountId, createdAt])
+  @@index([settlementAccountId])
+  @@index([recordedByUserId])
 }
 
 model OwnershipPool {
@@ -994,6 +1083,7 @@ model LedgerAccount {
   penaltyIncomeMappings      LoanProductAccountingMapping[] @relation("PenaltyIncome")
   writeOffMappings           LoanProductAccountingMapping[] @relation("WriteOffExpense")
   overpaymentMappings        LoanProductAccountingMapping[] @relation("OverpaymentLiability")
+  funds                      Fund[]
   settlementAccounts         SettlementAccount[]
   defaultPrincipalFor        LoanAccountingDefaults[]       @relation("DefaultPrincipalReceivable")
   defaultInterestFor         LoanAccountingDefaults[]       @relation("DefaultInterestIncome")
@@ -1051,20 +1141,21 @@ model LoanAccountingDefaults {
 }
 
 model SettlementAccount {
-  id               String            @id @default(uuid()) @db.Uuid
-  organizationId   String            @db.Uuid
-  name             String
-  type             String
-  provider         String?
-  accountReference String?
-  currencyCode     String            @db.VarChar(10)
-  ledgerAccountId  String            @db.Uuid
-  active           Boolean           @default(true)
-  organization     Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  ledgerAccount    LedgerAccount     @relation(fields: [ledgerAccountId], references: [id])
-  loanTransactions LoanTransaction[]
-  createdAt        DateTime          @default(now())
-  updatedAt        DateTime          @updatedAt
+  id                  String               @id @default(uuid()) @db.Uuid
+  organizationId      String               @db.Uuid
+  name                String
+  type                String
+  provider            String?
+  accountReference    String?
+  currencyCode        String               @db.VarChar(10)
+  ledgerAccountId     String               @db.Uuid
+  active              Boolean              @default(true)
+  organization        Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  ledgerAccount       LedgerAccount        @relation(fields: [ledgerAccountId], references: [id])
+  loanTransactions    LoanTransaction[]
+  savingsTransactions SavingsTransaction[]
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
 
   @@unique([organizationId, name, currencyCode])
   @@index([organizationId, type, active])
@@ -1339,6 +1430,7 @@ model Document {
   loanId             String?             @db.Uuid
   identifierId       String?             @db.Uuid
   familyMemberId     String?             @db.Uuid
+  collateralId       String?             @db.Uuid
   name               String
   description        String?
   objectKey          String              @unique
@@ -1348,6 +1440,7 @@ model Document {
   loan               Loan?               @relation(fields: [loanId], references: [id])
   identifier         ClientIdentifier?   @relation(fields: [identifierId], references: [id], onDelete: SetNull)
   familyMember       ClientFamilyMember? @relation(fields: [familyMemberId], references: [id], onDelete: SetNull)
+  collateral         LoanCollateral?     @relation(fields: [collateralId], references: [id], onDelete: SetNull)
   clientPhotoFor     Client?             @relation("ClientPhoto")
   clientSignatureFor Client?             @relation("ClientSignature")
   createdAt          DateTime            @default(now())
@@ -1356,6 +1449,7 @@ model Document {
   @@index([loanId])
   @@index([identifierId])
   @@index([familyMemberId])
+  @@index([collateralId])
 }
 
 model OutboxEvent {

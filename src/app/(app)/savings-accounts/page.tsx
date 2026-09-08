@@ -12,13 +12,16 @@ import { clientScopeWhere, getUserDataScope, groupScopeWhere } from "@/modules/i
 import { formatMinor } from "@/modules/money/domain/format-minor";
 
 const pageSize = 25;
+const supportedStatusFilters = ["SUBMITTED", "APPROVED", "ACTIVE", "INACTIVE", "BLOCKED", "CLOSED", "REJECTED"] as const;
+
+type SupportedSavingsStatusFilter = (typeof supportedStatusFilters)[number];
 
 function fullName(person: { firstName: string; middleName: string | null; lastName: string }) {
   return [person.firstName, person.middleName, person.lastName].filter(Boolean).join(" ");
 }
 
 function statusTone(status: string) {
-  return status === "ACTIVE" ? "up-to-date" : "review";
+  return status === "ACTIVE" ? "up-to-date" : status === "BLOCKED" ? "in-arrears" : "review";
 }
 
 function statusLabel(status: string) {
@@ -49,21 +52,83 @@ const accountTypeAliasToValue: Record<string, string> = {
   recurringdeposit: "RECURRING_DEPOSIT",
 };
 
-const statusAliasToValue: Record<string, string> = {
+const statusAliasToValue: Record<string, SupportedSavingsStatusFilter> = {
   active: "ACTIVE",
   submitted: "SUBMITTED",
   pending: "SUBMITTED",
   "pending approval": "SUBMITTED",
+  approved: "APPROVED",
   inactive: "INACTIVE",
   closed: "CLOSED",
   rejected: "REJECTED",
   blocked: "BLOCKED",
 };
 
+const savingsStatusFilterMeta: Record<
+  SupportedSavingsStatusFilter,
+  {
+    heading: string;
+    countLabel: string;
+    emptyTitle: string;
+    emptyDescription: string;
+    tone: string;
+  }
+> = {
+  SUBMITTED: {
+    heading: "Pending approval",
+    countLabel: "submitted savings accounts",
+    emptyTitle: "No submitted savings accounts match",
+    emptyDescription: "Change the filter and try again.",
+    tone: "review",
+  },
+  APPROVED: {
+    heading: "Approved",
+    countLabel: "approved savings accounts",
+    emptyTitle: "No approved savings accounts match",
+    emptyDescription: "Change the filter and try again.",
+    tone: "up-to-date",
+  },
+  ACTIVE: {
+    heading: "Active",
+    countLabel: "active savings accounts",
+    emptyTitle: "No active savings accounts match",
+    emptyDescription: "Change the filter and try again.",
+    tone: "up-to-date",
+  },
+  INACTIVE: {
+    heading: "Inactive",
+    countLabel: "inactive savings accounts",
+    emptyTitle: "No inactive savings accounts match",
+    emptyDescription: "Change the filter and try again.",
+    tone: "review",
+  },
+  BLOCKED: {
+    heading: "Blocked",
+    countLabel: "blocked savings accounts",
+    emptyTitle: "No blocked savings accounts match",
+    emptyDescription: "Change the filter and try again.",
+    tone: "in-arrears",
+  },
+  CLOSED: {
+    heading: "Closed",
+    countLabel: "closed savings accounts",
+    emptyTitle: "No closed savings accounts match",
+    emptyDescription: "Change the filter and try again.",
+    tone: "review",
+  },
+  REJECTED: {
+    heading: "Rejected",
+    countLabel: "rejected savings accounts",
+    emptyTitle: "No rejected savings accounts match",
+    emptyDescription: "Change the filter and try again.",
+    tone: "in-arrears",
+  },
+};
+
 export default async function SavingsAccountsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ query?: string; page?: string }>;
+  searchParams: Promise<{ query?: string; page?: string; status?: string }>;
 }) {
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session) redirect("/sign-in");
@@ -73,6 +138,8 @@ export default async function SavingsAccountsPage({
 
   const params = await searchParams;
   const query = params.query?.trim() ?? "";
+  const requestedStatus = parseSavingsStatusFilter(params.status);
+  const activeStatusMeta = requestedStatus ? savingsStatusFilterMeta[requestedStatus] : null;
   const requestedPage = Math.max(1, Number.parseInt(params.page ?? "1", 10) || 1);
   const normalizedQuery = query.toLowerCase();
 
@@ -113,6 +180,7 @@ export default async function SavingsAccountsPage({
 
   const where: Prisma.SavingsAccountWhereInput = {
     OR: [{ client: { is: clientScope } }, { group: { is: groupScope } }],
+    ...(requestedStatus ? { status: requestedStatus } : {}),
     ...(searchFilters.length > 0 ? { AND: [{ OR: searchFilters }] } : {}),
   };
 
@@ -148,10 +216,18 @@ export default async function SavingsAccountsPage({
     take: pageSize,
   });
 
+  const clearStatusHref = query ? `/savings-accounts?query=${encodeURIComponent(query)}` : "/savings-accounts";
   const pageHref = (targetPage: number) => {
     const nextParams = new URLSearchParams();
     if (query) nextParams.set("query", query);
+    if (requestedStatus) nextParams.set("status", requestedStatus);
     nextParams.set("page", String(targetPage));
+    return `/savings-accounts?${nextParams.toString()}`;
+  };
+  const statusFilterHref = (status: SupportedSavingsStatusFilter) => {
+    const nextParams = new URLSearchParams();
+    if (query) nextParams.set("query", query);
+    nextParams.set("status", status);
     return `/savings-accounts?${nextParams.toString()}`;
   };
 
@@ -161,8 +237,12 @@ export default async function SavingsAccountsPage({
       <header className="directory-header">
         <div>
           <p className="eyebrow">Savings operations</p>
-          <h1>Savings accounts</h1>
-          <p>{total.toLocaleString()} records in your office scope</p>
+          <h1>{activeStatusMeta ? `Savings accounts — ${activeStatusMeta.heading}` : "Savings accounts"}</h1>
+          <p>
+            {activeStatusMeta
+              ? `${total.toLocaleString()} ${activeStatusMeta.countLabel}`
+              : `${total.toLocaleString()} records in your office scope`}
+          </p>
         </div>
         <div className="header-actions">
           <Link className="secondary-action" href="/">
@@ -173,7 +253,30 @@ export default async function SavingsAccountsPage({
           </Link>
         </div>
       </header>
-      <LiveSearchInput placeholder="Search account, client, group, product, officer or office" />
+      <div className="directory-toolbar">
+        <LiveSearchInput placeholder="Search account, client, group, product, officer or office" />
+        <div className="directory-filter-chip">
+          <span className="muted-text">Status:</span>
+          {supportedStatusFilters.map((status) => {
+            const statusMeta = savingsStatusFilterMeta[status];
+            return (
+              <Link
+                aria-current={requestedStatus === status ? "page" : undefined}
+                className={`status ${requestedStatus === status ? statusMeta.tone : "review"}`}
+                href={statusFilterHref(status)}
+                key={status}
+              >
+                {statusMeta.heading}
+              </Link>
+            );
+          })}
+          {activeStatusMeta ? (
+            <Link className="green-link" href={clearStatusHref}>
+              Clear filter
+            </Link>
+          ) : null}
+        </div>
+      </div>
       <section className="panel">
         <div className="table-scroll">
           <table className="clickable-rows">
@@ -206,8 +309,12 @@ export default async function SavingsAccountsPage({
                       }
                     : null;
                 const holderName = owner?.name ?? "Unknown owner";
-                const balanceMinor = account.transactions.reduce((sum, transaction) => sum + transaction.amountMinor, 0n);
-                const productName = account.product?.name ?? snapshotString(account.termsSnapshot, "name") ?? "Unlinked product";
+                const balanceMinor = account.transactions.reduce(
+                  (sum, transaction) => sum + transaction.amountMinor,
+                  0n,
+                );
+                const productName =
+                  account.product?.name ?? snapshotString(account.termsSnapshot, "name") ?? "Unlinked product";
                 return (
                   <tr key={account.id}>
                     <td className="mono muted-text">{(page - 1) * pageSize + index + 1}</td>
@@ -241,12 +348,17 @@ export default async function SavingsAccountsPage({
         {accounts.length === 0 ? (
           <div className="empty-state">
             <PiggyBank size={28} />
-            <strong>{query ? "No matching savings accounts" : "No savings accounts yet"}</strong>
+            <strong>{activeStatusMeta ? activeStatusMeta.emptyTitle : query ? "No matching savings accounts" : "No savings accounts yet"}</strong>
             <p>
-              {query
-                ? "Change the search and try again."
-                : "Savings, share and deposit accounts will appear here once they are opened for clients in your office scope."}
+              {activeStatusMeta
+                ? activeStatusMeta.emptyDescription
+                : query
+                  ? "Change the search and try again."
+                  : "Savings, share and deposit accounts will appear here once they are opened for clients in your office scope."}
             </p>
+            <Link className="invest-button empty-action" href={query || activeStatusMeta ? "/savings-accounts" : "/clients"}>
+              {query || activeStatusMeta ? "Show all accounts" : "Open from a client record"}
+            </Link>
           </div>
         ) : null}
         <nav aria-label="Savings account pages" className="pagination">
@@ -263,4 +375,10 @@ export default async function SavingsAccountsPage({
       </section>
     </main>
   );
+}
+
+function parseSavingsStatusFilter(status?: string): SupportedSavingsStatusFilter | null {
+  const normalized = status?.trim().toUpperCase();
+  if (!normalized) return null;
+  return supportedStatusFilters.find((value) => value === normalized) ?? null;
 }
