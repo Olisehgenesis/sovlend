@@ -10,6 +10,7 @@ import {
   loadBranchPortfolioReport,
   loadOperationsReportContext,
 } from "@/modules/reports/domain/operations-report";
+import { branchPortfolioBucketOrder } from "@/modules/reports/domain/risk-report";
 
 export async function GET(request: Request) {
   const session = await auth.api.getSession({ headers: await headers() });
@@ -30,7 +31,6 @@ export async function GET(request: Request) {
 
   const searchParams = new URL(request.url).searchParams;
   const report = await loadBranchPortfolioReport(prisma, context.scope, {
-    parType: searchParams.get("parType"),
     date: searchParams.get("date"),
   });
 
@@ -46,24 +46,46 @@ export async function GET(request: Request) {
 
   return NextResponse.json({
     asOfDate: isoDate(report.asOfDate),
-    parDays: report.parDays,
     rows: report.rows.map((row) => ({
-      officeId: row.officeId,
-      officeName: row.officeName,
+      loanOfficerId: row.loanOfficerId,
+      loanOfficerName: row.loanOfficerName,
       currencyCode: row.currencyCode,
       activeLoanCount: row.activeLoanCount,
-      atRiskLoanCount: row.atRiskLoanCount,
       outstandingPrincipalMinor: row.outstandingPrincipalMinor.toString(),
+      outstandingInterestMinor: row.outstandingInterestMinor.toString(),
+      outstandingFeesMinor: row.outstandingFeesMinor.toString(),
+      outstandingPenaltiesMinor: row.outstandingPenaltiesMinor.toString(),
+      outstandingTotalMinor: row.outstandingTotalMinor.toString(),
+      savingsBalanceMinor: row.savingsBalanceMinor.toString(),
       disbursedThisMonthMinor: row.disbursedThisMonthMinor.toString(),
-      parPercent: row.parPercent,
+      buckets: Object.fromEntries(
+        branchPortfolioBucketOrder.map((bucket) => [
+          bucket,
+          {
+            label: row.buckets[bucket].label,
+            amountMinor: row.buckets[bucket].amountMinor.toString(),
+            percent: row.buckets[bucket].percent,
+          },
+        ]),
+      ),
+      totalParMinor: row.totalParMinor.toString(),
+      totalParPercent: row.totalParPercent,
     })),
     totals: report.totals.map((row) => ({
       currencyCode: row.currencyCode,
       activeLoanCount: row.activeLoanCount,
-      atRiskLoanCount: row.atRiskLoanCount,
       outstandingPrincipalMinor: row.outstandingPrincipalMinor.toString(),
+      outstandingInterestMinor: row.outstandingInterestMinor.toString(),
+      outstandingFeesMinor: row.outstandingFeesMinor.toString(),
+      outstandingPenaltiesMinor: row.outstandingPenaltiesMinor.toString(),
+      outstandingTotalMinor: row.outstandingTotalMinor.toString(),
+      savingsBalanceMinor: row.savingsBalanceMinor.toString(),
       disbursedThisMonthMinor: row.disbursedThisMonthMinor.toString(),
-      parPercent: row.parPercent,
+      buckets: Object.fromEntries(
+        branchPortfolioBucketOrder.map((bucket) => [bucket, row.buckets[bucket].toString()]),
+      ),
+      totalParMinor: row.totalParMinor.toString(),
+      totalParPercent: row.totalParPercent,
     })),
   });
 }

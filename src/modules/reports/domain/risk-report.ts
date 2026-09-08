@@ -72,6 +72,31 @@ export function provisioningBucketTone(bucket: ProvisioningBucketKey) {
   return "in-arrears";
 }
 
+// Branch Portfolio (by loan officer) day-bucket ladder matching iLend's canned "Branch Portfolio"
+// report exactly (1-30/31-60/61-90/91-180/180+ days overdue). This is intentionally a 4th distinct
+// bucket ladder alongside AgingBucketKey (CURRENT/1-30/31-60/61-90/90+, used by Aging/PAR roll-rate)
+// and ProvisioningBucketKey (0/1-30/31-90/91-180/180+, used by Provisioning) — iLend itself uses a
+// different boundary set per report, so we mirror each one rather than force a single shared scheme.
+export type BranchPortfolioBucketKey = "1_30" | "31_60" | "61_90" | "91_180" | "180_PLUS";
+
+export const branchPortfolioBucketOrder: BranchPortfolioBucketKey[] = ["1_30", "31_60", "61_90", "91_180", "180_PLUS"];
+
+export const branchPortfolioBucketLabels: Record<BranchPortfolioBucketKey, string> = {
+  "1_30": "1-30 days",
+  "31_60": "31-60 days",
+  "61_90": "61-90 days",
+  "91_180": "91-180 days",
+  "180_PLUS": "Over 180 days",
+};
+
+export function branchPortfolioBucket(daysOverdue: number): BranchPortfolioBucketKey {
+  if (daysOverdue <= 30) return "1_30";
+  if (daysOverdue <= 60) return "31_60";
+  if (daysOverdue <= 90) return "61_90";
+  if (daysOverdue <= 180) return "91_180";
+  return "180_PLUS";
+}
+
 
 const openRiskStatuses: LoanStatus[] = ["ACTIVE", "IN_ARREARS"];
 const cohortStatuses: LoanStatus[] = ["ACTIVE", "IN_ARREARS", "OVERPAID", "WRITTEN_OFF", "CLOSED"];
@@ -108,6 +133,9 @@ type PortfolioLoanSnapshot = {
   disbursedOn: Date | null;
   maturesOn: Date | null;
   outstandingPrincipalMinor: bigint;
+  outstandingInterestMinor: bigint;
+  outstandingFeesMinor: bigint;
+  outstandingPenaltiesMinor: bigint;
   outstandingTotalMinor: bigint;
   overduePrincipalMinor: bigint;
   overdueInterestMinor: bigint;
@@ -895,6 +923,9 @@ export async function loadPortfolioLoans(
     );
     const daysOverdue = overdueInstallment ? dayDiff(today, overdueInstallment.dueOn) : 0;
     const loanOutstandingPrincipalMinor = sumBigInt(loan.installments.map(outstandingPrincipalMinor));
+    const loanOutstandingInterestMinor = sumBigInt(loan.installments.map(outstandingInterestMinor));
+    const loanOutstandingFeesMinor = sumBigInt(loan.installments.map(outstandingFeesMinor));
+    const loanOutstandingPenaltiesMinor = sumBigInt(loan.installments.map(outstandingPenaltiesMinor));
     const loanOutstandingTotalMinor = sumBigInt(loan.installments.map(outstandingTotalMinor));
     const overduePrincipalMinor = sumBigInt(overdueInstallments.map(outstandingPrincipalMinor));
     const overdueInterestMinor = sumBigInt(overdueInstallments.map(outstandingInterestMinor));
@@ -916,6 +947,9 @@ export async function loadPortfolioLoans(
       disbursedOn: loan.disbursedOn,
       maturesOn: loan.maturesOn,
       outstandingPrincipalMinor: loanOutstandingPrincipalMinor,
+      outstandingInterestMinor: loanOutstandingInterestMinor,
+      outstandingFeesMinor: loanOutstandingFeesMinor,
+      outstandingPenaltiesMinor: loanOutstandingPenaltiesMinor,
       outstandingTotalMinor: loanOutstandingTotalMinor,
       overduePrincipalMinor,
       overdueInterestMinor,
