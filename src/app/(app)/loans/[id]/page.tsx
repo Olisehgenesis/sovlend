@@ -16,6 +16,7 @@ import { prisma } from "@/lib/prisma";
 import { AuthorizationService } from "@/modules/identity/application/authorization-service";
 import { getUserDataScope } from "@/modules/identity/application/data-scope";
 import { permissions } from "@/modules/identity/domain/permissions";
+import { STAFF_SYSTEM_ROLES } from "@/modules/identity/domain/staff-roles";
 import { formatMinor } from "@/modules/money/domain/format-minor";
 import {
   installmentOutstandingMinor,
@@ -145,7 +146,7 @@ export default async function LoanPage({
     orderBy: [{ type: "asc" }, { name: "asc" }],
   });
   const officeOfficers = await prisma.user.findMany({
-    where: { organizationId: scope.organizationId, officeId: loan.officeId },
+    where: { organizationId: scope.organizationId, officeId: loan.officeId, systemRole: { in: [...STAFF_SYSTEM_ROLES] } },
     select: { id: true, name: true },
     orderBy: { name: "asc" },
   });
