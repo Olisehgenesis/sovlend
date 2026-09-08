@@ -59,7 +59,14 @@ const descriptions: Record<string, string> = {
   [permissions.reportSavingsAccountListing]: "View the exportable savings account listing report",
   [permissions.reportSavingsTransactions]: "View the savings deposits/withdrawals transaction ledger",
   [permissions.reportSavingsPortfolioByOfficer]: "View savings balances grouped by savings officer",
+
+  [permissions.reportClientStatement]: "Search a client and print their financial statement",
 };
+
+/** Exported so a test can assert every permission code has a description -- Prisma requires
+ * `description` on create, so a missing entry here throws at reseed time in production instead
+ * of failing fast in CI. */
+export const permissionDescriptions = descriptions;
 
 export async function seedPermissionGroups(prisma: PrismaClient, organizationId: string) {
   for (const code of Object.values(permissions)) {
