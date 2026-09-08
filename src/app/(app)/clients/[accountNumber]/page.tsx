@@ -13,7 +13,7 @@ import { prisma } from "@/lib/prisma";
 import { AuthorizationService } from "@/modules/identity/application/authorization-service";
 import { getUserDataScope, officeWhere } from "@/modules/identity/application/data-scope";
 import { permissions } from "@/modules/identity/domain/permissions";
-import { getClientWalletSummary } from "@/modules/lending/application/client-wallet";
+import { getClientWalletSummary, OPEN_LOAN_STATUSES } from "@/modules/lending/application/client-wallet";
 import { formatMinor } from "@/modules/money/domain/format-minor";
 
 const tabs = [
@@ -49,8 +49,8 @@ export default async function ClientDetailPage({ params, searchParams }: { param
       familyMembers: { orderBy: { createdAt: "desc" }, include: { documents: { orderBy: { createdAt: "desc" } } } },
       identifiers: { orderBy: { createdAt: "desc" }, include: { documents: { orderBy: { createdAt: "desc" } } } },
       documents: { orderBy: { createdAt: "desc" } },
-      loans: { orderBy: { createdAt: "desc" }, include: { product: { select: { name: true } } } },
-      savingsAccounts: { orderBy: { createdAt: "desc" }, include: { product: { select: { name: true } } } },
+      loans: { orderBy: { createdAt: "desc" }, include: { product: { select: { name: true } }, installments: { select: { principalDueMinor: true, principalPaidMinor: true, interestDueMinor: true, interestPaidMinor: true, feesDueMinor: true, feesPaidMinor: true, penaltiesDueMinor: true, penaltiesPaidMinor: true } } } },
+      savingsAccounts: { orderBy: { createdAt: "desc" }, include: { product: { select: { name: true } }, transactions: { select: { amountMinor: true } } } },
       charges: { orderBy: { createdAt: "desc" } },
       notes: { orderBy: { createdAt: "desc" }, include: { author: { select: { name: true } } } },
     },
@@ -74,6 +74,33 @@ export default async function ClientDetailPage({ params, searchParams }: { param
   const idPhoto = client.identifiers.flatMap((identifier) => identifier.documents).find((document) => document.mediaType.startsWith("image/"));
   const primarySavingsAccount = client.savingsAccounts.find((account) => account.accountType === "SAVINGS" && account.status === "ACTIVE") ?? null;
 
+  const loanRows = client.loans.map((loan) => {
+    const totalPaidMinor = loan.installments.reduce(
+      (sum, installment) => sum + installment.principalPaidMinor + installment.interestPaidMinor + installment.feesPaidMinor + installment.penaltiesPaidMinor,
+      0n,
+    );
+    const interestOutstandingMinor = loan.installments.reduce(
+      (sum, installment) => sum + (installment.interestDueMinor - installment.interestPaidMinor),
+      0n,
+    );
+    const outstandingMinor = loan.installments.reduce((sum, installment) => {
+      const principal = installment.principalDueMinor - installment.principalPaidMinor;
+      const interest = installment.interestDueMinor - installment.interestPaidMinor;
+      const fees = installment.feesDueMinor - installment.feesPaidMinor;
+      const penalties = installment.penaltiesDueMinor - installment.penaltiesPaidMinor;
+      return sum + principal + interest + fees + penalties;
+    }, 0n);
+    return { loan, totalPaidMinor, interestOutstandingMinor, outstandingMinor };
+  });
+
+  const savingsRows = client.savingsAccounts.map((account) => ({
+    account,
+    balanceMinor: account.transactions.reduce((sum, transaction) => sum + transaction.amountMinor, 0n),
+  }));
+
+  const activeLoanCount = client.loans.filter((loan) => (OPEN_LOAN_STATUSES as readonly string[]).includes(loan.status)).length;
+  const activeSavingsCount = client.savingsAccounts.filter((account) => account.status === "ACTIVE").length;
+
   return (
     <main className="directory-page">
       <Breadcrumbs items={[{ label: "Clients", href: "/clients" }, { label: fullName }]} />
@@ -85,6 +112,38 @@ export default async function ClientDetailPage({ params, searchParams }: { param
         </div>
         <span className={`status-dot ${client.status === "ACTIVE" ? "up-to-date" : "review"}`} />
       </header>
+
+      <section className="panel wallet-summary">
+        <div className="panel-heading"><div><h2>Wallet</h2><p>Combined loan and savings position for this client</p></div></div>
+        <div className="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th></th>
+                <th>Accounts</th>
+                <th>Balance</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><PiggyBank size={15} /> Savings</td>
+                <td>{activeSavingsCount.toLocaleString()} active of {client.savingsAccounts.length.toLocaleString()}</td>
+                <td>{formatMinor(wallet.savingsBalanceMinor, wallet.currencyCode)}</td>
+              </tr>
+              <tr>
+                <td><Wallet size={15} /> Loans</td>
+                <td>{activeLoanCount.toLocaleString()} open of {client.loans.length.toLocaleString()}</td>
+                <td>-{formatMinor(wallet.loanOutstandingMinor, wallet.currencyCode)}</td>
+              </tr>
+              <tr className="wallet-net-row">
+                <td><strong>Net wallet balance</strong></td>
+                <td></td>
+                <td><strong className={wallet.netBalanceMinor < 0n ? "negative" : ""}>{walletFormatted}</strong></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
 
       <div className="client-body">
         <div className="client-main">
@@ -117,14 +176,14 @@ export default async function ClientDetailPage({ params, searchParams }: { param
       {activeTab === "loans" ? (
         <section className="panel">
           <div className="panel-heading"><div><h2>Loans</h2><p>Loan accounts held by this client</p></div>{canApplyLoan && client.status === "ACTIVE" ? <ApplyForLoanButton clientId={client.id} /> : null}</div>
-          {client.loans.length === 0 ? <div className="empty-state compact-empty"><Wallet size={26} /><strong>No loans yet</strong><p>Loan accounts will appear here once applied for and disbursed.</p></div> : <div className="table-scroll"><table><thead><tr><th>Account</th><th>Product</th><th>Principal</th><th>Status</th><th>Disbursed</th><th></th></tr></thead><tbody>{client.loans.map((loan) => <tr key={loan.id}><td className="mono">{loan.accountNumber}</td><td>{loan.product.name}</td><td>{formatMinor(loan.principalMinor, loan.denominationCurrency)}</td><td><span className={`status ${loan.status === "ACTIVE" ? "up-to-date" : loan.status === "IN_ARREARS" ? "in-arrears" : "review"}`}>{loan.status}</span></td><td>{loan.disbursedOn ? new Intl.DateTimeFormat("en-UG", { dateStyle: "medium" }).format(loan.disbursedOn) : "\u2014"}</td><td><Link className="green-link" href={`/loans/${loan.id}`}>View</Link></td></tr>)}</tbody></table></div>}
+          {client.loans.length === 0 ? <div className="empty-state compact-empty"><Wallet size={26} /><strong>No loans yet</strong><p>Loan accounts will appear here once applied for and disbursed.</p></div> : <div className="table-scroll"><table><thead><tr><th>Account</th><th>Product</th><th>Principal</th><th>Total Paid</th><th>Outstanding</th><th>Interest Outstanding</th><th>Status</th><th>Disbursed</th><th></th></tr></thead><tbody>{loanRows.map(({ loan, totalPaidMinor, interestOutstandingMinor, outstandingMinor }) => <tr key={loan.id}><td className="mono">{loan.accountNumber}</td><td>{loan.product.name}</td><td>{formatMinor(loan.principalMinor, loan.denominationCurrency)}</td><td>{formatMinor(totalPaidMinor, loan.denominationCurrency)}</td><td>{formatMinor(outstandingMinor, loan.denominationCurrency)}</td><td>{formatMinor(interestOutstandingMinor, loan.denominationCurrency)}</td><td><span className={`status ${loan.status === "ACTIVE" ? "up-to-date" : loan.status === "IN_ARREARS" ? "in-arrears" : "review"}`}>{loan.status}</span></td><td>{loan.disbursedOn ? new Intl.DateTimeFormat("en-UG", { dateStyle: "medium" }).format(loan.disbursedOn) : "\u2014"}</td><td><Link className="green-link" href={`/loans/${loan.id}`}>View</Link></td></tr>)}</tbody></table></div>}
         </section>
       ) : null}
 
       {activeTab === "savings" ? (
         <section className="panel">
           <div className="panel-heading"><div><h2>Savings</h2><p>Savings, share and deposit accounts held by this client</p></div>{canTransact && client.status === "ACTIVE" && client.savingsAccounts.length === 0 ? <NewSavingsAccountWizard charges={savingsCharges.map((charge) => ({ id: charge.id, name: charge.name, calculationType: charge.calculationType, amountMinor: charge.amountMinor?.toString() ?? null, percentageBps: charge.percentageBps, currencyCode: charge.currencyCode }))} clientId={client.id} officers={officers} products={savingsProducts.map((product) => ({ id: product.id, name: product.name, shortName: product.shortName, currencyCode: product.currencyCode, nominalAnnualRateBps: product.nominalAnnualRateBps, minOpeningBalanceMinor: product.minOpeningBalanceMinor.toString() }))} /> : null}</div>
-          {client.savingsAccounts.length === 0 ? <div className="empty-state compact-empty"><PiggyBank size={26} /><strong>No savings accounts yet</strong><p>Open one above to start recording deposits.</p></div> : <div className="table-scroll"><table><thead><tr><th>Account</th><th>Type</th><th>Product</th><th>Currency</th><th>Status</th><th>Opened</th><th></th></tr></thead><tbody>{client.savingsAccounts.map((account) => <tr key={account.id}><td className="mono"><Link className="green-link" href={`/savings-accounts/${account.accountNumber}`}>{account.accountNumber}</Link></td><td>{account.accountType.replaceAll("_", " ")}</td><td>{account.product?.name ?? "\u2014"}</td><td>{account.currencyCode}</td><td><span className={`status ${account.status === "ACTIVE" ? "up-to-date" : "review"}`}>{account.status === "SUBMITTED" ? "Pending approval" : account.status}</span></td><td>{new Intl.DateTimeFormat("en-UG", { dateStyle: "medium" }).format(account.createdAt)}</td><td>{account.status === "SUBMITTED" && canApproveSavings && account.submittedById !== session.user.id ? <ApproveSavingsAccountButton clientId={client.id} savingsAccountId={account.id} /> : null}</td></tr>)}</tbody></table></div>}
+          {client.savingsAccounts.length === 0 ? <div className="empty-state compact-empty"><PiggyBank size={26} /><strong>No savings accounts yet</strong><p>Open one above to start recording deposits.</p></div> : <div className="table-scroll"><table><thead><tr><th>Account</th><th>Type</th><th>Product</th><th>Currency</th><th>Balance</th><th>Status</th><th>Opened</th><th></th></tr></thead><tbody>{savingsRows.map(({ account, balanceMinor }) => <tr key={account.id}><td className="mono"><Link className="green-link" href={`/savings-accounts/${account.accountNumber}`}>{account.accountNumber}</Link></td><td>{account.accountType.replaceAll("_", " ")}</td><td>{account.product?.name ?? "\u2014"}</td><td>{account.currencyCode}</td><td>{formatMinor(balanceMinor, account.currencyCode)}</td><td><span className={`status ${account.status === "ACTIVE" ? "up-to-date" : "review"}`}>{account.status === "SUBMITTED" ? "Pending approval" : account.status}</span></td><td>{new Intl.DateTimeFormat("en-UG", { dateStyle: "medium" }).format(account.createdAt)}</td><td>{account.status === "SUBMITTED" && canApproveSavings && account.submittedById !== session.user.id ? <ApproveSavingsAccountButton clientId={client.id} savingsAccountId={account.id} /> : null}</td></tr>)}</tbody></table></div>}
           {canTransact && client.status === "ACTIVE" && primarySavingsAccount ? <DepositWithdrawForm clientId={client.id} savingsAccountId={primarySavingsAccount.id} /> : null}
         </section>
       ) : null}
