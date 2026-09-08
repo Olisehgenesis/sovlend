@@ -1,5 +1,5 @@
 import type { LucideIcon } from "lucide-react";
-import { BookOpenText, Briefcase, ShieldAlert, Sparkles } from "lucide-react";
+import { BookOpenText, Briefcase, PiggyBank, ShieldAlert, Sparkles } from "lucide-react";
 
 import { AuthorizationService } from "@/modules/identity/application/authorization-service";
 import { permissions } from "@/modules/identity/domain/permissions";
@@ -87,6 +87,18 @@ export const reportSections: readonly ReportSection[] = [
       { href: "/reports/insights/fee-revenue", permission: permissions.reportFeeRevenue, title: "Fee Revenue", description: "Track income from fees and charges." },
       { href: "/reports/insights/document-completeness", permission: permissions.reportDocumentCompleteness, title: "Document Completeness", description: "Check KYC and required document coverage." },
       { href: "/reports/insights/audit-trail", permission: permissions.reportAuditTrail, title: "Audit Trail", description: "Search immutable operational events." },
+    ],
+  },
+  {
+    id: "savings",
+    title: "Savings",
+    eyebrow: "Deposit operations",
+    description: "Savings account register, transaction ledger, and officer-level balances — not covered by any iLend canned report.",
+    icon: PiggyBank,
+    reports: [
+      { href: "/reports/savings/account-listing", permission: permissions.reportSavingsAccountListing, title: "Savings Account Listing", description: "Exportable register of every savings account and its current balance." },
+      { href: "/reports/savings/transactions", permission: permissions.reportSavingsTransactions, title: "Savings Transactions", description: "Ledger of deposits, withdrawals, and charges posted to savings accounts." },
+      { href: "/reports/savings/portfolio-by-officer", permission: permissions.reportSavingsPortfolioByOfficer, title: "Savings Portfolio by Officer", description: "Total and average savings balances grouped by savings officer." },
     ],
   },
 ];
