@@ -90,6 +90,11 @@ export const defaultPermissionGroups: Record<string, readonly PermissionCode[]> 
   "Treasury Signer": [permissions.treasuryView, permissions.treasuryApprove, permissions.ledgerView, permissions.auditView, ...accountingReportPermissions, permissions.reportOutstandingBalances, permissions.reportProvisioning],
   Auditor: [permissions.clientView, permissions.loanView, permissions.savingsView, permissions.treasuryView, permissions.ledgerView, permissions.reportView, permissions.auditView, ...allReportPermissions],
   Investor: [permissions.treasuryView],
+  // Least-privilege group for the non-interactive standing-order sweep worker (see
+  // src/migration/ensure-standing-order-automation.ts and
+  // src/modules/lending/application/execute-standing-order-sweep.ts): only what's needed to
+  // post a repayment sourced from a client's own savings balance.
+  "Standing Order Automation": [permissions.loanRepayment, permissions.savingsTransact],
 };
 
 export type PermissionAssignment = Readonly<{

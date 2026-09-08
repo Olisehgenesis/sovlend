@@ -2,9 +2,12 @@ import { PrismaClient } from "@prisma/client";
 import { Worker } from "bullmq";
 
 import { enqueueRepaymentReminders } from "@/modules/notifications/application/reminder-scanner";
+import { enqueueStandingOrderSweeps } from "@/modules/notifications/application/standing-order-sweep-scanner";
 import { classifyLoanArrears } from "@/modules/lending/application/classify-arrears";
+import { executeStandingOrderSweep } from "@/modules/lending/application/execute-standing-order-sweep";
 import { processLoanExportJob } from "@/modules/lending/application/export-loans";
 import { reminderJobId, reminderJobSchema } from "@/modules/notifications/domain/reminder";
+import { standingOrderSweepJobSchema } from "@/modules/notifications/domain/standing-order-sweep";
 import { sendSms } from "@/modules/notifications/infrastructure/sms";
 import { formatMinor } from "@/modules/money/domain/format-minor";
 import { CachedPriceService } from "@/modules/pricing/application/cached-price-service";
@@ -21,6 +24,7 @@ import {
   redisConnection,
   registerSchedules,
   reminderQueue,
+  standingOrderSweepQueue,
 } from "@/modules/notifications/infrastructure/queues";
 
 const prisma = new PrismaClient();
@@ -34,6 +38,9 @@ const maintenanceWorker = new Worker(
     }
     if (job.name === "classify-loan-arrears") {
       return { changed: await classifyLoanArrears(prisma) };
+    }
+    if (job.name === "scan-standing-order-sweeps") {
+      return { queued: await enqueueStandingOrderSweeps(prisma, standingOrderSweepQueue) };
     }
     throw new Error(`Unknown maintenance job: ${job.name}`);
   },
@@ -99,6 +106,15 @@ const reminderWorker = new Worker(
     });
   },
   { connection: redisConnection, concurrency: 10 },
+);
+
+const standingOrderSweepWorker = new Worker(
+  "standing-order-sweep",
+  async (job) => {
+    const data = standingOrderSweepJobSchema.parse(job.data);
+    return executeStandingOrderSweep(prisma, data);
+  },
+  { connection: redisConnection, concurrency: 5 },
 );
 
 const priceWorker = new Worker(
@@ -173,8 +189,8 @@ async function run(): Promise<void> {
 
 async function shutdown(): Promise<void> {
   stopping = true;
-  await Promise.all([maintenanceWorker.close(), reminderWorker.close(), priceWorker.close(), loanExportWorker.close()]);
-  await Promise.all([domainEventQueue.close(), maintenanceQueue.close(), reminderQueue.close(), priceRefreshQueue.close(), loanExportQueue.close()]);
+  await Promise.all([maintenanceWorker.close(), reminderWorker.close(), standingOrderSweepWorker.close(), priceWorker.close(), loanExportWorker.close()]);
+  await Promise.all([domainEventQueue.close(), maintenanceQueue.close(), reminderQueue.close(), priceRefreshQueue.close(), loanExportQueue.close(), standingOrderSweepQueue.close()]);
   await redisConnection.quit();
   await prisma.$disconnect();
 }

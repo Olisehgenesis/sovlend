@@ -10,6 +10,7 @@ export const reminderQueue = new Queue("repayment-reminders", { connection: redi
 export const maintenanceQueue = new Queue("maintenance", { connection: redisConnection });
 export const priceRefreshQueue = new Queue("price-refresh", { connection: redisConnection });
 export const loanExportQueue = new Queue("loan-export", { connection: redisConnection });
+export const standingOrderSweepQueue = new Queue("standing-order-sweep", { connection: redisConnection });
 
 export async function registerSchedules(): Promise<void> {
   await maintenanceQueue.upsertJobScheduler(
@@ -21,6 +22,11 @@ export async function registerSchedules(): Promise<void> {
     "daily-loan-arrears",
     { pattern: "15 0 * * *" },
     { name: "classify-loan-arrears", data: {} },
+  );
+  await maintenanceQueue.upsertJobScheduler(
+    "standing-order-sweep-scan",
+    { pattern: "0 6 * * *" },
+    { name: "scan-standing-order-sweeps", data: {} },
   );
   await priceRefreshQueue.upsertJobScheduler(
     "btc-usd-refresh",

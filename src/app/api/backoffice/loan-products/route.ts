@@ -5,8 +5,7 @@ import { z } from "zod";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
-const archiveSchema = z.object({ active: z.boolean() });
-const updateSchema = z.object({
+const schema = z.object({
   name: z.string().trim().min(1).max(150),
   shortName: z.string().trim().min(1).max(20),
   denominationCurrency: z.string().trim().min(3).max(10).default("UGX"),
@@ -19,8 +18,7 @@ const updateSchema = z.object({
   interestMethod: z.enum(["Flat", "Declining Balance"]),
 });
 
-// Archiving only flips `active`; the row is never deleted so existing loans keep their terms snapshot intact.
-export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function POST(request: Request) {
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const allowedEmails = (process.env.SUPER_ADMIN_EMAILS ?? "").split(",").map((email) => email.trim().toLowerCase()).filter(Boolean);
@@ -29,24 +27,13 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   const user = await prisma.user.findUnique({ where: { id: session.user.id }, select: { organizationId: true } });
   if (!user?.organizationId) return NextResponse.json({ error: "Super administrator requires an organization" }, { status: 400 });
 
-  const payload = await request.json();
-  const { id } = await params;
-  const product = await prisma.loanProduct.findFirst({ where: { id, organizationId: user.organizationId } });
-  if (!product) return NextResponse.json({ error: "Loan product not found" }, { status: 404 });
-
-  const parsedArchive = archiveSchema.safeParse(payload);
-  if (parsedArchive.success) {
-    await prisma.loanProduct.update({ where: { id: product.id }, data: { active: parsedArchive.data.active } });
-    return NextResponse.json({ ok: true });
-  }
-
-  const parsed = updateSchema.safeParse(payload);
-  if (!parsed.success) return NextResponse.json({ error: parsed.error.issues[0]?.message ?? "Invalid request" }, { status: 400 });
+  const parsed = schema.safeParse(await request.json());
+  if (!parsed.success) return NextResponse.json({ error: parsed.error.issues[0]?.message ?? "Invalid loan product" }, { status: 400 });
   if (parsed.data.principalMax < parsed.data.principalMin) return NextResponse.json({ error: "Maximum principal must be greater than or equal to the minimum" }, { status: 400 });
 
-  await prisma.loanProduct.update({
-    where: { id: product.id },
+  const product = await prisma.loanProduct.create({
     data: {
+      organizationId: user.organizationId,
       name: parsed.data.name,
       shortName: parsed.data.shortName,
       denominationCurrency: parsed.data.denominationCurrency,
@@ -57,7 +44,8 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       repaymentFrequency: parsed.data.repaymentFrequency,
       amortizationMethod: parsed.data.amortizationMethod,
       interestMethod: parsed.data.interestMethod,
+      version: 1,
     },
   });
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({ id: product.id }, { status: 201 });
 }

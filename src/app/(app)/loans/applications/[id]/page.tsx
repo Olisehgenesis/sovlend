@@ -57,10 +57,20 @@ export default async function LoanApplicationPage({
   const actorApproved = application.approvals.some(
     (approval) => approval.reviewerId === session.user.id,
   );
+  const actor = await prisma.user.findUnique({
+    where: { id: session.user.id },
+    select: { systemRole: true },
+  });
+  // Branch/general managers carry enough approval authority to self-approve their own
+  // applications; every other role still needs an independent approver (maker-checker).
+  const actorCanSelfApprove =
+    actor?.systemRole === "BRANCH_MANAGER" ||
+    actor?.systemRole === "GENERAL_MANAGER" ||
+    actor?.systemRole === "ADMIN";
   const displayedStatus = application.loan?.status ?? application.status;
   const actionPanel =
     application.status === "SUBMITTED" &&
-    application.submittedById !== session.user.id ? (
+    (application.submittedById !== session.user.id || actorCanSelfApprove) ? (
       <article className="panel">
         <ApproveLoanForm
           applicationId={application.id}

@@ -899,6 +899,7 @@ export async function loadPortfolioLoans(
       maturesOn: true,
       office: { select: { name: true } },
       product: { select: { name: true, annualRateBps: true } },
+      termsSnapshot: true,
       loanOfficerId: true,
       loanOfficer: { select: { name: true } },
       client: { select: { firstName: true, middleName: true, lastName: true } },
@@ -961,7 +962,15 @@ export async function loadPortfolioLoans(
       productName: loan.product.name,
       disbursedOn: loan.disbursedOn,
       maturesOn: loan.maturesOn,
-      annualRateBps: loan.product.annualRateBps,
+      annualRateBps:
+        // Prefer the rate locked in at approval so a later edit to the live loan product never
+        // changes what an already-issued loan's risk report shows.
+        (loan.termsSnapshot &&
+        typeof loan.termsSnapshot === "object" &&
+        !Array.isArray(loan.termsSnapshot) &&
+        typeof (loan.termsSnapshot as Record<string, unknown>).annualRateBps === "number"
+          ? ((loan.termsSnapshot as Record<string, unknown>).annualRateBps as number)
+          : loan.product.annualRateBps),
       principalRepaidMinor,
       interestRepaidMinor,
       feesRepaidMinor,

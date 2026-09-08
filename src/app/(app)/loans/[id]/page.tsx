@@ -2,6 +2,7 @@ import { CircleDollarSign } from "lucide-react";
 import { headers } from "next/headers";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
+import type { Prisma } from "@prisma/client";
 
 import { LoanCollateralPanel } from "@/components/loan-collateral-panel";
 import { LoanChargesPanel } from "@/components/loan-charge-panel";
@@ -15,6 +16,7 @@ import { prisma } from "@/lib/prisma";
 import { AuthorizationService } from "@/modules/identity/application/authorization-service";
 import { getUserDataScope } from "@/modules/identity/application/data-scope";
 import { permissions } from "@/modules/identity/domain/permissions";
+import { STAFF_SYSTEM_ROLES } from "@/modules/identity/domain/staff-roles";
 import { formatMinor } from "@/modules/money/domain/format-minor";
 import {
   installmentOutstandingMinor,
@@ -22,6 +24,25 @@ import {
   loanOutstandingMinor,
   loanWrittenOffMinor,
 } from "@/modules/lending/domain/loan-outstanding";
+
+// A loan's originating terms are locked in at approval time in `termsSnapshot` (see
+// approve-loan-application.ts) precisely so that later edits to the live LoanProduct row
+// (rate, method, repayment count, etc.) never change what an already-issued loan shows or
+// owes. Prefer the snapshot for display; only fall back to the live product for legacy
+// loans created before this field existed.
+function snapshotRecord(snapshot: Prisma.JsonValue | null) {
+  return snapshot && typeof snapshot === "object" && !Array.isArray(snapshot)
+    ? (snapshot as Record<string, unknown>)
+    : null;
+}
+function snapshotString(snapshot: Prisma.JsonValue | null, key: string) {
+  const value = snapshotRecord(snapshot)?.[key];
+  return typeof value === "string" && value.length > 0 ? value : null;
+}
+function snapshotNumber(snapshot: Prisma.JsonValue | null, key: string) {
+  const value = snapshotRecord(snapshot)?.[key];
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
 
 export default async function LoanPage({
   params,
@@ -125,7 +146,7 @@ export default async function LoanPage({
     orderBy: [{ type: "asc" }, { name: "asc" }],
   });
   const officeOfficers = await prisma.user.findMany({
-    where: { organizationId: scope.organizationId, officeId: loan.officeId },
+    where: { organizationId: scope.organizationId, officeId: loan.officeId, systemRole: { in: [...STAFF_SYSTEM_ROLES] } },
     select: { id: true, name: true },
     orderBy: { name: "asc" },
   });
@@ -262,23 +283,47 @@ export default async function LoanPage({
             </div>
             <div>
               <dt>Interest rate</dt>
-              <dd>{(loan.product.annualRateBps / 100).toFixed(2)}% per annum</dd>
+              <dd>
+                {(
+                  (snapshotNumber(loan.termsSnapshot, "annualRateBps") ??
+                    loan.product.annualRateBps) / 100
+                ).toFixed(2)}
+                % per annum
+              </dd>
             </div>
             <div>
               <dt>Interest method</dt>
-              <dd>{loan.product.interestMethod.replaceAll("_", " ")}</dd>
+              <dd>
+                {(
+                  snapshotString(loan.termsSnapshot, "interestMethod") ??
+                  loan.product.interestMethod
+                ).replaceAll("_", " ")}
+              </dd>
             </div>
             <div>
               <dt>Amortization</dt>
-              <dd>{loan.product.amortizationMethod.replaceAll("_", " ")}</dd>
+              <dd>
+                {(
+                  snapshotString(loan.termsSnapshot, "amortizationMethod") ??
+                  loan.product.amortizationMethod
+                ).replaceAll("_", " ")}
+              </dd>
             </div>
             <div>
               <dt>Repayment frequency</dt>
-              <dd>{loan.product.repaymentFrequency.replaceAll("_", " ")}</dd>
+              <dd>
+                {(
+                  snapshotString(loan.termsSnapshot, "repaymentFrequency") ??
+                  loan.product.repaymentFrequency
+                ).replaceAll("_", " ")}
+              </dd>
             </div>
             <div>
               <dt>Number of repayments</dt>
-              <dd>{loan.product.repaymentCount}</dd>
+              <dd>
+                {snapshotNumber(loan.termsSnapshot, "repaymentCount") ??
+                  loan.product.repaymentCount}
+              </dd>
             </div>
             <div>
               <dt>Disbursed on</dt>
