@@ -578,3 +578,12 @@ strong.negative { color: #a44831; }
 .client-action-assign-staff label { display: flex; align-items: center; gap: 7px; flex: 1; color: var(--ink); font-size: 13px; }
 .client-action-assign-staff select { flex: 1; min-height: 32px; padding: 0 6px; color: var(--ink); background: white; border: 1px solid #cfd7d1; border-radius: 4px; font: 12px var(--font-body); }
 .client-action-assign-staff button { min-height: 32px; padding: 0 10px; color: var(--forest); background: var(--mint); border: 0; border-radius: 4px; font-size: 11px; font-weight: 700; cursor: pointer; }
+
+.report-toggle { display: inline-flex; align-items: center; gap: 9px; cursor: pointer; user-select: none; }
+.report-toggle input[type="checkbox"] { position: absolute; width: 1px; height: 1px; opacity: 0; }
+.report-toggle-track { position: relative; width: 36px; height: 20px; flex: 0 0 36px; background: #d3ddd6; border-radius: 999px; transition: background 0.15s ease; }
+.report-toggle-thumb { position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; background: white; border-radius: 50%; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25); transition: transform 0.15s ease; }
+.report-toggle input:checked + .report-toggle-track { background: var(--forest, #1f5a3f); }
+.report-toggle input:checked + .report-toggle-track .report-toggle-thumb { transform: translateX(16px); }
+.report-toggle input:focus-visible + .report-toggle-track { outline: 2px solid #1f5a3f; outline-offset: 2px; }
+.report-toggle-label { color: #445048; font-size: 12px; font-weight: 650; }

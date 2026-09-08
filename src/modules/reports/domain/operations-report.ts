@@ -422,9 +422,10 @@ export async function loadOperationsReportContext(
 export async function loadCollectionByOfficerReport(
   prisma: PrismaClient,
   scope: UserDataScope,
-  params: { date?: string | null },
+  params: { date?: string | null; hideZeroCollection?: boolean },
 ): Promise<CollectionByOfficerReport> {
   const businessDate = parseDateInput(params.date);
+  const hideZeroCollection = params.hideZeroCollection ?? true;
 
   const [loans, installments] = await Promise.all([
     prisma.loan.findMany({
@@ -509,6 +510,7 @@ export async function loadCollectionByOfficerReport(
     .filter(
       (row) => row.loanCount > 0 || row.dueTodayMinor > 0n || row.overdueArrearsMinor > 0n,
     )
+    .filter((row) => !hideZeroCollection || row.expectedTotalMinor > 0n)
     .sort(
       (left, right) =>
         compareBigIntDesc(left.expectedTotalMinor, right.expectedTotalMinor) ||

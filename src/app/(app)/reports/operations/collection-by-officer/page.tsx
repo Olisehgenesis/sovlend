@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 
 import { Breadcrumbs } from "@/components/breadcrumbs";
 import { ReportPicker } from "@/components/report-picker";
+import { ReportZeroToggle } from "@/components/report-zero-toggle";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { permissions } from "@/modules/identity/domain/permissions";
@@ -20,7 +21,7 @@ import {
 export default async function CollectionByOfficerPage({
   searchParams,
 }: {
-  searchParams: Promise<{ date?: string }>;
+  searchParams: Promise<{ date?: string; showZero?: string }>;
 }) {
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session) redirect("/sign-in");
@@ -34,10 +35,12 @@ export default async function CollectionByOfficerPage({
   if (!context.allowed) redirect("/reports");
 
   const params = await searchParams;
+  const showZero = params.showZero === "1";
   const query = querySuffix(params);
   const [report, pickerOptions] = await Promise.all([
     loadCollectionByOfficerReport(prisma, context.scope, {
       date: params.date,
+      hideZeroCollection: !showZero,
     }),
     loadReportPickerOptions(prisma, session.user.id, context.scope.organizationId),
   ]);
@@ -91,6 +94,11 @@ export default async function CollectionByOfficerPage({
                 <input defaultValue={isoDate(report.businessDate)} name="date" type="date" />
               </label>
             </div>
+            <ReportZeroToggle
+              defaultChecked={showZero}
+              label="Show officers with nothing due"
+              name="showZero"
+            />
           </fieldset>
           <div className="form-actions">
             <button className="invest-button" type="submit">
@@ -107,7 +115,10 @@ export default async function CollectionByOfficerPage({
         <div className="panel-heading">
           <div>
             <h2>Officer collection queue</h2>
-            <p>{report.rows.length.toLocaleString()} officer bucket(s)</p>
+            <p>
+              {report.rows.length.toLocaleString()} officer bucket(s)
+              {!showZero ? " · officers with nothing due are hidden" : ""}
+            </p>
           </div>
           <CircleDollarSign size={19} />
         </div>
@@ -164,9 +175,10 @@ export default async function CollectionByOfficerPage({
   );
 }
 
-function querySuffix(filters: { date?: string }) {
+function querySuffix(filters: { date?: string; showZero?: string }) {
   const params = new URLSearchParams();
   if (filters.date) params.set("date", filters.date);
+  if (filters.showZero === "1") params.set("showZero", "1");
   const query = params.toString();
   return query ? `?${query}` : "";
 }

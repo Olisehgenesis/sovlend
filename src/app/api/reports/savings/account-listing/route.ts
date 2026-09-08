@@ -31,6 +31,7 @@ export async function GET(request: Request) {
   const searchParams = new URL(request.url).searchParams;
   const report = await loadSavingsAccountListingReport(prisma, context.scope, {
     officeId: searchParams.get("officeId"),
+    hideZeroBalances: searchParams.get("showZero") !== "1",
   });
 
   if (searchParams.get("format")?.toLowerCase() === "csv") {
