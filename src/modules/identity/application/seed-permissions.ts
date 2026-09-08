@@ -55,6 +55,10 @@ const descriptions: Record<string, string> = {
   [permissions.reportFeeRevenue]: "View fee and charges revenue report",
   [permissions.reportDocumentCompleteness]: "View the KYC/document completeness report",
   [permissions.reportAuditTrail]: "View the searchable audit trail report",
+
+  [permissions.reportSavingsAccountListing]: "View the exportable savings account listing report",
+  [permissions.reportSavingsTransactions]: "View the savings deposits/withdrawals transaction ledger",
+  [permissions.reportSavingsPortfolioByOfficer]: "View savings balances grouped by savings officer",
 };
 
 export async function seedPermissionGroups(prisma: PrismaClient, organizationId: string) {
