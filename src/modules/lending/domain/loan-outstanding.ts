@@ -83,3 +83,22 @@ export function loanOutstandingMinor(installments: readonly InstallmentAmounts[]
 export function isLoanSettledStatus(status: string): boolean {
   return status === "WRITTEN_OFF" || status === "CLOSED";
 }
+
+export type PrincipalAmounts = {
+  principalDueMinor: bigint;
+  principalPaidMinor: bigint;
+  principalWaivedMinor?: bigint;
+};
+
+/**
+ * Principal-only counterpart to `loanOutstandingMinor`, used for Portfolio at Risk (PAR),
+ * which is defined on the principal balance alone — not the total due/outstanding across
+ * principal + interest + fees + penalties. Same due-paid-waived-writtenOff identity, same
+ * "sum first, clamp once at the loan level" rule (never clamp per installment first).
+ */
+export function principalOutstandingMinor(installments: readonly PrincipalAmounts[], principalWrittenOffMinor: bigint): bigint {
+  const dueMinor = installments.reduce((sum, item) => sum + item.principalDueMinor, 0n);
+  const paidMinor = installments.reduce((sum, item) => sum + item.principalPaidMinor, 0n);
+  const waivedMinor = installments.reduce((sum, item) => sum + (item.principalWaivedMinor ?? 0n), 0n);
+  return clamp(dueMinor - paidMinor - waivedMinor - principalWrittenOffMinor);
+}

@@ -2,6 +2,7 @@ import type { AccountType, OwnershipType, PriceStatus } from "@prisma/client";
 
 import { prisma } from "@/lib/prisma";
 import { transactionTypeVariants } from "@/lib/loan-transaction-type-variants";
+import { principalOutstandingMinor as principalOutstandingHelper } from "@/modules/lending/domain/loan-outstanding";
 export { formatMinor } from "@/modules/money/domain/format-minor";
 import { getUserDataScope, officeWhere } from "@/modules/identity/application/data-scope";
 
@@ -41,84 +42,95 @@ export async function loadDashboard(userId: string) {
     ...officeWhere(scope),
   };
 
-  const [portfolio, dueInstallments, repayments, disbursements, attentionLoans, ownershipPools, btcUsdPrice, usdUgxPrice] = await Promise.all([
-    prisma.loan.aggregate({
-      where: { ...loanScope, status: { in: [...activeStatuses] } },
-      _sum: { principalMinor: true },
-      _count: true,
-    }),
-    prisma.loanInstallment.findMany({
-      where: { dueOn: { gte: today, lt: tomorrow }, loan: loanScope },
-      select: {
-        principalDueMinor: true,
-        interestDueMinor: true,
-        feesDueMinor: true,
-        penaltiesDueMinor: true,
-        principalPaidMinor: true,
-        interestPaidMinor: true,
-        feesPaidMinor: true,
-        penaltiesPaidMinor: true,
-      },
-    }),
-    prisma.loanTransaction.aggregate({
-      where: {
-        businessDate: { gte: today, lt: tomorrow },
-        transactionType: { in: transactionTypeVariants("REPAYMENT") },
-        loan: loanScope,
-      },
-      _sum: { denominationAmountMinor: true },
-      _count: true,
-    }),
-    prisma.loanTransaction.findMany({
-      where: {
-        businessDate: { gte: today, lt: tomorrow },
-        transactionType: { in: transactionTypeVariants("DISBURSEMENT") },
-        loan: loanScope,
-      },
-      select: { loanId: true, denominationAmountMinor: true },
-    }),
-    prisma.loan.findMany({
-      where: { ...loanScope, status: { in: [...activeStatuses] } },
-      select: {
-        id: true,
-        accountNumber: true,
-        status: true,
-        denominationCurrency: true,
-        client: { select: { firstName: true, middleName: true, lastName: true } },
-        group: { select: { name: true } },
-        product: { select: { name: true } },
-        installments: {
-          where: { dueOn: { lt: tomorrow } },
-          orderBy: { dueOn: "asc" },
+  const [portfolio, dueInstallments, repayments, disbursements, attentionLoans, principalLoans, ownershipPools, btcUsdPrice, usdUgxPrice] =
+    await Promise.all([
+      prisma.loan.aggregate({
+        where: { ...loanScope, status: { in: [...activeStatuses] } },
+        _sum: { principalMinor: true },
+        _count: true,
+      }),
+      prisma.loanInstallment.findMany({
+        where: { dueOn: { gte: today, lt: tomorrow }, loan: loanScope },
+        select: {
+          principalDueMinor: true,
+          interestDueMinor: true,
+          feesDueMinor: true,
+          penaltiesDueMinor: true,
+          principalPaidMinor: true,
+          interestPaidMinor: true,
+          feesPaidMinor: true,
+          penaltiesPaidMinor: true,
         },
-      },
-      orderBy: { updatedAt: "desc" },
-      take: 20,
-    }),
-    prisma.ownershipPool.findMany({
-      where: { organizationId: user.organizationId },
-      select: {
-        type: true,
-        accounts: {
-          select: {
-            type: true,
-            currencyCode: true,
-            lines: { select: { direction: true, amountMinor: true } },
+      }),
+      prisma.loanTransaction.aggregate({
+        where: {
+          businessDate: { gte: today, lt: tomorrow },
+          transactionType: { in: transactionTypeVariants("REPAYMENT") },
+          loan: loanScope,
+        },
+        _sum: { denominationAmountMinor: true },
+        _count: true,
+      }),
+      prisma.loanTransaction.findMany({
+        where: {
+          businessDate: { gte: today, lt: tomorrow },
+          transactionType: { in: transactionTypeVariants("DISBURSEMENT") },
+          loan: loanScope,
+        },
+        select: { loanId: true, denominationAmountMinor: true },
+      }),
+      prisma.loan.findMany({
+        where: { ...loanScope, status: { in: [...activeStatuses] } },
+        select: {
+          id: true,
+          accountNumber: true,
+          status: true,
+          denominationCurrency: true,
+          client: { select: { firstName: true, middleName: true, lastName: true } },
+          group: { select: { name: true } },
+          product: { select: { name: true } },
+          installments: {
+            where: { dueOn: { lt: tomorrow } },
+            orderBy: { dueOn: "asc" },
           },
         },
-      },
-    }),
-    prisma.priceSnapshot.findFirst({
-      where: { baseCode: "BTC", quoteCode: "USD", observedAt: { gt: cryptoFreshAfter } },
-      orderBy: { observedAt: "desc" },
-      select: { price: true, status: true, observedAt: true },
-    }),
-    prisma.priceSnapshot.findFirst({
-      where: { baseCode: "USD", quoteCode: "UGX", observedAt: { gt: fiatFreshAfter } },
-      orderBy: { observedAt: "desc" },
-      select: { price: true, status: true, observedAt: true },
-    }),
-  ]);
+        orderBy: { updatedAt: "desc" },
+        take: 20,
+      }),
+      // Portfolio-wide (not capped at 20) principal figures for Portfolio at Risk: PAR must be
+      // principal overdue / principal outstanding across every active/in-arrears loan, not just
+      // the handful shown in the "needs attention" list above.
+      prisma.loan.findMany({
+        where: { ...loanScope, status: { in: [...activeStatuses] } },
+        select: {
+          principalWrittenOffMinor: true,
+          installments: { select: { principalDueMinor: true, principalPaidMinor: true, principalWaivedMinor: true, dueOn: true } },
+        },
+      }),
+      prisma.ownershipPool.findMany({
+        where: { organizationId: user.organizationId },
+        select: {
+          type: true,
+          accounts: {
+            select: {
+              type: true,
+              currencyCode: true,
+              lines: { select: { direction: true, amountMinor: true } },
+            },
+          },
+        },
+      }),
+      prisma.priceSnapshot.findFirst({
+        where: { baseCode: "BTC", quoteCode: "USD", observedAt: { gt: cryptoFreshAfter } },
+        orderBy: { observedAt: "desc" },
+        select: { price: true, status: true, observedAt: true },
+      }),
+      prisma.priceSnapshot.findFirst({
+        where: { baseCode: "USD", quoteCode: "UGX", observedAt: { gt: fiatFreshAfter } },
+        orderBy: { observedAt: "desc" },
+        select: { price: true, status: true, observedAt: true },
+      }),
+    ]);
 
   const dueTodayMinor = dueInstallments.reduce((total, installment) => total + outstanding(installment), 0n);
   const disbursedTodayMinor = disbursements.reduce(
@@ -126,10 +138,16 @@ export async function loadDashboard(userId: string) {
     0n,
   );
   const disbursementCount = new Set(disbursements.map((transaction) => transaction.loanId)).size;
-  const atRiskMinor = attentionLoans
-    .filter((loan) => loan.status === "IN_ARREARS")
-    .flatMap((loan) => loan.installments)
-    .reduce((total, installment) => total + outstanding(installment), 0n);
+  // Portfolio at Risk = principal overdue / principal outstanding, across the whole active
+  // portfolio (not just the 20 loans shown in "needs attention") — matches iLend/Fineract's PAR
+  // definition, which looks at the principal balance only, not principal+interest+fees+penalties.
+  let principalOutstandingMinor = 0n;
+  let principalOverdueMinor = 0n;
+  for (const loan of principalLoans) {
+    principalOutstandingMinor += principalOutstandingHelper(loan.installments, loan.principalWrittenOffMinor);
+    const overdueInstallments = loan.installments.filter((installment) => installment.dueOn < tomorrow);
+    principalOverdueMinor += principalOutstandingHelper(overdueInstallments, 0n);
+  }
   const portfolioMinor = portfolio._sum.principalMinor ?? 0n;
   const btcPrice =
     btcUsdPrice && usdUgxPrice
@@ -157,6 +175,8 @@ export async function loadDashboard(userId: string) {
     generatedAt: now,
     metrics: {
       portfolioMinor,
+      principalOutstandingMinor,
+      principalOverdueMinor,
       activeLoanCount: portfolio._count,
       dueTodayMinor,
       dueTodayCount: dueInstallments.length,
@@ -164,7 +184,8 @@ export async function loadDashboard(userId: string) {
       repaymentCount: repayments._count,
       disbursedTodayMinor,
       disbursementCount,
-      portfolioAtRiskBps: portfolioMinor > 0n ? Number((atRiskMinor * 10_000n) / portfolioMinor) : 0,
+      portfolioAtRiskBps:
+        principalOutstandingMinor > 0n ? Number((principalOverdueMinor * 10_000n) / principalOutstandingMinor) : 0,
     },
     attentionLoans: attentionLoans
       .map((loan) => ({

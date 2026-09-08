@@ -244,17 +244,20 @@ export default async function LoansPage({
               <table className="clickable-rows">
                 <thead>
                   <tr>
-                    <th>Account holder&apos;s name</th>
-                    <th>Account ID</th>
-                    <th>Loan name</th>
+                    <th>Client Name</th>
+                    <th>Loan Account No.</th>
+                    <th>Client Account No.</th>
+                    <th>Product</th>
                     <th>Status</th>
-                    <th>Loan amount</th>
+                    <th>Loan Amount</th>
                     {requestedStatus === "WRITTEN_OFF" ? <th>Written off by</th> : null}
-                    <th>Business development officer</th>
-                    <th>Principal due</th>
-                    <th>Interest due</th>
-                    <th>Total due</th>
-                    <th>Total paid</th>
+                    <th>Loan Officer</th>
+                    <th>Principal Outstanding</th>
+                    <th>Interest Outstanding</th>
+                    <th>Fees Outstanding</th>
+                    <th>Penalties Outstanding</th>
+                    <th>Total Outstanding</th>
+                    <th>Total Paid</th>
                     {requestedStatus === "OVERPAID" ? (
                       <>
                         <th>Overpaid by</th>
@@ -315,6 +318,7 @@ export default async function LoansPage({
                           {borrower}
                           <Link className="row-link" href={`/loans/${loan.id}`} aria-label={`Open ${loan.accountNumber}`} />
                         </td>
+                        <td className="mono">{loan.accountNumber}</td>
                         <td className="mono">{loan.client ? loan.client.accountNumber : (loan.group?.accountNumber ?? "")}</td>
                         <td>{loan.product.name}</td>
                         <td>
@@ -327,6 +331,8 @@ export default async function LoansPage({
                         <td>{loan.loanOfficer?.name ?? "Unassigned"}</td>
                         <td>{formatMinor(principalDue, loan.denominationCurrency)}</td>
                         <td>{formatMinor(interestDue, loan.denominationCurrency)}</td>
+                        <td>{formatMinor(feesDue, loan.denominationCurrency)}</td>
+                        <td>{formatMinor(penaltiesDue, loan.denominationCurrency)}</td>
                         <td>{formatMinor(totalDue, loan.denominationCurrency)}</td>
                         <td>{formatMinor(totalPaid, loan.denominationCurrency)}</td>
                         {requestedStatus === "OVERPAID" ? (
@@ -384,9 +390,9 @@ export default async function LoansPage({
               <table>
                 <thead>
                   <tr>
-                    <th>Borrower</th>
+                    <th>Client</th>
                     <th>Product</th>
-                    <th>Principal</th>
+                    <th>Loan Amount</th>
                     <th>Status</th>
                     <th>Action</th>
                   </tr>

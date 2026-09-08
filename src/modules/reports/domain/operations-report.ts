@@ -166,9 +166,21 @@ export type ActiveLoanRow = {
   currencyCode: string;
   status: LoanStatus;
   principalMinor: bigint;
+  annualRateBps: number;
   disbursedOn: Date | null;
   maturesOn: Date | null;
+  principalRepaidMinor: bigint;
   outstandingPrincipalMinor: bigint;
+  overduePrincipalMinor: bigint;
+  interestRepaidMinor: bigint;
+  outstandingInterestMinor: bigint;
+  overdueInterestMinor: bigint;
+  feesRepaidMinor: bigint;
+  outstandingFeesMinor: bigint;
+  overdueFeesMinor: bigint;
+  penaltiesRepaidMinor: bigint;
+  outstandingPenaltiesMinor: bigint;
+  overduePenaltiesMinor: bigint;
   outstandingTotalMinor: bigint;
   daysOverdue: number;
   overdueSince: Date | null;
@@ -870,9 +882,21 @@ export async function loadActiveLoansReport(
       currencyCode: loan.denominationCurrency,
       status: loan.status,
       principalMinor: loan.principalMinor,
+      annualRateBps: loan.annualRateBps,
       disbursedOn: loan.disbursedOn,
       maturesOn: loan.maturesOn,
+      principalRepaidMinor: loan.principalRepaidMinor,
       outstandingPrincipalMinor: loan.outstandingPrincipalMinor,
+      overduePrincipalMinor: loan.overduePrincipalMinor,
+      interestRepaidMinor: loan.interestRepaidMinor,
+      outstandingInterestMinor: loan.outstandingInterestMinor,
+      overdueInterestMinor: loan.overdueInterestMinor,
+      feesRepaidMinor: loan.feesRepaidMinor,
+      outstandingFeesMinor: loan.outstandingFeesMinor,
+      overdueFeesMinor: loan.overdueFeesMinor,
+      penaltiesRepaidMinor: loan.penaltiesRepaidMinor,
+      outstandingPenaltiesMinor: loan.outstandingPenaltiesMinor,
+      overduePenaltiesMinor: loan.overduePenaltiesMinor,
       outstandingTotalMinor: loan.outstandingTotalMinor,
       daysOverdue: loan.daysOverdue,
       overdueSince: loan.overdueSince,
@@ -1471,7 +1495,19 @@ export function activeLoansReportCsv(report: ActiveLoansReport) {
       status: formatLoanStatus(row.status),
       currencyCode: row.currencyCode,
       principalMinor: row.principalMinor.toString(),
+      annualRateBps: (row.annualRateBps / 100).toFixed(2),
+      principalRepaidMinor: row.principalRepaidMinor.toString(),
       outstandingPrincipalMinor: row.outstandingPrincipalMinor.toString(),
+      overduePrincipalMinor: row.overduePrincipalMinor.toString(),
+      interestRepaidMinor: row.interestRepaidMinor.toString(),
+      outstandingInterestMinor: row.outstandingInterestMinor.toString(),
+      overdueInterestMinor: row.overdueInterestMinor.toString(),
+      feesRepaidMinor: row.feesRepaidMinor.toString(),
+      outstandingFeesMinor: row.outstandingFeesMinor.toString(),
+      overdueFeesMinor: row.overdueFeesMinor.toString(),
+      penaltiesRepaidMinor: row.penaltiesRepaidMinor.toString(),
+      outstandingPenaltiesMinor: row.outstandingPenaltiesMinor.toString(),
+      overduePenaltiesMinor: row.overduePenaltiesMinor.toString(),
       outstandingTotalMinor: row.outstandingTotalMinor.toString(),
       daysOverdue: String(row.daysOverdue),
       overdueSince: row.overdueSince ? isoDate(row.overdueSince) : "",
@@ -1488,7 +1524,19 @@ export function activeLoansReportCsv(report: ActiveLoansReport) {
       "status",
       "currencyCode",
       "principalMinor",
+      "annualRateBps",
+      "principalRepaidMinor",
       "outstandingPrincipalMinor",
+      "overduePrincipalMinor",
+      "interestRepaidMinor",
+      "outstandingInterestMinor",
+      "overdueInterestMinor",
+      "feesRepaidMinor",
+      "outstandingFeesMinor",
+      "overdueFeesMinor",
+      "penaltiesRepaidMinor",
+      "outstandingPenaltiesMinor",
+      "overduePenaltiesMinor",
       "outstandingTotalMinor",
       "daysOverdue",
       "overdueSince",
