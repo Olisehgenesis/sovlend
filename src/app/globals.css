@@ -508,7 +508,7 @@ strong.negative { color: #a44831; }
 .report-picker span { color: var(--muted); font-size: 11px; font-weight: 650; text-transform: uppercase; letter-spacing: .02em; }
 .report-picker select { min-height: 38px; min-width: 220px; padding: 0 10px; color: var(--ink); background: white; border: 1px solid var(--line); border-radius: 5px; font: 13px var(--font-body); }
 .reports-header-actions { display: flex; align-items: flex-end; gap: 10px; }
-.reports-all-actions { display: flex; gap: 6px; white-space: nowrap; }
+.reports-all-actions { position: relative; z-index: 1; display: flex; gap: 6px; white-space: nowrap; }
 .reports-all-actions .secondary-action { min-height: 30px; padding: 0 9px; font-size: 11px; }
 .header-dropdown-reports { max-height: 70vh; min-width: 240px; overflow-y: auto; }
 .header-dropdown-group { margin: 6px 4px 2px; color: var(--muted); font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }

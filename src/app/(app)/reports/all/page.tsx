@@ -72,6 +72,7 @@ export default async function AllReportsPage() {
                   <tr key={report.href}>
                     <td>
                       <Link href={report.href}>{report.title}</Link>
+                      <Link aria-label={`Open ${report.title}`} className="row-link" href={report.href} />
                     </td>
                     <td>{report.sectionTitle}</td>
                     <td>Table</td>
