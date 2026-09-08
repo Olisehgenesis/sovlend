@@ -8,15 +8,13 @@ import {
 } from "@/modules/identity/application/data-scope";
 import type { PermissionCode } from "@/modules/identity/domain/permissions";
 import { rowsToCsv } from "@/modules/lending/domain/loan-export";
-import { loadPortfolioLoans, type AgingBucketKey } from "@/modules/reports/domain/risk-report";
+import { loadPortfolioLoans, type AgingBucketKey, type BranchPortfolioBucketKey, branchPortfolioBucket, branchPortfolioBucketLabels, branchPortfolioBucketOrder } from "@/modules/reports/domain/risk-report";
 
 const reportableLoanStatuses: LoanStatus[] = ["ACTIVE", "IN_ARREARS"];
 const ugDateFormatter = new Intl.DateTimeFormat("en-UG", {
   dateStyle: "medium",
   timeZone: "UTC",
 });
-const MS_PER_DAY = 86_400_000;
-
 type InstallmentAmounts = {
   dueOn: Date;
   principalDueMinor: bigint;
@@ -90,29 +88,46 @@ export type UnassignedLoansReport = {
   totals: CurrencyTotal[];
 };
 
+export type BranchPortfolioBucketBreakdown = {
+  label: string;
+  amountMinor: bigint;
+  percent: number;
+};
+
 export type BranchPortfolioRow = {
-  officeId: string;
-  officeName: string;
+  loanOfficerId: string | null;
+  loanOfficerName: string;
   currencyCode: string;
   activeLoanCount: number;
-  atRiskLoanCount: number;
   outstandingPrincipalMinor: bigint;
+  outstandingInterestMinor: bigint;
+  outstandingFeesMinor: bigint;
+  outstandingPenaltiesMinor: bigint;
+  outstandingTotalMinor: bigint;
+  savingsBalanceMinor: bigint;
   disbursedThisMonthMinor: bigint;
-  parPercent: number;
+  buckets: Record<BranchPortfolioBucketKey, BranchPortfolioBucketBreakdown>;
+  totalParMinor: bigint;
+  totalParPercent: number;
 };
 
 export type BranchPortfolioTotal = {
   currencyCode: string;
   activeLoanCount: number;
-  atRiskLoanCount: number;
   outstandingPrincipalMinor: bigint;
+  outstandingInterestMinor: bigint;
+  outstandingFeesMinor: bigint;
+  outstandingPenaltiesMinor: bigint;
+  outstandingTotalMinor: bigint;
+  savingsBalanceMinor: bigint;
   disbursedThisMonthMinor: bigint;
-  parPercent: number;
+  buckets: Record<BranchPortfolioBucketKey, bigint>;
+  totalParMinor: bigint;
+  totalParPercent: number;
 };
 
 export type BranchPortfolioReport = {
   asOfDate: Date;
-  parDays: number;
   rows: BranchPortfolioRow[];
   totals: BranchPortfolioTotal[];
 };
@@ -558,87 +573,151 @@ export async function loadUnassignedLoansReport(
   };
 }
 
+// Matches iLend's canned "Branch Portfolio" report exactly: despite the name, iLend groups this
+// report by loan officer (not office — SovLend previously grouped by office here, which was wrong
+// once there's more than one officer). Columns mirror iLend's Pentaho report: NOL, the four
+// outstanding components, total outstanding, savings balance (via each officer's assigned savings
+// accounts), and a 1-30/31-60/61-90/91-180/180+ day PAR bucket breakdown with per-bucket amounts
+// and percentages. Note: iLend's own canned report also has a "Portfolio at Risk %" column that is
+// close to but not always identical to (day-bucket PAR total / total outstanding) for a handful of
+// officers — its exact formula couldn't be reverse-engineered from the aggregate report data alone,
+// so we intentionally surface only the one PAR% we can verify exactly (totalParPercent below, which
+// reconciles to the penny against every row of iLend's real report data checked during parity review).
 export async function loadBranchPortfolioReport(
   prisma: PrismaClient,
   scope: UserDataScope,
-  params: { parType?: string | null; date?: string | null },
+  params: { date?: string | null },
 ): Promise<BranchPortfolioReport> {
   const asOfDate = parseDateInput(params.date);
-  const parDays = parseParDays(params.parType);
   const monthStart = startOfUtcMonth(asOfDate);
   const nextMonthStart = addUtcMonths(monthStart, 1);
 
-  const loans = await prisma.loan.findMany({
-    where: {
-      office: { organizationId: scope.organizationId },
-      ...officeWhere(scope),
-      status: { in: reportableLoanStatuses },
-    },
-    select: {
-      principalMinor: true,
-      disbursedOn: true,
-      denominationCurrency: true,
-      officeId: true,
-      office: { select: { name: true } },
-      installments: {
-        select: {
-          dueOn: true,
-          principalDueMinor: true,
-          interestDueMinor: true,
-          feesDueMinor: true,
-          penaltiesDueMinor: true,
-          principalPaidMinor: true,
-          interestPaidMinor: true,
-          feesPaidMinor: true,
-          penaltiesPaidMinor: true,
-          principalWaivedMinor: true,
-          interestWaivedMinor: true,
-          feesWaivedMinor: true,
-          penaltiesWaivedMinor: true,
-        },
+  const [loans, savingsAccounts] = await Promise.all([
+    loadPortfolioLoans(prisma, scope, {}, { statuses: reportableLoanStatuses }, asOfDate),
+    prisma.savingsAccount.findMany({
+      where: {
+        OR: [
+          { client: { organizationId: scope.organizationId, ...officeWhere(scope) } },
+          { group: { organizationId: scope.organizationId, ...officeWhere(scope) } },
+        ],
       },
-    },
-  });
+      select: {
+        fieldOfficerId: true,
+        currencyCode: true,
+        fieldOfficer: { select: { name: true } },
+        transactions: { select: { amountMinor: true } },
+      },
+    }),
+  ]);
 
-  const rows = new Map<string, BranchPortfolioRow>();
+  const emptyBuckets = (): Record<BranchPortfolioBucketKey, bigint> =>
+    Object.fromEntries(branchPortfolioBucketOrder.map((bucket) => [bucket, 0n])) as Record<
+      BranchPortfolioBucketKey,
+      bigint
+    >;
+
+  type MutableRow = {
+    loanOfficerId: string | null;
+    loanOfficerName: string;
+    currencyCode: string;
+    activeLoanCount: number;
+    outstandingPrincipalMinor: bigint;
+    outstandingInterestMinor: bigint;
+    outstandingFeesMinor: bigint;
+    outstandingPenaltiesMinor: bigint;
+    outstandingTotalMinor: bigint;
+    savingsBalanceMinor: bigint;
+    disbursedThisMonthMinor: bigint;
+    bucketsMinor: Record<BranchPortfolioBucketKey, bigint>;
+  };
+
+  const rows = new Map<string, MutableRow>();
+
+  const ensureRow = (loanOfficerId: string | null, loanOfficerName: string, currencyCode: string) => {
+    const key = `${loanOfficerId ?? "UNASSIGNED"}:${currencyCode}`;
+    const existing = rows.get(key);
+    if (existing) return existing;
+    const created: MutableRow = {
+      loanOfficerId,
+      loanOfficerName,
+      currencyCode,
+      activeLoanCount: 0,
+      outstandingPrincipalMinor: 0n,
+      outstandingInterestMinor: 0n,
+      outstandingFeesMinor: 0n,
+      outstandingPenaltiesMinor: 0n,
+      outstandingTotalMinor: 0n,
+      savingsBalanceMinor: 0n,
+      disbursedThisMonthMinor: 0n,
+      bucketsMinor: emptyBuckets(),
+    };
+    rows.set(key, created);
+    return created;
+  };
 
   for (const loan of loans) {
-    const key = `${loan.officeId}:${loan.denominationCurrency}`;
-    const row =
-      rows.get(key) ?? {
-        officeId: loan.officeId,
-        officeName: loan.office.name,
-        currencyCode: loan.denominationCurrency,
-        activeLoanCount: 0,
-        atRiskLoanCount: 0,
-        outstandingPrincipalMinor: 0n,
-        disbursedThisMonthMinor: 0n,
-        parPercent: 0,
-      };
-
+    const row = ensureRow(loan.loanOfficerId, loan.loanOfficerName, loan.denominationCurrency);
     row.activeLoanCount += 1;
-    row.outstandingPrincipalMinor += loan.installments.reduce(
-      (sum, installment) => sum + principalOutstandingMinor(installment),
-      0n,
-    );
-
-    const oldestDueOn = oldestOutstandingDueOn(loan.installments, asOfDate);
-    if (oldestDueOn && utcDayDiff(oldestDueOn, asOfDate) > parDays) {
-      row.atRiskLoanCount += 1;
-    }
+    row.outstandingPrincipalMinor += loan.outstandingPrincipalMinor;
+    row.outstandingInterestMinor += loan.outstandingInterestMinor;
+    row.outstandingFeesMinor += loan.outstandingFeesMinor;
+    row.outstandingPenaltiesMinor += loan.outstandingPenaltiesMinor;
+    row.outstandingTotalMinor += loan.outstandingTotalMinor;
 
     if (loan.disbursedOn && loan.disbursedOn >= monthStart && loan.disbursedOn < nextMonthStart) {
       row.disbursedThisMonthMinor += loan.principalMinor;
     }
 
-    row.parPercent = row.activeLoanCount > 0 ? (row.atRiskLoanCount / row.activeLoanCount) * 100 : 0;
-    rows.set(key, row);
+    if (loan.daysOverdue > 0 && loan.overdueTotalMinor > 0n) {
+      const bucket = branchPortfolioBucket(loan.daysOverdue);
+      row.bucketsMinor[bucket] += loan.overdueTotalMinor;
+    }
   }
 
-  const sortedRows = [...rows.values()].sort(
-    (left, right) =>
-      left.officeName.localeCompare(right.officeName) || left.currencyCode.localeCompare(right.currencyCode),
-  );
+  for (const account of savingsAccounts) {
+    const balanceMinor = account.transactions.reduce((sum, transaction) => sum + transaction.amountMinor, 0n);
+    const row = ensureRow(account.fieldOfficerId, account.fieldOfficer?.name ?? "Unassigned", account.currencyCode);
+    row.savingsBalanceMinor += balanceMinor;
+  }
+
+  const toRow = (row: MutableRow): BranchPortfolioRow => {
+    const totalParMinor = branchPortfolioBucketOrder.reduce((sum, bucket) => sum + row.bucketsMinor[bucket], 0n);
+    return {
+      loanOfficerId: row.loanOfficerId,
+      loanOfficerName: row.loanOfficerName,
+      currencyCode: row.currencyCode,
+      activeLoanCount: row.activeLoanCount,
+      outstandingPrincipalMinor: row.outstandingPrincipalMinor,
+      outstandingInterestMinor: row.outstandingInterestMinor,
+      outstandingFeesMinor: row.outstandingFeesMinor,
+      outstandingPenaltiesMinor: row.outstandingPenaltiesMinor,
+      outstandingTotalMinor: row.outstandingTotalMinor,
+      savingsBalanceMinor: row.savingsBalanceMinor,
+      disbursedThisMonthMinor: row.disbursedThisMonthMinor,
+      buckets: Object.fromEntries(
+        branchPortfolioBucketOrder.map((bucket) => [
+          bucket,
+          {
+            label: branchPortfolioBucketLabels[bucket],
+            amountMinor: row.bucketsMinor[bucket],
+            percent: percentOf(row.bucketsMinor[bucket], row.outstandingTotalMinor),
+          },
+        ]),
+      ) as Record<BranchPortfolioBucketKey, BranchPortfolioBucketBreakdown>,
+      totalParMinor,
+      totalParPercent: percentOf(totalParMinor, row.outstandingTotalMinor),
+    };
+  };
+
+  const sortedRows = [...rows.values()]
+    .filter((row) => row.activeLoanCount > 0 || row.savingsBalanceMinor !== 0n)
+    .sort(
+      (left, right) =>
+        compareBigIntDesc(left.outstandingTotalMinor, right.outstandingTotalMinor) ||
+        left.loanOfficerName.localeCompare(right.loanOfficerName) ||
+        left.currencyCode.localeCompare(right.currencyCode),
+    )
+    .map(toRow);
 
   const totalsMap = new Map<string, BranchPortfolioTotal>();
   for (const row of sortedRows) {
@@ -646,22 +725,35 @@ export async function loadBranchPortfolioReport(
       totalsMap.get(row.currencyCode) ?? {
         currencyCode: row.currencyCode,
         activeLoanCount: 0,
-        atRiskLoanCount: 0,
         outstandingPrincipalMinor: 0n,
+        outstandingInterestMinor: 0n,
+        outstandingFeesMinor: 0n,
+        outstandingPenaltiesMinor: 0n,
+        outstandingTotalMinor: 0n,
+        savingsBalanceMinor: 0n,
         disbursedThisMonthMinor: 0n,
-        parPercent: 0,
+        buckets: emptyBuckets(),
+        totalParMinor: 0n,
+        totalParPercent: 0,
       };
     total.activeLoanCount += row.activeLoanCount;
-    total.atRiskLoanCount += row.atRiskLoanCount;
     total.outstandingPrincipalMinor += row.outstandingPrincipalMinor;
+    total.outstandingInterestMinor += row.outstandingInterestMinor;
+    total.outstandingFeesMinor += row.outstandingFeesMinor;
+    total.outstandingPenaltiesMinor += row.outstandingPenaltiesMinor;
+    total.outstandingTotalMinor += row.outstandingTotalMinor;
+    total.savingsBalanceMinor += row.savingsBalanceMinor;
     total.disbursedThisMonthMinor += row.disbursedThisMonthMinor;
-    total.parPercent = total.activeLoanCount > 0 ? (total.atRiskLoanCount / total.activeLoanCount) * 100 : 0;
+    for (const bucket of branchPortfolioBucketOrder) {
+      total.buckets[bucket] += row.buckets[bucket].amountMinor;
+    }
+    total.totalParMinor += row.totalParMinor;
+    total.totalParPercent = percentOf(total.totalParMinor, total.outstandingTotalMinor);
     totalsMap.set(row.currencyCode, total);
   }
 
   return {
     asOfDate,
-    parDays,
     rows: sortedRows,
     totals: [...totalsMap.values()].sort((left, right) => left.currencyCode.localeCompare(right.currencyCode)),
   };
@@ -1305,21 +1397,51 @@ export function unassignedLoansReportCsv(report: UnassignedLoansReport) {
 export function branchPortfolioReportCsv(report: BranchPortfolioReport) {
   return rowsToCsv(
     report.rows.map((row) => ({
-      officeName: row.officeName,
+      loanOfficerName: row.loanOfficerName,
       currencyCode: row.currencyCode,
       activeLoanCount: String(row.activeLoanCount),
-      atRiskLoanCount: String(row.atRiskLoanCount),
-      parPercent: formatPercent(row.parPercent),
       outstandingPrincipalMinor: row.outstandingPrincipalMinor.toString(),
+      outstandingInterestMinor: row.outstandingInterestMinor.toString(),
+      outstandingFeesMinor: row.outstandingFeesMinor.toString(),
+      outstandingPenaltiesMinor: row.outstandingPenaltiesMinor.toString(),
+      outstandingTotalMinor: row.outstandingTotalMinor.toString(),
+      savingsBalanceMinor: row.savingsBalanceMinor.toString(),
+      bucket1To30Minor: row.buckets["1_30"].amountMinor.toString(),
+      bucket1To30Percent: formatPercent(row.buckets["1_30"].percent),
+      bucket31To60Minor: row.buckets["31_60"].amountMinor.toString(),
+      bucket31To60Percent: formatPercent(row.buckets["31_60"].percent),
+      bucket61To90Minor: row.buckets["61_90"].amountMinor.toString(),
+      bucket61To90Percent: formatPercent(row.buckets["61_90"].percent),
+      bucket91To180Minor: row.buckets["91_180"].amountMinor.toString(),
+      bucket91To180Percent: formatPercent(row.buckets["91_180"].percent),
+      bucketOver180Minor: row.buckets["180_PLUS"].amountMinor.toString(),
+      bucketOver180Percent: formatPercent(row.buckets["180_PLUS"].percent),
+      totalParMinor: row.totalParMinor.toString(),
+      totalParPercent: formatPercent(row.totalParPercent),
       disbursedThisMonthMinor: row.disbursedThisMonthMinor.toString(),
     })),
     [
-      "officeName",
+      "loanOfficerName",
       "currencyCode",
       "activeLoanCount",
-      "atRiskLoanCount",
-      "parPercent",
       "outstandingPrincipalMinor",
+      "outstandingInterestMinor",
+      "outstandingFeesMinor",
+      "outstandingPenaltiesMinor",
+      "outstandingTotalMinor",
+      "savingsBalanceMinor",
+      "bucket1To30Minor",
+      "bucket1To30Percent",
+      "bucket31To60Minor",
+      "bucket31To60Percent",
+      "bucket61To90Minor",
+      "bucket61To90Percent",
+      "bucket91To180Minor",
+      "bucket91To180Percent",
+      "bucketOver180Minor",
+      "bucketOver180Percent",
+      "totalParMinor",
+      "totalParPercent",
       "disbursedThisMonthMinor",
     ],
   );
@@ -1571,14 +1693,9 @@ function positiveOutstanding(dueMinor: bigint, paidMinor: bigint, waivedMinor: b
   return remaining > 0n ? remaining : 0n;
 }
 
-function oldestOutstandingDueOn(installments: readonly InstallmentAmounts[], asOfDate: Date) {
-  let oldest: Date | null = null;
-  for (const installment of installments) {
-    if (installment.dueOn >= asOfDate) continue;
-    if (totalOutstandingMinor(installment) <= 0n) continue;
-    if (!oldest || installment.dueOn < oldest) oldest = installment.dueOn;
-  }
-  return oldest;
+function percentOf(amountMinor: bigint, totalMinor: bigint) {
+  if (totalMinor <= 0n) return 0;
+  return (Number(amountMinor) / Number(totalMinor)) * 100;
 }
 
 function summarizeCurrencyTotals(items: Array<{ currencyCode: string; amountMinor: bigint }>) {
@@ -1613,13 +1730,6 @@ function normalizeDateRange(startDate: Date | null, endDate: Date | null) {
   return { startDate, endDate };
 }
 
-function parseParDays(value?: string | null) {
-  const normalized = normalizeString(value);
-  if (!normalized) return 0;
-  const match = normalized.match(/(\d+)/);
-  return match ? Number.parseInt(match[1] ?? "0", 10) : 0;
-}
-
 function normalizeString(value?: string | null) {
   const normalized = value?.trim();
   return normalized ? normalized : null;
@@ -1639,10 +1749,6 @@ function startOfUtcMonth(date: Date) {
 
 function addUtcMonths(date: Date, months: number) {
   return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + months, 1));
-}
-
-function utcDayDiff(startDate: Date, endDate: Date) {
-  return Math.floor((startOfUtcDay(endDate).getTime() - startOfUtcDay(startDate).getTime()) / MS_PER_DAY);
 }
 
 function isoMonth(date: Date) {

@@ -16,13 +16,12 @@ import {
   loadBranchPortfolioReport,
   loadOperationsReportContext,
 } from "@/modules/reports/domain/operations-report";
-
-const parOptions = [0, 7, 30, 60, 90];
+import { branchPortfolioBucketLabels, branchPortfolioBucketOrder } from "@/modules/reports/domain/risk-report";
 
 export default async function BranchPortfolioPage({
   searchParams,
 }: {
-  searchParams: Promise<{ parType?: string; date?: string }>;
+  searchParams: Promise<{ date?: string }>;
 }) {
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session) redirect("/sign-in");
@@ -39,7 +38,6 @@ export default async function BranchPortfolioPage({
   const query = querySuffix(params);
   const [report, pickerOptions] = await Promise.all([
     loadBranchPortfolioReport(prisma, context.scope, {
-      parType: params.parType,
       date: params.date,
     }),
     loadReportPickerOptions(prisma, session.user.id, context.scope.organizationId),
@@ -61,7 +59,9 @@ export default async function BranchPortfolioPage({
           <p className="eyebrow">Operations report</p>
           <h1>Branch portfolio</h1>
           <p>
-            Office-level active book, outstanding principal, PAR&gt;{report.parDays}, and disbursals for {formatReportDate(report.asOfDate)}.
+            Loan-officer active book, outstanding balances, savings, and day-bucket PAR for{" "}
+            {formatReportDate(report.asOfDate)}. Matches iLend&apos;s canned &quot;Branch Portfolio&quot; report,
+            which is grouped by loan officer.
           </p>
         </div>
         <ReportPicker current="/reports/operations/branch-portfolio" options={pickerOptions} />
@@ -78,29 +78,14 @@ export default async function BranchPortfolioPage({
         </div>
       </header>
 
-      <section className="panel">
-        <div className="panel-heading">
-          <div>
-            <h2>Filters</h2>
-            <p>Adjust the PAR aging threshold without leaving the office breakdown.</p>
-          </div>
-        </div>
+      <section className="panel form-panel">
         <form className="entity-form compact-mapping" method="GET">
-          <fieldset>
-            <legend>Portfolio aging</legend>
-            <div className="form-row">
-              <label>
-                PAR threshold
-                <select defaultValue={String(report.parDays)} name="parType">
-                  {parOptions.map((days) => (
-                    <option key={days} value={days}>
-                      PAR&gt;{days}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </div>
-          </fieldset>
+          <div className="form-row">
+            <label>
+              <span>As of date</span>
+              <input name="date" type="date" defaultValue={params.date ?? ""} />
+            </label>
+          </div>
           <div className="form-actions">
             <button className="invest-button" type="submit">
               Apply filters
@@ -115,8 +100,8 @@ export default async function BranchPortfolioPage({
       <section className="panel loan-table">
         <div className="panel-heading">
           <div>
-            <h2>Office portfolio breakdown</h2>
-            <p>{report.rows.length.toLocaleString()} office/currency row(s)</p>
+            <h2>Loan officer portfolio breakdown</h2>
+            <p>{report.rows.length.toLocaleString()} loan officer/currency row(s)</p>
           </div>
           <Building2 size={19} />
         </div>
@@ -124,33 +109,54 @@ export default async function BranchPortfolioPage({
           <div className="empty-state">
             <Building2 size={28} />
             <strong>No active loans in scope</strong>
-            <p>Once branches hold active loans they will appear here.</p>
+            <p>Once officers hold active loans they will appear here.</p>
           </div>
         ) : (
           <div className="table-scroll">
             <table>
               <thead>
                 <tr>
-                  <th>Office</th>
+                  <th>Loan officer</th>
                   <th>Currency</th>
-                  <th>Active loans</th>
-                  <th>Loans at risk</th>
-                  <th>PAR&gt;{report.parDays}</th>
-                  <th>Outstanding principal</th>
+                  <th>NOL</th>
+                  <th>Principal outstanding</th>
+                  <th>Interest outstanding</th>
+                  <th>Fees outstanding</th>
+                  <th>Penalties outstanding</th>
+                  <th>Total outstanding</th>
+                  <th>Savings balance</th>
+                  {branchPortfolioBucketOrder.map((bucket) => (
+                    <th key={bucket}>{branchPortfolioBucketLabels[bucket]}</th>
+                  ))}
+                  <th>Total PAR</th>
+                  <th>Total PAR %</th>
                   <th>Disbursed this month</th>
                 </tr>
               </thead>
               <tbody>
                 {report.rows.map((row) => (
-                  <tr key={`${row.officeId}-${row.currencyCode}`}>
+                  <tr key={`${row.loanOfficerId ?? "unassigned"}-${row.currencyCode}`}>
                     <td>
-                      <strong>{row.officeName}</strong>
+                      <strong>{row.loanOfficerName}</strong>
                     </td>
                     <td>{row.currencyCode}</td>
                     <td>{row.activeLoanCount.toLocaleString()}</td>
-                    <td>{row.atRiskLoanCount.toLocaleString()}</td>
-                    <td>{formatPercent(row.parPercent)}</td>
                     <td>{formatMinor(row.outstandingPrincipalMinor, row.currencyCode)}</td>
+                    <td>{formatMinor(row.outstandingInterestMinor, row.currencyCode)}</td>
+                    <td>{formatMinor(row.outstandingFeesMinor, row.currencyCode)}</td>
+                    <td>{formatMinor(row.outstandingPenaltiesMinor, row.currencyCode)}</td>
+                    <td>
+                      <strong>{formatMinor(row.outstandingTotalMinor, row.currencyCode)}</strong>
+                    </td>
+                    <td>{formatMinor(row.savingsBalanceMinor, row.currencyCode)}</td>
+                    {branchPortfolioBucketOrder.map((bucket) => (
+                      <td key={bucket}>
+                        <strong>{formatMinor(row.buckets[bucket].amountMinor, row.currencyCode)}</strong>
+                        <small>{formatPercent(row.buckets[bucket].percent)}</small>
+                      </td>
+                    ))}
+                    <td>{formatMinor(row.totalParMinor, row.currencyCode)}</td>
+                    <td>{formatPercent(row.totalParPercent)}</td>
                     <td>{formatMinor(row.disbursedThisMonthMinor, row.currencyCode)}</td>
                   </tr>
                 ))}
@@ -161,9 +167,17 @@ export default async function BranchPortfolioPage({
                     <th>Grand total</th>
                     <th>{row.currencyCode}</th>
                     <th>{row.activeLoanCount.toLocaleString()}</th>
-                    <th>{row.atRiskLoanCount.toLocaleString()}</th>
-                    <th>{formatPercent(row.parPercent)}</th>
                     <th>{formatMinor(row.outstandingPrincipalMinor, row.currencyCode)}</th>
+                    <th>{formatMinor(row.outstandingInterestMinor, row.currencyCode)}</th>
+                    <th>{formatMinor(row.outstandingFeesMinor, row.currencyCode)}</th>
+                    <th>{formatMinor(row.outstandingPenaltiesMinor, row.currencyCode)}</th>
+                    <th>{formatMinor(row.outstandingTotalMinor, row.currencyCode)}</th>
+                    <th>{formatMinor(row.savingsBalanceMinor, row.currencyCode)}</th>
+                    {branchPortfolioBucketOrder.map((bucket) => (
+                      <th key={bucket}>{formatMinor(row.buckets[bucket], row.currencyCode)}</th>
+                    ))}
+                    <th>{formatMinor(row.totalParMinor, row.currencyCode)}</th>
+                    <th>{formatPercent(row.totalParPercent)}</th>
                     <th>{formatMinor(row.disbursedThisMonthMinor, row.currencyCode)}</th>
                   </tr>
                 ))}
@@ -176,9 +190,8 @@ export default async function BranchPortfolioPage({
   );
 }
 
-function querySuffix(filters: { parType?: string; date?: string }) {
+function querySuffix(filters: { date?: string }) {
   const params = new URLSearchParams();
-  if (filters.parType) params.set("parType", filters.parType);
   if (filters.date) params.set("date", filters.date);
   const query = params.toString();
   return query ? `?${query}` : "";
