@@ -17,6 +17,9 @@ enum UserRole {
   INVESTOR
   TREASURY_SIGNER
   AUDITOR
+  // Non-interactive service identity used by automated jobs (e.g. the standing-order sweep).
+  // Always `banned = true` so it can never sign in; only ever referenced by id from job code.
+  SYSTEM
 }
 
 enum ClientStatus {
@@ -111,6 +114,7 @@ enum ReminderType {
   REPAYMENT_DUE_SOON
   REPAYMENT_DUE_TODAY
   REPAYMENT_OVERDUE
+  STANDING_ORDER_SWEPT
 }
 
 enum ReminderStatus {
@@ -923,6 +927,10 @@ model SavingsAccount {
   submittedOn    DateTime?            @db.Date
   approvedOn     DateTime?            @db.Date
   termsSnapshot  Json?
+  // The savings account the standing-order sweep pulls from when a loan installment for this
+  // client comes due; at most one account per client should carry this flag (enforced in
+  // application code, not a DB constraint, since Prisma has no partial-unique-index support here).
+  isDefault      Boolean              @default(false)
   client         Client?              @relation(fields: [clientId], references: [id])
   group          Group?               @relation(fields: [groupId], references: [id])
   product        SavingsProduct?      @relation(fields: [productId], references: [id])
