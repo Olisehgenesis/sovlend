@@ -14,7 +14,13 @@ export async function approveLoanApplication(
   });
   if (!application) throw new Error("Loan application not found");
   if (application.status !== "SUBMITTED") throw new Error("Only submitted applications can be approved");
-  if (application.submittedById === command.actorUserId) throw new Error("Maker-checker violation: submitter cannot approve this application");
+  if (application.submittedById === command.actorUserId) {
+    const actor = await prisma.user.findUnique({ where: { id: command.actorUserId }, select: { systemRole: true } });
+    // Branch/general managers hold enough approval authority to self-approve; every other role
+    // is still bound by the maker-checker rule (submitter cannot also be the approver).
+    const canSelfApprove = actor?.systemRole === "BRANCH_MANAGER" || actor?.systemRole === "GENERAL_MANAGER" || actor?.systemRole === "ADMIN";
+    if (!canSelfApprove) throw new Error("Maker-checker violation: submitter cannot approve this application");
+  }
   if (command.approvedPrincipalMinor <= 0n) throw new Error("Approved principal must be positive");
   if (command.approvedPrincipalMinor < application.product.principalMinMinor || command.approvedPrincipalMinor > application.product.principalMaxMinor) {
     throw new Error("Approved principal is outside the product range");
