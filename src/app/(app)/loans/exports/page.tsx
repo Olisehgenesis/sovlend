@@ -6,7 +6,7 @@ import { LoanExportsPanel } from "@/components/loan-exports-panel";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { AuthorizationService, PermissionDeniedError } from "@/modules/identity/application/authorization-service";
-import { getUserDataScope, officeWhere } from "@/modules/identity/application/data-scope";
+import { getUserDataScope } from "@/modules/identity/application/data-scope";
 import { permissions } from "@/modules/identity/domain/permissions";
 
 export default async function LoanExportsPage() {
@@ -28,7 +28,7 @@ export default async function LoanExportsPage() {
   }
 
   const [offices, products, jobs] = await Promise.all([
-    prisma.office.findMany({ where: { organizationId: scope.organizationId, ...officeWhere(scope) }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
+    prisma.office.findMany({ where: { organizationId: scope.organizationId, ...(scope.officeIds ? { id: { in: [...scope.officeIds] } } : {}) }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
     prisma.loanProduct.findMany({ where: { organizationId: scope.organizationId, active: true }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
     prisma.loanExportJob.findMany({
       where: { organizationId: scope.organizationId, requestedById: session.user.id },

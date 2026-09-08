@@ -186,7 +186,7 @@ export async function loadRiskFilterOptions(prisma: PrismaClient, scope: UserDat
     prisma.office.findMany({
       where: {
         organizationId: scope.organizationId,
-        ...scopedWhere,
+        ...(scope.officeIds ? { id: { in: [...scope.officeIds] } } : {}),
         loans: { some: {} },
       },
       select: { id: true, name: true },

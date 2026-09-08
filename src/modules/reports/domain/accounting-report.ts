@@ -151,7 +151,7 @@ export type JournalReconciliationReport = {
 
 export async function listAccountingReportOffices(db: ReportPrisma, scope: UserDataScope): Promise<ReportOffice[]> {
   return db.office.findMany({
-    where: { organizationId: scope.organizationId, ...officeWhere(scope) },
+    where: { organizationId: scope.organizationId, ...(scope.officeIds ? { id: { in: [...scope.officeIds] } } : {}) },
     select: { id: true, name: true },
     orderBy: { name: "asc" },
   });
