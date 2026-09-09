@@ -150,6 +150,92 @@ export function SavingsDefaultsForm({
   );
 }
 
+export function ProvisioningDefaultsForm({
+  organizationId,
+  expenseAccounts,
+  provisionAccounts,
+  defaults,
+}: {
+  organizationId: string;
+  expenseAccounts: Account[];
+  provisionAccounts: Account[];
+  defaults: { provisionExpenseAccountId: string | null; loanLossProvisionAccountId: string | null } | null;
+}) {
+  const [pending, setPending] = useState(false);
+  const router = useRouter();
+
+  async function save(formData: FormData) {
+    setPending(true);
+    const response = await fetch("/api/accounting/provisioning-defaults", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        organizationId,
+        provisionExpenseAccountId: formData.get("provisionExpenseAccountId"),
+        loanLossProvisionAccountId: formData.get("loanLossProvisionAccountId"),
+      }),
+    });
+    const result = await response.json().catch(() => ({}));
+    setPending(false);
+    if (!response.ok) {
+      toast.error(result.error ?? "Provisioning defaults could not be saved");
+      return;
+    }
+    toast.success("Provisioning defaults saved");
+    router.refresh();
+  }
+
+  return (
+    <form action={save} className="entity-form compact-mapping">
+      <fieldset>
+        <legend>Provisioning accounts</legend>
+        <p className="fieldset-intro">
+          Both accounts are required before Provisioning entries can be posted from the Provisioning risk report.
+        </p>
+        <label>
+          <span>
+            Provision expense account
+            <b className="required-mark">Required</b>
+          </span>
+          <select defaultValue={defaults?.provisionExpenseAccountId ?? ""} name="provisionExpenseAccountId" required>
+            <option value="" disabled>
+              Select verified expense account
+            </option>
+            {expenseAccounts.map((account) => (
+              <option key={account.id} value={account.id}>
+                {account.label}
+              </option>
+            ))}
+          </select>
+          <small className="field-help">Debited (or credited, on a release) with the change in required provision each posting.</small>
+        </label>
+        <label>
+          <span>
+            Loan loss provision account
+            <b className="required-mark">Required</b>
+          </span>
+          <select defaultValue={defaults?.loanLossProvisionAccountId ?? ""} name="loanLossProvisionAccountId" required>
+            <option value="" disabled>
+              Select verified account
+            </option>
+            {provisionAccounts.map((account) => (
+              <option key={account.id} value={account.id}>
+                {account.label}
+              </option>
+            ))}
+          </select>
+          <small className="field-help">The contra-asset/liability account (&quot;Provision for Loan Losses&quot;) credited to build up coverage.</small>
+        </label>
+      </fieldset>
+      <div className="form-actions">
+        <BrandActionButton disabled={pending} icon={pending ? <LoaderCircle className="spin" size={17} /> : <Save size={17} />} type="submit">
+          Save provisioning accounts
+        </BrandActionButton>
+      </div>
+    </form>
+  );
+}
+
 export function SettlementMappingForm({ organizationId, assetAccounts, accounts }: { organizationId: string; assetAccounts: Account[]; accounts: SettlementAccount[] }) {
   const [pending, setPending] = useState(false);
   const router = useRouter();

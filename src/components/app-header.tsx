@@ -233,6 +233,9 @@ export function AppHeader({
               <Link href="/backoffice/accounting/frequent-postings" onClick={closeMenus}>
                 Frequent postings
               </Link>
+              <Link href="/backoffice/accounting/provisioning" onClick={closeMenus}>
+                Provisioning entries
+              </Link>
               <Link href="/reports/accounting/journal-reconciliation" onClick={closeMenus}>
                 Search journal entries
               </Link>
