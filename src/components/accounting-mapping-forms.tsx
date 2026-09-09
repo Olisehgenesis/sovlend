@@ -165,6 +165,106 @@ export function SettlementMappingForm({ organizationId, assetAccounts, accounts 
   return <div className="settlement-manager"><div className="panel-heading"><div><h2>Settlement accounts</h2><p>{accounts.length} account{accounts.length === 1 ? "" : "s"} available to transaction forms</p></div></div><div className="settlement-registry">{accounts.length === 0 ? <div className="empty-state compact-empty"><Smartphone size={26} /><strong>No settlement accounts</strong><p>Add the first cash, bank, Airtel Money, or MTN MoMo account.</p></div> : accounts.map((account) => <article key={account.id} className="settlement-card"><span className="settlement-icon">{typeIcon(account.type)}</span><span><strong>{account.name}</strong><small>{account.provider || account.type.replaceAll("_", " ")}{account.accountReference ? ` · ${account.accountReference}` : ""}</small></span><span className={`mapping-state ${account.active ? "ready" : "missing"}`}>{account.active ? "Active" : "Inactive"}</span></article>)}</div><form action={save} className="entity-form compact-mapping settlement-create"><fieldset><legend>Add settlement account</legend><p className="fieldset-intro">Each provider or bank account becomes a separate selectable subaccount for disbursements and repayments.</p><div className="form-row"><label>Account name<input name="name" placeholder="Airtel Money Collections" required /></label><label>Type<select name="type" defaultValue="MOBILE_MONEY"><option value="CASH">Cash drawer</option><option value="BANK">Bank account</option><option value="MOBILE_MONEY">Mobile money</option></select></label></div><div className="form-row"><label>Provider<input name="provider" placeholder="Airtel Money, MTN MoMo, Stanbic…" /></label><label>Account reference<input name="accountReference" placeholder="Masked number or internal reference" /></label></div><label>GL asset subaccount<select name="ledgerAccountId" required defaultValue=""><option value="" disabled>Select verified asset account</option>{assetAccounts.map((account) => <option key={account.id} value={account.id}>{account.label}</option>)}</select><small className="field-help">Transactions through this provider debit or credit the selected ledger subaccount.</small></label></fieldset><div className="form-actions"><BrandActionButton disabled={pending} icon={pending ? <LoaderCircle className="spin" size={17} /> : <Save size={17} />} type="submit">Add settlement account</BrandActionButton></div></form></div>;
 }
 
+const ACCOUNT_TYPES = [
+  { value: "ASSET", label: "Asset" },
+  { value: "LIABILITY", label: "Liability" },
+  { value: "EQUITY", label: "Equity" },
+  { value: "REVENUE", label: "Revenue (income)" },
+  { value: "EXPENSE", label: "Expense" },
+] as const;
+
+export function CreateLedgerAccountForm({ currencyCodes }: { currencyCodes: string[] }) {
+  const [pending, setPending] = useState(false);
+  const router = useRouter();
+
+  async function create(formData: FormData) {
+    setPending(true);
+    const response = await fetch("/api/accounting/ledger-accounts", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        code: formData.get("code"),
+        name: formData.get("name"),
+        type: formData.get("type"),
+        currencyCode: formData.get("currencyCode"),
+        usage: formData.get("usage"),
+        description: formData.get("description") || undefined,
+        manualEntriesAllowed: formData.get("manualEntriesAllowed") === "on",
+        active: true,
+      }),
+    });
+    const result = await response.json().catch(() => ({}));
+    setPending(false);
+    if (!response.ok) {
+      toast.error(result.error ?? "Account could not be created");
+      return;
+    }
+    toast.success("Account created");
+    router.refresh();
+  }
+
+  return (
+    <form action={create} className="entity-form compact-mapping">
+      <fieldset>
+        <legend>Create GL account</legend>
+        <p className="fieldset-intro">Add a new entry to the chart of accounts. Codes and currency must be unique together.</p>
+        <div className="form-row">
+          <label>
+            Code
+            <input name="code" placeholder="e.g. 60010" required />
+          </label>
+          <label>
+            Type
+            <select name="type" defaultValue="EXPENSE" required>
+              {ACCOUNT_TYPES.map((type) => (
+                <option key={type.value} value={type.value}>
+                  {type.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+        <label>
+          Name
+          <input name="name" placeholder="e.g. Office Rent Expense" required />
+        </label>
+        <div className="form-row">
+          <label>
+            Currency
+            <select name="currencyCode" defaultValue={currencyCodes[0] ?? "UGX"} required>
+              {currencyCodes.map((code) => (
+                <option key={code} value={code}>
+                  {code}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Usage
+            <select name="usage" defaultValue="DETAIL">
+              <option value="DETAIL">Detail (postable)</option>
+              <option value="HEADER">Header (grouping only)</option>
+            </select>
+          </label>
+        </div>
+        <label>
+          Description (optional)
+          <input name="description" maxLength={300} />
+        </label>
+        <label className="check-row">
+          <input name="manualEntriesAllowed" type="checkbox" defaultChecked />
+          Allow manual journal entries (income/expense recording)
+        </label>
+      </fieldset>
+      <div className="form-actions">
+        <BrandActionButton disabled={pending} icon={pending ? <LoaderCircle className="spin" size={17} /> : <Save size={17} />} type="submit">
+          Create account
+        </BrandActionButton>
+      </div>
+    </form>
+  );
+}
+
 export function ProductMappingForm({ product, accounts }: { product: Product; accounts: Account[] }) {
   const [pending, setPending] = useState(false);
   const router = useRouter();

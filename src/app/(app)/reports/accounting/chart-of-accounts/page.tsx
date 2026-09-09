@@ -125,6 +125,11 @@ export default async function ChartOfAccountsPage({
           <a className="secondary-action" href={apiHref}>
             API JSON
           </a>
+          {session.user.role === "admin" ? (
+            <Link className="secondary-action" href="/backoffice/accounting">
+              Create account
+            </Link>
+          ) : null}
           <Link className="secondary-action" href="/reports">
             Reports
           </Link>
