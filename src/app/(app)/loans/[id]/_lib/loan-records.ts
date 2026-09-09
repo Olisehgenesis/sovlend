@@ -5,6 +5,8 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { getUserDataScope } from "@/modules/identity/application/data-scope";
 
+export { transactionTypeLabel } from "@/lib/loan-transaction-type-variants";
+
 const ugDateFormatter = new Intl.DateTimeFormat("en-UG", { dateStyle: "medium" });
 const ugDateTimeFormatter = new Intl.DateTimeFormat("en-UG", {
   dateStyle: "medium",

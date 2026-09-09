@@ -6,6 +6,7 @@ import { notFound, redirect } from "next/navigation";
 import { Breadcrumbs } from "@/components/breadcrumbs";
 import { AddChargeForm, ApplyForLoanButton, ApproveSavingsAccountButton, ChargesList, DepositWithdrawForm } from "@/components/client-account-panel";
 import { ClientActionsMenu } from "@/components/client-actions-menu";
+import { ClientQuickActions } from "@/components/client-quick-actions";
 import { EntityAvatar } from "@/components/entity-avatar";
 import { AddFamilyMemberForm, AddIdentifierForm, AddNoteForm, UploadDocumentForm } from "@/components/client-record-forms";
 import { NewSavingsAccountWizard } from "@/components/new-savings-account-wizard";
@@ -129,6 +130,33 @@ export default async function ClientDetailPage({ params, searchParams }: { param
         }))
     : [];
 
+  const transferSourceAccounts = savingsRows
+    .filter(({ account, balanceMinor }) => account.status === "ACTIVE" && balanceMinor > 0n)
+    .map(({ account, balanceMinor }) => ({
+      id: account.id,
+      accountNumber: account.accountNumber,
+      currencyCode: account.currencyCode,
+      balanceMinor: balanceMinor.toString(),
+    }));
+
+  // Nearest unpaid installment across the client's open loans, for the "next repayment due"
+  // countdown badge. Flattens every open loan's outstanding installments rather than assuming a
+  // single loan, since a client can hold more than one active loan at once.
+  const nextRepayment = loanRows
+    .filter(({ loan }) => (OPEN_LOAN_STATUSES as readonly string[]).includes(loan.status))
+    .flatMap(({ loan }) =>
+      loan.installments
+        .filter((installment) => installmentDueMinor(installment) - installmentPaidMinor(installment) > 0n)
+        .map((installment) => ({
+          loanAccountNumber: loan.accountNumber,
+          dueOn: installment.dueOn,
+          outstandingMinor: installmentDueMinor(installment) - installmentPaidMinor(installment),
+          currencyCode: loan.denominationCurrency,
+        })),
+    )
+    .sort((a, b) => a.dueOn.getTime() - b.dueOn.getTime())[0] ?? null;
+  const daysUntilNextRepayment = nextRepayment ? Math.round((nextRepayment.dueOn.getTime() - businessDate.getTime()) / 86_400_000) : null;
+
   return (
     <main className="directory-page">
       <Breadcrumbs items={[{ label: "Clients", href: "/clients" }, { label: fullName }]} />
@@ -137,7 +165,28 @@ export default async function ClientDetailPage({ params, searchParams }: { param
         <div>
           <h1>{fullName} <span className={`wallet-balance ${wallet.netBalanceMinor < 0n ? "negative" : ""}`}>{walletFormatted}</span></h1>
           <p>Client #: <span className="mono">{client.accountNumber}</span> | External id: {client.externalId ?? "None"} | Staff: {client.assignedOfficer?.name ?? "Unassigned"}</p>
+          {nextRepayment && daysUntilNextRepayment !== null ? (
+            <p className={`repayment-countdown ${daysUntilNextRepayment < 0 ? "overdue" : ""}`}>
+              {daysUntilNextRepayment < 0
+                ? `${Math.abs(daysUntilNextRepayment)} day${Math.abs(daysUntilNextRepayment) === 1 ? "" : "s"} overdue`
+                : daysUntilNextRepayment === 0
+                  ? "Due today"
+                  : `Due in ${daysUntilNextRepayment} day${daysUntilNextRepayment === 1 ? "" : "s"}`}
+              {" \u00b7 "}{nextRepayment.loanAccountNumber}{" \u00b7 "}{formatMinor(nextRepayment.outstandingMinor, nextRepayment.currencyCode)}{" \u00b7 "}
+              {new Intl.DateTimeFormat("en-UG", { dateStyle: "medium" }).format(nextRepayment.dueOn)}
+            </p>
+          ) : null}
         </div>
+        <ClientQuickActions
+          canRecordRepayment={canRecordRepayment}
+          canTransact={canTransact}
+          clientId={client.id}
+          currentUserName={session.user.name ?? "Signed in user"}
+          loanTargets={loanPaymentTargets}
+          savingsTarget={canTransact && primarySavingsAccount ? { id: primarySavingsAccount.id, accountNumber: primarySavingsAccount.accountNumber, currencyCode: primarySavingsAccount.currencyCode } : null}
+          settlementAccounts={settlementAccounts}
+          transferSourceAccounts={transferSourceAccounts}
+        />
         <span className={`status-dot ${client.status === "ACTIVE" ? "up-to-date" : "review"}`} />
       </header>
 

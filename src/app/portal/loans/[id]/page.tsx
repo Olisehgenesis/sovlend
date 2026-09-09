@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { formatMinor } from "@/modules/money/domain/format-minor";
+import { transactionTypeLabel } from "@/lib/loan-transaction-type-variants";
 import {
   installmentDueMinor,
   installmentOutstandingMinor,
@@ -26,6 +27,13 @@ function loanStatusTone(status: string) {
     default:
       return "review";
   }
+}
+
+// `Date.toLocaleDateString()` uses the server/browser default locale, which renders as
+// ambiguous M/D/YYYY (e.g. "7/13/2026"). Use an explicit "13 Jul 2026"-style format instead.
+const portalDateFormatter = new Intl.DateTimeFormat("en-UG", { dateStyle: "medium" });
+function formatPortalDate(value: Date | null | undefined) {
+  return value ? portalDateFormatter.format(value) : null;
 }
 
 export default async function PortalLoanPage({ params }: { params: Promise<{ id: string }> }) {
@@ -94,7 +102,7 @@ export default async function PortalLoanPage({ params }: { params: Promise<{ id:
           <div>
             <h2>Repayment schedule</h2>
             <p>
-              {loan.installments.length} installments · matures {loan.maturesOn?.toLocaleDateString() ?? "not set"}
+              {loan.installments.length} installments · matures {loan.maturesOn ? formatPortalDate(loan.maturesOn) : "not set"}
             </p>
           </div>
         </div>
@@ -127,7 +135,7 @@ export default async function PortalLoanPage({ params }: { params: Promise<{ id:
                   return (
                     <tr key={item.id}>
                       <td>{item.installmentNumber}</td>
-                      <td>{item.dueOn.toLocaleDateString()}</td>
+                      <td>{formatPortalDate(item.dueOn)}</td>
                       <td>{formatMinor(item.principalDueMinor, loan.denominationCurrency)}</td>
                       <td>{formatMinor(item.interestDueMinor, loan.denominationCurrency)}</td>
                       <td>{formatMinor(item.feesDueMinor, loan.denominationCurrency)}</td>
@@ -169,8 +177,8 @@ export default async function PortalLoanPage({ params }: { params: Promise<{ id:
               <tbody>
                 {loan.transactions.map((item) => (
                   <tr key={item.id}>
-                    <td>{item.businessDate.toLocaleDateString()}</td>
-                    <td>{item.transactionType.replaceAll("_", " ")}</td>
+                    <td>{formatPortalDate(item.businessDate)}</td>
+                    <td>{transactionTypeLabel(item.transactionType)}</td>
                     <td>{formatMinor(item.denominationAmountMinor, loan.denominationCurrency)}</td>
                   </tr>
                 ))}

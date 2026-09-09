@@ -13,6 +13,7 @@ import { DisburseLoanButton } from "@/components/disburse-loan-button";
 import { RecordPaymentButton } from "@/components/record-payment-button";
 import { RepaymentForm } from "@/components/repayment-form";
 import { Breadcrumbs } from "@/components/breadcrumbs";
+import { formatUgDate, transactionTypeLabel } from "./_lib/loan-records";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { AuthorizationService } from "@/modules/identity/application/authorization-service";
@@ -225,7 +226,7 @@ export default async function LoanPage({
     .filter((item) => item.transactionType === "REPAYMENT" && !item.reversedById)
     .map((item) => ({
       id: item.id,
-      label: `${item.businessDate.toLocaleDateString()} · ${formatMinor(item.denominationAmountMinor, loan.denominationCurrency)}${item.externalReference ? ` · ${item.externalReference}` : ""}`,
+      label: `${formatUgDate(item.businessDate)} · ${formatMinor(item.denominationAmountMinor, loan.denominationCurrency)}${item.externalReference ? ` · ${item.externalReference}` : ""}`,
     }));
   return (
     <main className="directory-page">
@@ -435,11 +436,11 @@ export default async function LoanPage({
             </div>
             <div>
               <dt>Disbursed on</dt>
-              <dd>{loan.disbursedOn ? loan.disbursedOn.toLocaleDateString() : "Not yet disbursed"}</dd>
+              <dd>{loan.disbursedOn ? formatUgDate(loan.disbursedOn) : "Not yet disbursed"}</dd>
             </div>
             <div>
               <dt>Matures on</dt>
-              <dd>{loan.maturesOn ? loan.maturesOn.toLocaleDateString() : "Not set"}</dd>
+              <dd>{loan.maturesOn ? formatUgDate(loan.maturesOn) : "Not set"}</dd>
             </div>
             <div>
               <dt>Total scheduled</dt>
@@ -471,7 +472,7 @@ export default async function LoanPage({
             </div>
             <div>
               <dt>Application submitted</dt>
-              <dd>{loan.createdAt.toLocaleDateString()}</dd>
+              <dd>{formatUgDate(loan.createdAt)}</dd>
             </div>
           </dl>
         </section>
@@ -630,7 +631,7 @@ export default async function LoanPage({
                         <strong>{charge.name}</strong>
                         <Link className="row-link" href={`/loans/${loan.id}/charges/${charge.id}`} aria-label={`Open overdue charge ${charge.name}`} />
                       </td>
-                      <td>{charge.dueOn?.toLocaleDateString() ?? "-"}</td>
+                      <td>{formatUgDate(charge.dueOn)}</td>
                       <td className="mono">{formatMinor(charge.amountMinor, charge.currencyCode)}</td>
                       <td>
                         <span className="status in-arrears">{charge.status}</span>
@@ -803,7 +804,7 @@ export default async function LoanPage({
               <h2>Repayment schedule</h2>
               <p>
                 {loan.installments.length} installments · matures{" "}
-                {loan.maturesOn?.toLocaleDateString() ?? "not set"}
+                {loan.maturesOn ? formatUgDate(loan.maturesOn) : "not set"}
               </p>
             </div>
           </div>
@@ -836,7 +837,7 @@ export default async function LoanPage({
                     return (
                       <tr key={item.id}>
                         <td>{item.installmentNumber}</td>
-                        <td>{item.dueOn.toLocaleDateString()}</td>
+                        <td>{formatUgDate(item.dueOn)}</td>
                         <td>
                           {formatMinor(
                             item.principalDueMinor,
@@ -908,10 +909,10 @@ export default async function LoanPage({
                   {loan.transactions.map((item) => (
                     <tr key={item.id}>
                       <td>
-                        {item.businessDate.toLocaleDateString()}
-                        <Link className="row-link" href={`/loans/${loan.id}/transactions/${item.id}`} aria-label={`Open ${item.transactionType.replaceAll("_", " ").toLowerCase()} transaction`} />
+                        {formatUgDate(item.businessDate)}
+                        <Link className="row-link" href={`/loans/${loan.id}/transactions/${item.id}`} aria-label={`Open ${transactionTypeLabel(item.transactionType).toLowerCase()} transaction`} />
                       </td>
-                      <td>{item.transactionType}</td>
+                      <td>{transactionTypeLabel(item.transactionType)}</td>
                       <td>{item.settlementChannel}</td>
                       <td>
                         {formatMinor(item.denominationAmountMinor, loan.denominationCurrency)}
