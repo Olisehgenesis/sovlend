@@ -2,12 +2,13 @@ import { createHash, randomUUID } from "node:crypto";
 import type { PrismaClient } from "@prisma/client";
 
 import { determineServicingStatus } from "../domain/loan-status";
+import { installmentDueMinor, installmentPaidMinor } from "../domain/loan-outstanding";
 
 export async function classifyLoanArrears(prisma: PrismaClient, businessDate = new Date()) {
   const loans = await prisma.loan.findMany({ where: { status: { in: ["ACTIVE", "IN_ARREARS"] } }, include: { installments: true } });
   let changed = 0;
   for (const loan of loans) {
-    const outstanding = (item: typeof loan.installments[number]) => item.principalDueMinor + item.interestDueMinor + item.feesDueMinor + item.penaltiesDueMinor - item.principalPaidMinor - item.interestPaidMinor - item.feesPaidMinor - item.penaltiesPaidMinor;
+    const outstanding = (item: typeof loan.installments[number]) => installmentDueMinor(item) - installmentPaidMinor(item);
     const totalOutstandingMinor = loan.installments.reduce((sum, item) => sum + outstanding(item), 0n);
     const overdueOutstandingMinor = loan.installments.filter((item) => item.dueOn < businessDate).reduce((sum, item) => sum + outstanding(item), 0n);
     const nextStatus = determineServicingStatus({ currentStatus: loan.status, totalOutstandingMinor, overdueOutstandingMinor });

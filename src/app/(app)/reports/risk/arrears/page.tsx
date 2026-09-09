@@ -92,6 +92,10 @@ export default async function ArrearsReportPage({
           <strong>{formatMinor(report.totals.overdueFeesMinor, "UGX")}</strong>
         </article>
         <article>
+          <span>Overdue monitoring fee</span>
+          <strong>{formatMinor(report.totals.overdueMonitoringFeeMinor, "UGX")}</strong>
+        </article>
+        <article>
           <span>Overdue penalties</span>
           <strong>{formatMinor(report.totals.overduePenaltiesMinor, "UGX")}</strong>
         </article>
@@ -162,6 +166,7 @@ export default async function ArrearsReportPage({
                   <th>Principal overdue</th>
                   <th>Interest overdue</th>
                   <th>Fees overdue</th>
+                  <th>Monitoring fee overdue</th>
                   <th>Penalties overdue</th>
                   <th>Total overdue</th>
                 </tr>
@@ -187,6 +192,7 @@ export default async function ArrearsReportPage({
                     <td>{formatMinor(loan.overduePrincipalMinor, loan.currencyCode)}</td>
                     <td>{formatMinor(loan.overdueInterestMinor, loan.currencyCode)}</td>
                     <td>{formatMinor(loan.overdueFeesMinor, loan.currencyCode)}</td>
+                    <td>{formatMinor(loan.overdueMonitoringFeeMinor, loan.currencyCode)}</td>
                     <td>{formatMinor(loan.overduePenaltiesMinor, loan.currencyCode)}</td>
                     <td>{formatMinor(loan.overdueTotalMinor, loan.currencyCode)}</td>
                   </tr>

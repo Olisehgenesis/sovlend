@@ -62,7 +62,7 @@ export default async function OutstandingBalancesPage({
         <div>
           <p className="eyebrow">Operations report</p>
           <h1>Outstanding balances (OLB)</h1>
-          <p>Current outstanding principal, interest, fees, and penalties for every active or in-arrears loan.</p>
+          <p>Current outstanding principal, interest, fees, monitoring fees, and penalties for every active or in-arrears loan.</p>
         </div>
         <ReportPicker current="/reports/operations/outstanding-balances" options={pickerOptions} />
         <div className="header-actions">
@@ -162,6 +162,7 @@ export default async function OutstandingBalancesPage({
                   <th>Principal</th>
                   <th>Interest</th>
                   <th>Fees</th>
+                  <th>Monitoring fee</th>
                   <th>Penalties</th>
                   <th>Total OLB</th>
                   <th>Disbursed</th>
@@ -189,6 +190,7 @@ export default async function OutstandingBalancesPage({
                     <td>{formatMinor(row.principalOutstandingMinor, row.currencyCode)}</td>
                     <td>{formatMinor(row.interestOutstandingMinor, row.currencyCode)}</td>
                     <td>{formatMinor(row.feesOutstandingMinor, row.currencyCode)}</td>
+                    <td>{formatMinor(row.monitoringFeeOutstandingMinor, row.currencyCode)}</td>
                     <td>{formatMinor(row.penaltiesOutstandingMinor, row.currencyCode)}</td>
                     <td>{formatMinor(row.totalOutstandingMinor, row.currencyCode)}</td>
                     <td>{row.disbursedOn ? formatReportDate(row.disbursedOn) : "—"}</td>
@@ -202,6 +204,7 @@ export default async function OutstandingBalancesPage({
                     <th>{formatMinor(row.principalOutstandingMinor, row.currencyCode)}</th>
                     <th>{formatMinor(row.interestOutstandingMinor, row.currencyCode)}</th>
                     <th>{formatMinor(row.feesOutstandingMinor, row.currencyCode)}</th>
+                    <th>{formatMinor(row.monitoringFeeOutstandingMinor, row.currencyCode)}</th>
                     <th>{formatMinor(row.penaltiesOutstandingMinor, row.currencyCode)}</th>
                     <th>{formatMinor(row.totalOutstandingMinor, row.currencyCode)}</th>
                     <th>{row.currencyCode}</th>

@@ -16,6 +16,7 @@ import { clientScopeWhere, getUserDataScope } from "@/modules/identity/applicati
 import { permissions } from "@/modules/identity/domain/permissions";
 import { STAFF_SYSTEM_ROLES } from "@/modules/identity/domain/staff-roles";
 import { getClientWalletSummary, OPEN_LOAN_STATUSES } from "@/modules/lending/application/client-wallet";
+import { installmentDueMinor, installmentPaidMinor } from "@/modules/lending/domain/loan-outstanding";
 import { formatMinor } from "@/modules/money/domain/format-minor";
 
 const tabs = [
@@ -51,7 +52,7 @@ export default async function ClientDetailPage({ params, searchParams }: { param
       familyMembers: { orderBy: { createdAt: "desc" }, include: { documents: { orderBy: { createdAt: "desc" } } } },
       identifiers: { orderBy: { createdAt: "desc" }, include: { documents: { orderBy: { createdAt: "desc" } } } },
       documents: { orderBy: { createdAt: "desc" } },
-      loans: { orderBy: { createdAt: "desc" }, include: { product: { select: { name: true } }, installments: { select: { dueOn: true, principalDueMinor: true, principalPaidMinor: true, interestDueMinor: true, interestPaidMinor: true, feesDueMinor: true, feesPaidMinor: true, penaltiesDueMinor: true, penaltiesPaidMinor: true } } } },
+      loans: { orderBy: { createdAt: "desc" }, include: { product: { select: { name: true } }, installments: { select: { dueOn: true, principalDueMinor: true, principalPaidMinor: true, interestDueMinor: true, interestPaidMinor: true, feesDueMinor: true, feesPaidMinor: true, penaltiesDueMinor: true, penaltiesPaidMinor: true, monitoringFeeDueMinor: true, monitoringFeePaidMinor: true } } } },
       savingsAccounts: { orderBy: { createdAt: "desc" }, include: { product: { select: { name: true } }, transactions: { select: { amountMinor: true } } } },
       charges: { orderBy: { createdAt: "desc" } },
       notes: { orderBy: { createdAt: "desc" }, include: { author: { select: { name: true } } } },
@@ -81,27 +82,20 @@ export default async function ClientDetailPage({ params, searchParams }: { param
 
   const loanRows = client.loans.map((loan) => {
     const totalPaidMinor = loan.installments.reduce(
-      (sum, installment) => sum + installment.principalPaidMinor + installment.interestPaidMinor + installment.feesPaidMinor + installment.penaltiesPaidMinor,
+      (sum, installment) => sum + installmentPaidMinor(installment),
       0n,
     );
     const interestOutstandingMinor = loan.installments.reduce(
       (sum, installment) => sum + (installment.interestDueMinor - installment.interestPaidMinor),
       0n,
     );
-    const outstandingMinor = loan.installments.reduce((sum, installment) => {
-      const principal = installment.principalDueMinor - installment.principalPaidMinor;
-      const interest = installment.interestDueMinor - installment.interestPaidMinor;
-      const fees = installment.feesDueMinor - installment.feesPaidMinor;
-      const penalties = installment.penaltiesDueMinor - installment.penaltiesPaidMinor;
-      return sum + principal + interest + fees + penalties;
-    }, 0n);
+    const outstandingMinor = loan.installments.reduce(
+      (sum, installment) => sum + installmentDueMinor(installment) - installmentPaidMinor(installment),
+      0n,
+    );
     const overdueOutstandingMinor = loan.installments.reduce((sum, installment) => {
       if (installment.dueOn >= businessDate) return sum;
-      const principal = installment.principalDueMinor - installment.principalPaidMinor;
-      const interest = installment.interestDueMinor - installment.interestPaidMinor;
-      const fees = installment.feesDueMinor - installment.feesPaidMinor;
-      const penalties = installment.penaltiesDueMinor - installment.penaltiesPaidMinor;
-      return sum + principal + interest + fees + penalties;
+      return sum + installmentDueMinor(installment) - installmentPaidMinor(installment);
     }, 0n);
     return { loan, totalPaidMinor, interestOutstandingMinor, outstandingMinor, overdueOutstandingMinor };
   });

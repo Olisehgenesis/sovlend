@@ -1,6 +1,8 @@
 import type { PrismaClient } from "@prisma/client";
 import type { Queue } from "bullmq";
 
+import { installmentDueMinor, installmentPaidMinor } from "@/modules/lending/domain/loan-outstanding";
+
 import { reminderJobId, type ReminderJob } from "../domain/reminder";
 
 export async function enqueueRepaymentReminders(
@@ -26,13 +28,16 @@ export async function enqueueRepaymentReminders(
     // Group-owned loans have no single client to notify by SMS; skip until group-level reminders are supported.
     if (!installment.loan.clientId) continue;
 
-    const outstanding =
-      installment.principalDueMinor + installment.interestDueMinor + installment.feesDueMinor + installment.penaltiesDueMinor -
-      installment.principalPaidMinor - installment.interestPaidMinor - installment.feesPaidMinor - installment.penaltiesPaidMinor;
+    const outstanding = installmentDueMinor(installment) - installmentPaidMinor(installment);
 
     if (outstanding <= 0n) continue;
 
-    const feesOutstanding = installment.feesDueMinor + installment.penaltiesDueMinor - installment.feesPaidMinor - installment.penaltiesPaidMinor;
+    // Reminder copy uses the legacy feesDueMinor payload slot as a catch-all "extra charges due"
+    // amount, so monitoring fee is intentionally folded into it alongside generic fees/penalties.
+    const feesOutstanding =
+      outstanding -
+      (installment.principalDueMinor - installment.principalPaidMinor) -
+      (installment.interestDueMinor - installment.interestPaidMinor);
     const days = Math.floor((installment.dueOn.getTime() - now.getTime()) / 86_400_000);
     const type = days < 0 ? "REPAYMENT_OVERDUE" : days === 0 ? "REPAYMENT_DUE_TODAY" : "REPAYMENT_DUE_SOON";
     const data: ReminderJob = {

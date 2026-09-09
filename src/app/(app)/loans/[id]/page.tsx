@@ -20,7 +20,9 @@ import { getUserDataScope } from "@/modules/identity/application/data-scope";
 import { permissions } from "@/modules/identity/domain/permissions";
 import { formatMinor } from "@/modules/money/domain/format-minor";
 import {
+  installmentDueMinor,
   installmentOutstandingMinor,
+  installmentPaidMinor,
   installmentWaivedMinor,
   loanOutstandingMinor,
   loanWrittenOffMinor,
@@ -125,17 +127,9 @@ export default async function LoanPage({
   const totals = loan.installments.reduce(
     (sum, item) => ({
       due:
-        sum.due +
-        item.principalDueMinor +
-        item.interestDueMinor +
-        item.feesDueMinor +
-        item.penaltiesDueMinor,
+        sum.due + installmentDueMinor(item),
       paid:
-        sum.paid +
-        item.principalPaidMinor +
-        item.interestPaidMinor +
-        item.feesPaidMinor +
-        item.penaltiesPaidMinor,
+        sum.paid + installmentPaidMinor(item),
       waived: sum.waived + installmentWaivedMinor(item),
     }),
     { due: 0n, paid: 0n, waived: 0n },
@@ -672,6 +666,7 @@ export default async function LoanPage({
                     <th>Principal</th>
                     <th>Interest</th>
                     <th>Fees</th>
+                    <th>Monitoring fee</th>
                     <th>Penalties</th>
                     <th>Paid</th>
                     <th>Outstanding</th>
@@ -679,11 +674,7 @@ export default async function LoanPage({
                 </thead>
                 <tbody>
                   {loan.installments.map((item) => {
-                    const paid =
-                      item.principalPaidMinor +
-                      item.interestPaidMinor +
-                      item.feesPaidMinor +
-                      item.penaltiesPaidMinor;
+                    const paid = installmentPaidMinor(item);
                     const rowOutstanding = installmentOutstandingMinor(item);
                     return (
                       <tr key={item.id}>
@@ -704,6 +695,12 @@ export default async function LoanPage({
                         <td>
                           {formatMinor(
                             item.feesDueMinor,
+                            loan.denominationCurrency,
+                          )}
+                        </td>
+                        <td>
+                          {formatMinor(
+                            item.monitoringFeeDueMinor ?? 0n,
                             loan.denominationCurrency,
                           )}
                         </td>

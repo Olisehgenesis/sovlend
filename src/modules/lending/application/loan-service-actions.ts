@@ -9,6 +9,11 @@ import { recordSavingsTransactionInTransaction } from "@/modules/savings/applica
 import { buildLoanDisbursementSavingsIdempotencyKey } from "@/modules/savings/application/savings-ledger";
 
 import { calculateLoanPayoff, type PayoffInstallment } from "../domain/loan-payoff";
+import {
+  installmentDueMinor,
+  installmentPaidMinor,
+  installmentWaivedMinor,
+} from "../domain/loan-outstanding";
 
 export const loanServiceActionTypes = ["UNDO_DISBURSAL", "PREPAY", "FORECLOSURE", "TRANSACTION_REVERSAL"] as const;
 export type LoanServiceActionType = (typeof loanServiceActionTypes)[number];
@@ -219,6 +224,7 @@ async function executeFullSettlement(tx: Tx, loanId: string, payload: PrepayPayl
   if (!openLoanStatuses.includes(current.status as (typeof openLoanStatuses)[number])) throw new Error("Loan is not open for settlement");
   const mapping = current.product.accountingMapping;
   if (!mapping) throw new Error("Loan product accounting mapping is required before settlement");
+  const monitoringFeeIncomeAccountId = mapping.monitoringFeeIncomeAccountId ?? mapping.feeIncomeAccountId;
   const settlement = await tx.settlementAccount.findFirst({ where: { id: payload.settlementAccountId, organizationId: current.office.organizationId, currencyCode: current.denominationCurrency, active: true } });
   if (!settlement) throw new Error("Selected settlement account is not available");
   const businessDate = new Date(`${payload.businessDate}T00:00:00.000Z`);
@@ -227,6 +233,7 @@ async function executeFullSettlement(tx: Tx, loanId: string, payload: PrepayPayl
   if (quote.totalPayoffMinor <= 0n) throw new Error("Loan has no outstanding balance to settle");
   if (quote.interestAccruedMinor > 0n && !mapping.interestIncomeAccountId) throw new Error("Interest income account is not configured");
   if (quote.feesOutstandingMinor > 0n && !mapping.feeIncomeAccountId) throw new Error("Fee income account is not configured");
+  if (quote.monitoringFeeOutstandingMinor > 0n && !monitoringFeeIncomeAccountId) throw new Error("Monitoring fee income account is not configured");
   if (quote.penaltiesCollectedMinor > 0n && !mapping.penaltyIncomeAccountId) throw new Error("Penalty income account is not configured");
 
   const idempotencyKey = `service:${requestId}`;
@@ -246,13 +253,14 @@ async function executeFullSettlement(tx: Tx, loanId: string, payload: PrepayPayl
         principalPaidMinor: { increment: item.principalMinor },
         interestPaidMinor: { increment: item.interestCollectedMinor },
         feesPaidMinor: { increment: item.feesMinor },
+        monitoringFeePaidMinor: { increment: item.monitoringFeeMinor },
         penaltiesPaidMinor: { increment: item.penaltiesCollectedMinor },
         interestWaivedMinor: { increment: item.interestWaivedMinor },
         penaltiesWaivedMinor: { increment: item.penaltiesWaivedMinor },
       },
     });
-    if (item.principalMinor + item.interestCollectedMinor + item.feesMinor + item.penaltiesCollectedMinor > 0n) {
-      await tx.loanTransactionAllocation.create({ data: { transactionId: transactionRecord.id, installmentId: item.installmentId, principalMinor: item.principalMinor, interestMinor: item.interestCollectedMinor, feesMinor: item.feesMinor, penaltiesMinor: item.penaltiesCollectedMinor } });
+    if (item.principalMinor + item.interestCollectedMinor + item.feesMinor + item.monitoringFeeMinor + item.penaltiesCollectedMinor > 0n) {
+      await tx.loanTransactionAllocation.create({ data: { transactionId: transactionRecord.id, installmentId: item.installmentId, principalMinor: item.principalMinor, interestMinor: item.interestCollectedMinor, feesMinor: item.feesMinor, monitoringFeeMinor: item.monitoringFeeMinor, penaltiesMinor: item.penaltiesCollectedMinor } });
     }
   }
 
@@ -261,6 +269,7 @@ async function executeFullSettlement(tx: Tx, loanId: string, payload: PrepayPayl
     { accountId: mapping.principalReceivableAccountId, amount: quote.principalOutstandingMinor, memo: "Principal" },
     { accountId: mapping.interestIncomeAccountId, amount: quote.interestAccruedMinor, memo: "Interest" },
     { accountId: mapping.feeIncomeAccountId, amount: quote.feesOutstandingMinor, memo: "Fees" },
+    { accountId: monitoringFeeIncomeAccountId, amount: quote.monitoringFeeOutstandingMinor, memo: "Monitoring fee" },
     { accountId: mapping.penaltyIncomeAccountId, amount: quote.penaltiesCollectedMinor, memo: "Penalties" },
   ].filter((line): line is { accountId: string; amount: bigint; memo: string } => Boolean(line.accountId) && line.amount > 0n);
   await tx.journalLine.createMany({ data: [
@@ -278,6 +287,7 @@ async function executeFullSettlement(tx: Tx, loanId: string, payload: PrepayPayl
       loanId: current.id, requestId, transactionId: transactionRecord.id, businessDate: payload.businessDate,
       principalOutstandingMinor: quote.principalOutstandingMinor.toString(), interestAccruedMinor: quote.interestAccruedMinor.toString(),
       interestWaivedMinor: quote.interestWaivedMinor.toString(), feesOutstandingMinor: quote.feesOutstandingMinor.toString(),
+      monitoringFeeOutstandingMinor: quote.monitoringFeeOutstandingMinor.toString(),
       penaltiesCollectedMinor: quote.penaltiesCollectedMinor.toString(), penaltiesWaivedMinor: quote.penaltiesWaivedMinor.toString(),
       totalPayoffMinor: quote.totalPayoffMinor.toString(),
     },
@@ -313,6 +323,7 @@ async function executeTransactionReversal(tx: Tx, loanId: string, payload: Rever
   let principalMinor = 0n;
   let interestMinor = 0n;
   let feesMinor = 0n;
+  let monitoringFeeMinor = 0n;
   let penaltiesMinor = 0n;
   for (const allocation of original.allocations) {
     await tx.loanInstallment.update({
@@ -321,21 +332,26 @@ async function executeTransactionReversal(tx: Tx, loanId: string, payload: Rever
         principalPaidMinor: { decrement: allocation.principalMinor },
         interestPaidMinor: { decrement: allocation.interestMinor },
         feesPaidMinor: { decrement: allocation.feesMinor },
+        monitoringFeePaidMinor: { decrement: allocation.monitoringFeeMinor },
         penaltiesPaidMinor: { decrement: allocation.penaltiesMinor },
       },
     });
-    await tx.loanTransactionAllocation.create({ data: { transactionId: reversal.id, installmentId: allocation.installmentId, principalMinor: allocation.principalMinor, interestMinor: allocation.interestMinor, feesMinor: allocation.feesMinor, penaltiesMinor: allocation.penaltiesMinor } });
+    await tx.loanTransactionAllocation.create({ data: { transactionId: reversal.id, installmentId: allocation.installmentId, principalMinor: allocation.principalMinor, interestMinor: allocation.interestMinor, feesMinor: allocation.feesMinor, monitoringFeeMinor: allocation.monitoringFeeMinor, penaltiesMinor: allocation.penaltiesMinor } });
     principalMinor += allocation.principalMinor;
     interestMinor += allocation.interestMinor;
     feesMinor += allocation.feesMinor;
+    monitoringFeeMinor += allocation.monitoringFeeMinor;
     penaltiesMinor += allocation.penaltiesMinor;
   }
 
+  const monitoringFeeIncomeAccountId = mapping.monitoringFeeIncomeAccountId ?? mapping.feeIncomeAccountId;
+  if (monitoringFeeMinor > 0n && !monitoringFeeIncomeAccountId) throw new Error("Monitoring fee income account is not configured");
   const journal = await tx.journal.create({ data: { officeId: current.officeId, businessDate, referenceType: "LOAN_REPAYMENT_REVERSAL", referenceId: reversal.id, narration: `Reversal of repayment ${current.accountNumber}`, idempotencyKey: `journal:${idempotencyKey}` } });
   const debits = [
     { accountId: mapping.principalReceivableAccountId, amount: principalMinor, memo: "Principal" },
     { accountId: mapping.interestIncomeAccountId, amount: interestMinor, memo: "Interest" },
     { accountId: mapping.feeIncomeAccountId, amount: feesMinor, memo: "Fees" },
+    { accountId: monitoringFeeIncomeAccountId, amount: monitoringFeeMinor, memo: "Monitoring fee" },
     { accountId: mapping.penaltyIncomeAccountId, amount: penaltiesMinor, memo: "Penalties" },
   ].filter((line): line is { accountId: string; amount: bigint; memo: string } => Boolean(line.accountId) && line.amount > 0n);
   await tx.journalLine.createMany({ data: [
@@ -343,11 +359,9 @@ async function executeTransactionReversal(tx: Tx, loanId: string, payload: Rever
     { journalId: journal.id, accountId: settlement.ledgerAccountId, direction: "CREDIT", amountMinor: original.settlementAmountMinor, memo: original.settlementChannel },
   ] });
   await tx.journal.update({ where: { id: journal.id }, data: { status: "POSTED", postedAt: new Date() } });
-
   const freshInstallments = await tx.loanInstallment.findMany({ where: { loanId: current.id } });
-  const outstanding = (item: (typeof freshInstallments)[number]) => item.principalDueMinor + item.interestDueMinor + item.feesDueMinor + item.penaltiesDueMinor
-    - item.principalPaidMinor - item.interestPaidMinor - item.feesPaidMinor - item.penaltiesPaidMinor
-    - item.principalWaivedMinor - item.interestWaivedMinor - item.feesWaivedMinor - item.penaltiesWaivedMinor;
+  const outstanding = (item: (typeof freshInstallments)[number]) =>
+    installmentDueMinor(item) - installmentPaidMinor(item) - installmentWaivedMinor(item);
   const totalOutstandingMinor = freshInstallments.reduce((sum, item) => sum + outstanding(item), 0n);
   const overdueOutstandingMinor = freshInstallments.filter((item) => item.dueOn < businessDate).reduce((sum, item) => sum + outstanding(item), 0n);
   // Reversing a repayment can only ever increase what is owed, so a loan that was CLOSED or

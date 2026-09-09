@@ -2,6 +2,7 @@ import type { Client, ClientStatus, LoanStatus, PrismaClient } from "@prisma/cli
 
 import { clientScopeWhere, type UserDataScope } from "@/modules/identity/application/data-scope";
 import { getClientWalletSummary } from "@/modules/lending/application/client-wallet";
+import { installmentDueMinor, installmentPaidMinor } from "@/modules/lending/domain/loan-outstanding";
 
 export type ClientStatementSearchRow = Readonly<{
   id: string;
@@ -67,6 +68,7 @@ export type ClientStatementLoanRow = Readonly<{
   principalPaidMinor: bigint;
   interestPaidMinor: bigint;
   feesPaidMinor: bigint;
+  monitoringFeePaidMinor: bigint;
   penaltiesPaidMinor: bigint;
   totalPaidMinor: bigint;
   outstandingMinor: bigint;
@@ -150,6 +152,8 @@ export async function loadClientStatement(
               interestPaidMinor: true,
               feesDueMinor: true,
               feesPaidMinor: true,
+              monitoringFeeDueMinor: true,
+              monitoringFeePaidMinor: true,
               penaltiesDueMinor: true,
               penaltiesPaidMinor: true,
             },
@@ -171,14 +175,12 @@ export async function loadClientStatement(
     const principalPaidMinor = loan.installments.reduce((sum, installment) => sum + installment.principalPaidMinor, 0n);
     const interestPaidMinor = loan.installments.reduce((sum, installment) => sum + installment.interestPaidMinor, 0n);
     const feesPaidMinor = loan.installments.reduce((sum, installment) => sum + installment.feesPaidMinor, 0n);
+    const monitoringFeePaidMinor = loan.installments.reduce((sum, installment) => sum + (installment.monitoringFeePaidMinor ?? 0n), 0n);
     const penaltiesPaidMinor = loan.installments.reduce((sum, installment) => sum + installment.penaltiesPaidMinor, 0n);
-    const outstandingMinor = loan.installments.reduce((sum, installment) => {
-      const principal = installment.principalDueMinor - installment.principalPaidMinor;
-      const interest = installment.interestDueMinor - installment.interestPaidMinor;
-      const fees = installment.feesDueMinor - installment.feesPaidMinor;
-      const penalties = installment.penaltiesDueMinor - installment.penaltiesPaidMinor;
-      return sum + principal + interest + fees + penalties;
-    }, 0n);
+    const outstandingMinor = loan.installments.reduce(
+      (sum, installment) => sum + installmentDueMinor(installment) - installmentPaidMinor(installment),
+      0n,
+    );
     return {
       id: loan.id,
       accountNumber: loan.accountNumber,
@@ -190,8 +192,14 @@ export async function loadClientStatement(
       principalPaidMinor,
       interestPaidMinor,
       feesPaidMinor,
+      monitoringFeePaidMinor,
       penaltiesPaidMinor,
-      totalPaidMinor: principalPaidMinor + interestPaidMinor + feesPaidMinor + penaltiesPaidMinor,
+      totalPaidMinor:
+        principalPaidMinor +
+        interestPaidMinor +
+        feesPaidMinor +
+        monitoringFeePaidMinor +
+        penaltiesPaidMinor,
       outstandingMinor,
     };
   });

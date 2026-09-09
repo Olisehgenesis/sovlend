@@ -4,7 +4,9 @@ import { notFound } from "next/navigation";
 
 import { formatMinor } from "@/modules/money/domain/format-minor";
 import {
+  installmentDueMinor,
   installmentOutstandingMinor,
+  installmentPaidMinor,
   installmentWaivedMinor,
   loanOutstandingMinor,
   loanWrittenOffMinor,
@@ -43,8 +45,8 @@ export default async function PortalLoanPage({ params }: { params: Promise<{ id:
 
   const totals = loan.installments.reduce(
     (sum, item) => ({
-      due: sum.due + item.principalDueMinor + item.interestDueMinor + item.feesDueMinor + item.penaltiesDueMinor,
-      paid: sum.paid + item.principalPaidMinor + item.interestPaidMinor + item.feesPaidMinor + item.penaltiesPaidMinor,
+      due: sum.due + installmentDueMinor(item),
+      paid: sum.paid + installmentPaidMinor(item),
       waived: sum.waived + installmentWaivedMinor(item),
     }),
     { due: 0n, paid: 0n, waived: 0n },
@@ -112,6 +114,7 @@ export default async function PortalLoanPage({ params }: { params: Promise<{ id:
                   <th>Principal</th>
                   <th>Interest</th>
                   <th>Fees</th>
+                  <th>Monitoring fee</th>
                   <th>Penalties</th>
                   <th>Paid</th>
                   <th>Outstanding</th>
@@ -119,7 +122,7 @@ export default async function PortalLoanPage({ params }: { params: Promise<{ id:
               </thead>
               <tbody>
                 {loan.installments.map((item) => {
-                  const paid = item.principalPaidMinor + item.interestPaidMinor + item.feesPaidMinor + item.penaltiesPaidMinor;
+                  const paid = installmentPaidMinor(item);
                   const rowOutstanding = installmentOutstandingMinor(item);
                   return (
                     <tr key={item.id}>
@@ -128,6 +131,7 @@ export default async function PortalLoanPage({ params }: { params: Promise<{ id:
                       <td>{formatMinor(item.principalDueMinor, loan.denominationCurrency)}</td>
                       <td>{formatMinor(item.interestDueMinor, loan.denominationCurrency)}</td>
                       <td>{formatMinor(item.feesDueMinor, loan.denominationCurrency)}</td>
+                      <td>{formatMinor(item.monitoringFeeDueMinor ?? 0n, loan.denominationCurrency)}</td>
                       <td>{formatMinor(item.penaltiesDueMinor, loan.denominationCurrency)}</td>
                       <td>{formatMinor(paid, loan.denominationCurrency)}</td>
                       <td>{formatMinor(rowOutstanding, loan.denominationCurrency)}</td>

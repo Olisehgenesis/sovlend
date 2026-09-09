@@ -8,6 +8,7 @@ import { Breadcrumbs } from "@/components/breadcrumbs";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { getUserDataScope, loanScopeWhere } from "@/modules/identity/application/data-scope";
+import { installmentDueMinor, installmentPaidMinor } from "@/modules/lending/domain/loan-outstanding";
 import { formatMinor } from "@/modules/money/domain/format-minor";
 
 export default async function LoansDueTodayPage() {
@@ -33,10 +34,12 @@ export default async function LoansDueTodayPage() {
       interestDueMinor: true,
       feesDueMinor: true,
       penaltiesDueMinor: true,
+      monitoringFeeDueMinor: true,
       principalPaidMinor: true,
       interestPaidMinor: true,
       feesPaidMinor: true,
       penaltiesPaidMinor: true,
+      monitoringFeePaidMinor: true,
       loan: {
         select: {
           id: true,
@@ -191,13 +194,14 @@ function scheduledAmount(installment: {
   interestDueMinor: bigint;
   feesDueMinor: bigint;
   penaltiesDueMinor: bigint;
+  monitoringFeeDueMinor?: bigint;
+  principalPaidMinor: bigint;
+  interestPaidMinor: bigint;
+  feesPaidMinor: bigint;
+  penaltiesPaidMinor: bigint;
+  monitoringFeePaidMinor?: bigint;
 }) {
-  return (
-    installment.principalDueMinor +
-    installment.interestDueMinor +
-    installment.feesDueMinor +
-    installment.penaltiesDueMinor
-  );
+  return installmentDueMinor(installment);
 }
 
 function outstandingAmount(installment: {
@@ -205,17 +209,14 @@ function outstandingAmount(installment: {
   interestDueMinor: bigint;
   feesDueMinor: bigint;
   penaltiesDueMinor: bigint;
+  monitoringFeeDueMinor?: bigint;
   principalPaidMinor: bigint;
   interestPaidMinor: bigint;
   feesPaidMinor: bigint;
   penaltiesPaidMinor: bigint;
+  monitoringFeePaidMinor?: bigint;
 }) {
-  const amount =
-    scheduledAmount(installment) -
-    installment.principalPaidMinor -
-    installment.interestPaidMinor -
-    installment.feesPaidMinor -
-    installment.penaltiesPaidMinor;
+  const amount = scheduledAmount(installment) - installmentPaidMinor(installment);
   return amount > 0n ? amount : 0n;
 }
 

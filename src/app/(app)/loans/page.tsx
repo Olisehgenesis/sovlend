@@ -13,6 +13,12 @@ import {
   loanScopeWhere,
   officeWhere,
 } from "@/modules/identity/application/data-scope";
+import {
+  installmentDueMinor,
+  installmentPaidMinor,
+  isLoanSettledStatus,
+  loanOutstandingMinor,
+} from "@/modules/lending/domain/loan-outstanding";
 
 const activeLoanStatuses: LoanStatus[] = ["ACTIVE", "IN_ARREARS"];
 const supportedStatusFilters = ["APPROVED", "IN_ARREARS", "OVERPAID", "WRITTEN_OFF", "CLOSED"] as const;
@@ -171,14 +177,17 @@ export default async function LoansPage({
           interestDueMinor: true,
           feesDueMinor: true,
           penaltiesDueMinor: true,
+          monitoringFeeDueMinor: true,
           principalPaidMinor: true,
           interestPaidMinor: true,
           feesPaidMinor: true,
           penaltiesPaidMinor: true,
+          monitoringFeePaidMinor: true,
           principalWaivedMinor: true,
           interestWaivedMinor: true,
           feesWaivedMinor: true,
           penaltiesWaivedMinor: true,
+          monitoringFeeWaivedMinor: true,
         },
       },
     },
@@ -292,6 +301,7 @@ export default async function LoansPage({
                     <th>Principal Outstanding</th>
                     <th>Interest Outstanding</th>
                     <th>Fees Outstanding</th>
+                    <th>Monitoring Fee Outstanding</th>
                     <th>Penalties Outstanding</th>
                     <th>Total Outstanding</th>
                     <th>Total Paid</th>
@@ -324,24 +334,25 @@ export default async function LoansPage({
                     const principalDue = clampToZero(principalDueRaw);
                     const interestDue = clampToZero(interestDueRaw);
                     const feesDue = clampToZero(feesDueRaw);
+                    const monitoringFeeDueRaw = isLoanSettledStatus(loan.status)
+                      ? 0n
+                      : loan.installments.reduce(
+                          (sum, item) =>
+                            sum +
+                            (item.monitoringFeeDueMinor ?? 0n) -
+                            (item.monitoringFeePaidMinor ?? 0n) -
+                            (item.monitoringFeeWaivedMinor ?? 0n),
+                          0n,
+                        );
+                    const monitoringFeeDue = clampToZero(monitoringFeeDueRaw);
                     const penaltiesDue = clampToZero(penaltiesDueRaw);
-                    const totalDue = principalDue + interestDue + feesDue + penaltiesDue;
+                    const totalDue = loanOutstandingMinor(loan.installments, loan);
                     const totalPaid = loan.installments.reduce(
-                      (sum, item) =>
-                        sum +
-                        item.principalPaidMinor +
-                        item.interestPaidMinor +
-                        item.feesPaidMinor +
-                        item.penaltiesPaidMinor,
+                      (sum, item) => sum + installmentPaidMinor(item),
                       0n,
                     );
                     const totalExpectedRepayment = loan.installments.reduce(
-                      (sum, item) =>
-                        sum +
-                        item.principalDueMinor +
-                        item.interestDueMinor +
-                        item.feesDueMinor +
-                        item.penaltiesDueMinor,
+                      (sum, item) => sum + installmentDueMinor(item),
                       0n,
                     );
                     const overpaidBy = clampToZero(totalPaid - totalExpectedRepayment);
@@ -369,6 +380,7 @@ export default async function LoansPage({
                         <td>{formatMinor(principalDue, loan.denominationCurrency)}</td>
                         <td>{formatMinor(interestDue, loan.denominationCurrency)}</td>
                         <td>{formatMinor(feesDue, loan.denominationCurrency)}</td>
+                        <td>{formatMinor(monitoringFeeDue, loan.denominationCurrency)}</td>
                         <td>{formatMinor(penaltiesDue, loan.denominationCurrency)}</td>
                         <td>{formatMinor(totalDue, loan.denominationCurrency)}</td>
                         <td>{formatMinor(totalPaid, loan.denominationCurrency)}</td>

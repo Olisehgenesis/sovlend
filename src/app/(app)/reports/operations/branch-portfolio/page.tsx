@@ -122,6 +122,7 @@ export default async function BranchPortfolioPage({
                   <th>Principal outstanding</th>
                   <th>Interest outstanding</th>
                   <th>Fees outstanding</th>
+                  <th>Monitoring fee outstanding</th>
                   <th>Penalties outstanding</th>
                   <th>Total outstanding</th>
                   <th>Savings balance</th>
@@ -144,6 +145,7 @@ export default async function BranchPortfolioPage({
                     <td>{formatMinor(row.outstandingPrincipalMinor, row.currencyCode)}</td>
                     <td>{formatMinor(row.outstandingInterestMinor, row.currencyCode)}</td>
                     <td>{formatMinor(row.outstandingFeesMinor, row.currencyCode)}</td>
+                    <td>{formatMinor(row.outstandingMonitoringFeeMinor, row.currencyCode)}</td>
                     <td>{formatMinor(row.outstandingPenaltiesMinor, row.currencyCode)}</td>
                     <td>
                       <strong>{formatMinor(row.outstandingTotalMinor, row.currencyCode)}</strong>
@@ -170,6 +172,7 @@ export default async function BranchPortfolioPage({
                     <th>{formatMinor(row.outstandingPrincipalMinor, row.currencyCode)}</th>
                     <th>{formatMinor(row.outstandingInterestMinor, row.currencyCode)}</th>
                     <th>{formatMinor(row.outstandingFeesMinor, row.currencyCode)}</th>
+                    <th>{formatMinor(row.outstandingMonitoringFeeMinor, row.currencyCode)}</th>
                     <th>{formatMinor(row.outstandingPenaltiesMinor, row.currencyCode)}</th>
                     <th>{formatMinor(row.outstandingTotalMinor, row.currencyCode)}</th>
                     <th>{formatMinor(row.savingsBalanceMinor, row.currencyCode)}</th>

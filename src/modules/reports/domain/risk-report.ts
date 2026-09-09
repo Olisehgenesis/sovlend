@@ -2,6 +2,7 @@ import type { LoanStatus, PrismaClient } from "@prisma/client";
 
 import { loanScopeWhere, type UserDataScope } from "@/modules/identity/application/data-scope";
 import { rowsToCsv } from "@/modules/lending/domain/loan-export";
+import { installmentOutstandingMinor as totalInstallmentOutstandingMinor } from "@/modules/lending/domain/loan-outstanding";
 
 export type RiskFilters = Readonly<{
   officeId?: string;
@@ -108,14 +109,17 @@ type InstallmentSnapshot = {
   interestDueMinor: bigint;
   feesDueMinor: bigint;
   penaltiesDueMinor: bigint;
+  monitoringFeeDueMinor?: bigint;
   principalPaidMinor: bigint;
   interestPaidMinor: bigint;
   feesPaidMinor: bigint;
   penaltiesPaidMinor: bigint;
+  monitoringFeePaidMinor?: bigint;
   principalWaivedMinor: bigint;
   interestWaivedMinor: bigint;
   feesWaivedMinor: bigint;
   penaltiesWaivedMinor: bigint;
+  monitoringFeeWaivedMinor?: bigint;
 };
 
 type PortfolioLoanSnapshot = {
@@ -138,15 +142,18 @@ type PortfolioLoanSnapshot = {
   principalRepaidMinor: bigint;
   interestRepaidMinor: bigint;
   feesRepaidMinor: bigint;
+  monitoringFeeRepaidMinor: bigint;
   penaltiesRepaidMinor: bigint;
   outstandingPrincipalMinor: bigint;
   outstandingInterestMinor: bigint;
   outstandingFeesMinor: bigint;
+  outstandingMonitoringFeeMinor: bigint;
   outstandingPenaltiesMinor: bigint;
   outstandingTotalMinor: bigint;
   overduePrincipalMinor: bigint;
   overdueInterestMinor: bigint;
   overdueFeesMinor: bigint;
+  overdueMonitoringFeeMinor: bigint;
   overduePenaltiesMinor: bigint;
   overdueTotalMinor: bigint;
   daysOverdue: number;
@@ -294,6 +301,7 @@ export async function loadArrearsReport(prisma: PrismaClient, scope: UserDataSco
       overduePrincipalMinor: loan.overduePrincipalMinor,
       overdueInterestMinor: loan.overdueInterestMinor,
       overdueFeesMinor: loan.overdueFeesMinor,
+      overdueMonitoringFeeMinor: loan.overdueMonitoringFeeMinor,
       overduePenaltiesMinor: loan.overduePenaltiesMinor,
       overdueTotalMinor: loan.overdueTotalMinor,
       daysOverdue: loan.daysOverdue,
@@ -312,6 +320,7 @@ export async function loadArrearsReport(prisma: PrismaClient, scope: UserDataSco
       overduePrincipalMinor: sumBigInt(loans.map((loan) => loan.overduePrincipalMinor)),
       overdueInterestMinor: sumBigInt(loans.map((loan) => loan.overdueInterestMinor)),
       overdueFeesMinor: sumBigInt(loans.map((loan) => loan.overdueFeesMinor)),
+      overdueMonitoringFeeMinor: sumBigInt(loans.map((loan) => loan.overdueMonitoringFeeMinor)),
       overduePenaltiesMinor: sumBigInt(loans.map((loan) => loan.overduePenaltiesMinor)),
       overdueTotalMinor: sumBigInt(loans.map((loan) => loan.overdueTotalMinor)),
     },
@@ -704,6 +713,7 @@ const arrearsLoanColumns = [
   "Principal Overdue",
   "Interest Overdue",
   "Fees Overdue",
+  "Monitoring Fee Overdue",
   "Penalties Overdue",
   "Total Overdue",
   "Outstanding Principal",
@@ -726,6 +736,7 @@ export function arrearsReportCsv(report: ArrearsReport) {
       "Principal Overdue": loan.overduePrincipalMinor.toString(),
       "Interest Overdue": loan.overdueInterestMinor.toString(),
       "Fees Overdue": loan.overdueFeesMinor.toString(),
+      "Monitoring Fee Overdue": loan.overdueMonitoringFeeMinor.toString(),
       "Penalties Overdue": loan.overduePenaltiesMinor.toString(),
       "Total Overdue": loan.overdueTotalMinor.toString(),
       "Outstanding Principal": loan.outstandingPrincipalMinor.toString(),
@@ -911,14 +922,17 @@ export async function loadPortfolioLoans(
           interestDueMinor: true,
           feesDueMinor: true,
           penaltiesDueMinor: true,
+          monitoringFeeDueMinor: true,
           principalPaidMinor: true,
           interestPaidMinor: true,
           feesPaidMinor: true,
           penaltiesPaidMinor: true,
+          monitoringFeePaidMinor: true,
           principalWaivedMinor: true,
           interestWaivedMinor: true,
           feesWaivedMinor: true,
           penaltiesWaivedMinor: true,
+          monitoringFeeWaivedMinor: true,
         },
         orderBy: { dueOn: "asc" },
       },
@@ -937,15 +951,18 @@ export async function loadPortfolioLoans(
     const loanOutstandingPrincipalMinor = sumBigInt(loan.installments.map(outstandingPrincipalMinor));
     const loanOutstandingInterestMinor = sumBigInt(loan.installments.map(outstandingInterestMinor));
     const loanOutstandingFeesMinor = sumBigInt(loan.installments.map(outstandingFeesMinor));
+    const loanOutstandingMonitoringFeeMinor = sumBigInt(loan.installments.map(outstandingMonitoringFeeMinor));
     const loanOutstandingPenaltiesMinor = sumBigInt(loan.installments.map(outstandingPenaltiesMinor));
     const loanOutstandingTotalMinor = sumBigInt(loan.installments.map(outstandingTotalMinor));
     const overduePrincipalMinor = sumBigInt(overdueInstallments.map(outstandingPrincipalMinor));
     const overdueInterestMinor = sumBigInt(overdueInstallments.map(outstandingInterestMinor));
     const overdueFeesMinor = sumBigInt(overdueInstallments.map(outstandingFeesMinor));
+    const overdueMonitoringFeeMinor = sumBigInt(overdueInstallments.map(outstandingMonitoringFeeMinor));
     const overduePenaltiesMinor = sumBigInt(overdueInstallments.map(outstandingPenaltiesMinor));
     const principalRepaidMinor = sumBigInt(loan.installments.map((installment) => installment.principalPaidMinor));
     const interestRepaidMinor = sumBigInt(loan.installments.map((installment) => installment.interestPaidMinor));
     const feesRepaidMinor = sumBigInt(loan.installments.map((installment) => installment.feesPaidMinor));
+    const monitoringFeeRepaidMinor = sumBigInt(loan.installments.map((installment) => installment.monitoringFeePaidMinor ?? 0n));
     const penaltiesRepaidMinor = sumBigInt(loan.installments.map((installment) => installment.penaltiesPaidMinor));
 
     return {
@@ -974,20 +991,24 @@ export async function loadPortfolioLoans(
       principalRepaidMinor,
       interestRepaidMinor,
       feesRepaidMinor,
+      monitoringFeeRepaidMinor,
       penaltiesRepaidMinor,
       outstandingPrincipalMinor: loanOutstandingPrincipalMinor,
       outstandingInterestMinor: loanOutstandingInterestMinor,
       outstandingFeesMinor: loanOutstandingFeesMinor,
+      outstandingMonitoringFeeMinor: loanOutstandingMonitoringFeeMinor,
       outstandingPenaltiesMinor: loanOutstandingPenaltiesMinor,
       outstandingTotalMinor: loanOutstandingTotalMinor,
       overduePrincipalMinor,
       overdueInterestMinor,
       overdueFeesMinor,
+      overdueMonitoringFeeMinor,
       overduePenaltiesMinor,
       overdueTotalMinor:
         overduePrincipalMinor +
         overdueInterestMinor +
         overdueFeesMinor +
+        overdueMonitoringFeeMinor +
         overduePenaltiesMinor,
       daysOverdue,
       overdueSince: overdueInstallment?.dueOn ?? null,
@@ -1023,25 +1044,20 @@ function outstandingFeesMinor(installment: InstallmentSnapshot) {
   return positive(installment.feesDueMinor - installment.feesPaidMinor - installment.feesWaivedMinor);
 }
 
+function outstandingMonitoringFeeMinor(installment: InstallmentSnapshot) {
+  return positive(
+    (installment.monitoringFeeDueMinor ?? 0n) -
+      (installment.monitoringFeePaidMinor ?? 0n) -
+      (installment.monitoringFeeWaivedMinor ?? 0n),
+  );
+}
+
 function outstandingPenaltiesMinor(installment: InstallmentSnapshot) {
   return positive(installment.penaltiesDueMinor - installment.penaltiesPaidMinor - installment.penaltiesWaivedMinor);
 }
 
 function outstandingTotalMinor(installment: InstallmentSnapshot) {
-  return positive(
-    installment.principalDueMinor +
-      installment.interestDueMinor +
-      installment.feesDueMinor +
-      installment.penaltiesDueMinor -
-      installment.principalPaidMinor -
-      installment.interestPaidMinor -
-      installment.feesPaidMinor -
-      installment.penaltiesPaidMinor -
-      installment.principalWaivedMinor -
-      installment.interestWaivedMinor -
-      installment.feesWaivedMinor -
-      installment.penaltiesWaivedMinor,
-  );
+  return totalInstallmentOutstandingMinor(installment);
 }
 
 function positive(value: bigint) {

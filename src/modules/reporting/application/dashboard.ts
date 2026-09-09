@@ -2,7 +2,11 @@ import type { AccountType, OwnershipType, PriceStatus } from "@prisma/client";
 
 import { prisma } from "@/lib/prisma";
 import { transactionTypeVariants } from "@/lib/loan-transaction-type-variants";
-import { principalOutstandingMinor as principalOutstandingHelper } from "@/modules/lending/domain/loan-outstanding";
+import {
+  installmentDueMinor,
+  installmentPaidMinor,
+  principalOutstandingMinor as principalOutstandingHelper,
+} from "@/modules/lending/domain/loan-outstanding";
 export { formatMinor } from "@/modules/money/domain/format-minor";
 import { getUserDataScope, loanScopeWhere } from "@/modules/identity/application/data-scope";
 
@@ -67,10 +71,12 @@ export async function loadDashboard(userId: string) {
           interestDueMinor: true,
           feesDueMinor: true,
           penaltiesDueMinor: true,
+          monitoringFeeDueMinor: true,
           principalPaidMinor: true,
           interestPaidMinor: true,
           feesPaidMinor: true,
           penaltiesPaidMinor: true,
+          monitoringFeePaidMinor: true,
         },
       }),
       prisma.loanTransaction.aggregate({
@@ -235,20 +241,14 @@ function outstanding(installment: {
   interestDueMinor: bigint;
   feesDueMinor: bigint;
   penaltiesDueMinor: bigint;
+  monitoringFeeDueMinor?: bigint;
   principalPaidMinor: bigint;
   interestPaidMinor: bigint;
   feesPaidMinor: bigint;
   penaltiesPaidMinor: bigint;
+  monitoringFeePaidMinor?: bigint;
 }) {
-  const amount =
-    installment.principalDueMinor +
-    installment.interestDueMinor +
-    installment.feesDueMinor +
-    installment.penaltiesDueMinor -
-    installment.principalPaidMinor -
-    installment.interestPaidMinor -
-    installment.feesPaidMinor -
-    installment.penaltiesPaidMinor;
+  const amount = installmentDueMinor(installment) - installmentPaidMinor(installment);
   return amount > 0n ? amount : 0n;
 }
 
