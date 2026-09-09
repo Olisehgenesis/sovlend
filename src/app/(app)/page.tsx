@@ -206,7 +206,7 @@ export default async function Home() {
           </div>
         ) : (
           <div className="table-scroll">
-            <table>
+            <table className="clickable-rows">
               <thead>
                 <tr>
                   <th>Borrower</th>
@@ -221,6 +221,7 @@ export default async function Home() {
                   <tr key={loan.id}>
                     <td>
                       <strong>{loan.borrower}</strong>
+                      <Link className="row-link" href={`/loans/${loan.id}`} aria-label={`Open ${loan.account}`} />
                     </td>
                     <td className="mono">{loan.account}</td>
                     <td>{loan.product}</td>
