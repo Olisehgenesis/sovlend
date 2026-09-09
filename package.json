@@ -23,6 +23,7 @@
     "migration:sync-recent": "tsx src/migration/sync-recent.ts",
     "migration:backfill-officer-assignments": "tsx src/migration/backfill-officer-assignments.ts",
     "migration:backfill-legacy-loan-allocations": "tsx src/migration/cli.ts backfill-legacy-loan-allocations",
+    "migration:backfill-legacy-transaction-attribution": "tsx src/migration/cli.ts backfill-legacy-transaction-attribution",
     "migration:backfill-ledger-bootstrap": "tsx src/migration/backfill-ledger-bootstrap.ts",
     "migration:backfill-ledger-disbursements": "tsx src/migration/backfill-ledger-disbursements.ts",
     "migration:backfill-ledger-collections": "tsx src/migration/backfill-ledger-collections.ts",
