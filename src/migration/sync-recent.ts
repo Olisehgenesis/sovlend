@@ -5,7 +5,9 @@ import path from "node:path";
 import { extractLegacy } from "./extract";
 import { extractLegacyLoanHistory } from "./extract-loans";
 import { importArchiveGroupsAndLoans } from "./import-archive-loans";
+import { syncExistingSavingsAccountsFromArchive } from "./import-archive-savings";
 import { importFoundation } from "./import-foundation";
+import { extractLegacySavingsHistory } from "./extract-savings";
 import { toMinor } from "./money";
 
 type CountSnapshot = {
@@ -13,6 +15,8 @@ type CountSnapshot = {
   groups: number;
   groupMembers: number;
   loans: number;
+  savingsAccounts: number;
+  savingsTransactions: number;
 };
 
 type StatusCorrection = {
@@ -51,6 +55,16 @@ async function main() {
     }
 
     const root = foundationExtract.root;
+    console.log("[sync-recent] Extracting current savings history...");
+    const savingsExtract = await extractLegacySavingsHistory(environment, { root });
+    console.log(
+      `[sync-recent] Savings history extraction finished: ${savingsExtract.accountsProcessed}/${savingsExtract.accountsDiscovered} savings accounts processed`,
+    );
+    if (savingsExtract.errors.length > 0) {
+      console.log(`[sync-recent] Savings history extraction reported ${savingsExtract.errors.length} issue(s):`);
+      for (const error of savingsExtract.errors) console.log(`  - ${error}`);
+    }
+
     const organization = await prisma.organization.findFirstOrThrow();
     const actor = await prisma.user.findFirstOrThrow({ where: { email: "testadmin@sovlend.com" } });
     const organizationName = process.env.MIGRATION_ORGANIZATION_NAME?.trim() || organization.name;
@@ -73,6 +87,17 @@ async function main() {
       for (const loan of archiveImport.loansSkipped) console.log(`  - ${loan}`);
     }
 
+    console.log("[sync-recent] Importing fresh transactions for existing savings accounts from archive...");
+    const savingsSync = await syncExistingSavingsAccountsFromArchive(prisma, root);
+    const countsAfterSavingsSync = await getCounts(prisma);
+    console.log(
+      `[sync-recent] Savings archive sync finished: accounts synced ${savingsSync.accountsSynced}, transactions imported ${savingsSync.transactionsImported}, savings transactions ${countsAfterArchiveImport.savingsTransactions} -> ${countsAfterSavingsSync.savingsTransactions}`,
+    );
+    if (savingsSync.accountsSkipped.length > 0) {
+      console.log(`[sync-recent] Savings archive sync skipped ${savingsSync.accountsSkipped.length} account(s):`);
+      for (const account of savingsSync.accountsSkipped) console.log(`  - ${account}`);
+    }
+
     console.log("[sync-recent] Correcting status drift for already-imported legacy loans...");
     const statusCorrections = await correctLoanStatusDrift(prisma, root);
     const countsAfterStatusPass = await getCounts(prisma);
@@ -87,6 +112,9 @@ async function main() {
       `- Owners processed successfully: ${loanExtract.ownersProcessed}`,
       `- Owners with extraction errors: ${loanExtract.errors.length}`,
       `- Loan payloads extracted: ${loanExtract.loansExtracted}`,
+      `- Savings accounts discovered: ${savingsExtract.accountsDiscovered}`,
+      `- Savings accounts extracted: ${savingsExtract.accountsProcessed}`,
+      `- Savings extraction issues: ${savingsExtract.errors.length}`,
       "Imports:",
       `- Foundation import run: ${foundationImport.runId} (${foundationImport.artifacts} artifacts verified)`,
       `- Clients added by foundation import: ${countsAfterFoundation.clients - countsBefore.clients} (${countsBefore.clients} -> ${countsAfterFoundation.clients})`,
@@ -94,12 +122,16 @@ async function main() {
       `- Group memberships upserted by archive import: ${archiveImport.membersImported}; memberships added: ${countsAfterArchiveImport.groupMembers - countsAfterFoundation.groupMembers} (${countsAfterFoundation.groupMembers} -> ${countsAfterArchiveImport.groupMembers})`,
       `- New loans imported: ${archiveImport.loansImported} (${countsAfterFoundation.loans} -> ${countsAfterArchiveImport.loans})`,
       `- Existing legacy loans synced: ${archiveImport.loansSynced}`,
-      `- Missing legacy transactions imported: ${archiveImport.transactionsImported}`,
+      `- Missing legacy loan transactions imported: ${archiveImport.transactionsImported}`,
       `- Installment rows refreshed: ${archiveImport.installmentsUpdated}`,
       `- Loans skipped by archive import: ${archiveImport.loansSkipped.length}`,
+      `- Savings accounts present: ${countsAfterSavingsSync.savingsAccounts}`,
+      `- Existing savings accounts synced: ${savingsSync.accountsSynced}`,
+      `- Missing legacy savings transactions imported: ${savingsSync.transactionsImported} (${countsAfterArchiveImport.savingsTransactions} -> ${countsAfterSavingsSync.savingsTransactions})`,
+      `- Savings accounts skipped by archive sync: ${savingsSync.accountsSkipped.length}`,
       "Status drift:",
       `- Existing loans corrected: ${statusCorrections.length}`,
-      `- Final counts: clients ${countsAfterStatusPass.clients}, groups ${countsAfterStatusPass.groups}, group memberships ${countsAfterStatusPass.groupMembers}, loans ${countsAfterStatusPass.loans}`,
+      `- Final counts: clients ${countsAfterStatusPass.clients}, groups ${countsAfterStatusPass.groups}, group memberships ${countsAfterStatusPass.groupMembers}, loans ${countsAfterStatusPass.loans}, savings accounts ${countsAfterStatusPass.savingsAccounts}, savings transactions ${countsAfterStatusPass.savingsTransactions}`,
     ];
 
     if (loanExtract.errors.length > 0) {
@@ -107,9 +139,19 @@ async function main() {
       summaryLines.push(...loanExtract.errors.map((error) => `  • ${error}`));
     }
 
+    if (savingsExtract.errors.length > 0) {
+      summaryLines.push("- Savings extraction issues:");
+      summaryLines.push(...savingsExtract.errors.map((error) => `  • ${error}`));
+    }
+
     if (archiveImport.loansSkipped.length > 0) {
       summaryLines.push("- Loan import skips:");
       summaryLines.push(...archiveImport.loansSkipped.map((loan) => `  • ${loan}`));
+    }
+
+    if (savingsSync.accountsSkipped.length > 0) {
+      summaryLines.push("- Savings sync skips:");
+      summaryLines.push(...savingsSync.accountsSkipped.map((account) => `  • ${account}`));
     }
 
     if (statusCorrections.length > 0) {
@@ -126,14 +168,16 @@ async function main() {
 }
 
 async function getCounts(prisma: PrismaClient): Promise<CountSnapshot> {
-  const [clients, groups, groupMembers, loans] = await Promise.all([
+  const [clients, groups, groupMembers, loans, savingsAccounts, savingsTransactions] = await Promise.all([
     prisma.client.count(),
     prisma.group.count(),
     prisma.groupMember.count(),
     prisma.loan.count(),
+    prisma.savingsAccount.count(),
+    prisma.savingsTransaction.count(),
   ]);
 
-  return { clients, groups, groupMembers, loans };
+  return { clients, groups, groupMembers, loans, savingsAccounts, savingsTransactions };
 }
 
 async function correctLoanStatusDrift(prisma: PrismaClient, root: string): Promise<StatusCorrection[]> {
