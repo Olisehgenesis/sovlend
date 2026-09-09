@@ -22,16 +22,24 @@ import {
   listAccountingReportOffices,
   normalizeDateRange,
   parseDateInput,
+  resolveDatePreset,
   resolveOfficeFilter,
   sideLabel,
   summarizeBalance,
+  type ReportDatePreset,
   type TrialBalanceRow,
 } from "@/modules/reports/domain/accounting-report";
+
+const DATE_PRESETS: { value: ReportDatePreset; label: string }[] = [
+  { value: "today", label: "Today" },
+  { value: "week", label: "This week" },
+  { value: "month", label: "This month" },
+];
 
 export default async function TrialBalancePage({
   searchParams,
 }: {
-  searchParams: Promise<{ startDate?: string; endDate?: string; officeId?: string }>;
+  searchParams: Promise<{ startDate?: string; endDate?: string; officeId?: string; preset?: string }>;
 }) {
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session) redirect("/sign-in");
@@ -52,10 +60,13 @@ export default async function TrialBalancePage({
     listAccountingReportOffices(prisma, scope),
     loadReportPickerOptions(prisma, session.user.id, scope.organizationId),
   ]);
-  const { startDate, endDate } = normalizeDateRange(
-    parseDateInput(params.startDate, defaults.startDate),
-    parseDateInput(params.endDate, defaults.endDate),
-  );
+  const preset = params.preset === "today" || params.preset === "week" || params.preset === "month" ? params.preset : null;
+  const { startDate, endDate } = preset
+    ? resolveDatePreset(new Date(), preset)
+    : normalizeDateRange(
+        parseDateInput(params.startDate, defaults.startDate),
+        parseDateInput(params.endDate, defaults.endDate),
+      );
   const officeId = resolveOfficeFilter(offices, params.officeId ?? null);
   const report = await getTrialBalanceReport(prisma, scope, { startDate, endDate, officeId });
   const activeOfficeName = offices.find((office) => office.id === officeId)?.name ?? "All offices";
@@ -93,6 +104,45 @@ export default async function TrialBalancePage({
       </header>
 
       <section className="panel form-panel">
+        <div className="quick-filters">
+          <span className="quick-filters-label">Quick range</span>
+          <div className="quick-filters-pills">
+            {DATE_PRESETS.map((item) => (
+              <Link
+                className={`pill-link ${preset === item.value ? "active" : ""}`}
+                href={`/reports/accounting/trial-balance?${buildReportQueryString({ preset: item.value, officeId })}`}
+                key={item.value}
+              >
+                {item.label}
+              </Link>
+            ))}
+          </div>
+          <span className="quick-filters-label">Office</span>
+          <div className="quick-filters-pills">
+            <Link
+              className={`pill-link ${!officeId ? "active" : ""}`}
+              href={`/reports/accounting/trial-balance?${buildReportQueryString({
+                startDate: formatDateInputValue(startDate),
+                endDate: formatDateInputValue(endDate),
+              })}`}
+            >
+              All offices
+            </Link>
+            {offices.map((office) => (
+              <Link
+                className={`pill-link ${officeId === office.id ? "active" : ""}`}
+                href={`/reports/accounting/trial-balance?${buildReportQueryString({
+                  startDate: formatDateInputValue(startDate),
+                  endDate: formatDateInputValue(endDate),
+                  officeId: office.id,
+                })}`}
+                key={office.id}
+              >
+                {office.name}
+              </Link>
+            ))}
+          </div>
+        </div>
         <form className="entity-form compact-mapping" method="GET">
           <fieldset>
             <legend>Filters</legend>

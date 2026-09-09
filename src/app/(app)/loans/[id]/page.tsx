@@ -185,9 +185,10 @@ export default async function LoanPage({
     : [];
   // For the header "Top up" shortcut — only client-owned (not group) loans get it, mirroring the
   // primary-savings-account pick used by ClientQuickActions on the client detail page.
-  const primarySavingsAccount = loan.clientId
-    ? savingsAccounts.find((account) => account.accountType === "SAVINGS") ?? null
-    : null;
+  // `accountType` is a product category ("Individual"/"Group"), not a savings-vs-other
+  // discriminator, so it must not be used to filter here — the query above already scopes this
+  // list to ACTIVE savings accounts. Ordering already prefers the default account.
+  const primarySavingsAccount = loan.clientId ? savingsAccounts[0] ?? null : null;
   // Surfaces this client's other accounts from the loan detail page, mirroring how
   // savings-accounts/[accountNumber]/page.tsx links back to its owning client/group.
   const otherLoans = loan.clientId
