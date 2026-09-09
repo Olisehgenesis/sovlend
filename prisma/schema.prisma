@@ -191,6 +191,8 @@ model Organization {
   savingsAccountingDefaults SavingsAccountingDefaults?
   groups                    Group[]
   loanExportJobs            LoanExportJob[]
+  accountingRules           AccountingRule[]
+  accountingClosures        AccountingClosure[]
   createdAt                 DateTime                     @default(now())
   updatedAt                 DateTime                     @updatedAt
 }
@@ -211,6 +213,8 @@ model Office {
   journals              Journal[]
   permissionAssignments UserPermissionAssignment[]
   groups                Group[]
+  accountingRules       AccountingRule[]
+  accountingClosures    AccountingClosure[]
   createdAt             DateTime                   @default(now())
   updatedAt             DateTime                   @updatedAt
 
@@ -260,6 +264,7 @@ model User {
   loanOfficerApplications     LoanApplication[]          @relation("ApplicationLoanOfficer")
   applicationDocuments        LoanApplicationDocument[]
   applicationNotes            LoanApplicationNote[]
+  accountingClosures          AccountingClosure[]
   createdAt                   DateTime                   @default(now())
   updatedAt                   DateTime                   @updatedAt
 
@@ -1133,6 +1138,7 @@ model LedgerAccount {
   defaultOverpaymentFor       LoanAccountingDefaults[]          @relation("DefaultOverpaymentLiability")
   savingsLiabilityMappings    SavingsProductAccountingMapping[] @relation("SavingsLiability")
   defaultSavingsLiabilityFor  SavingsAccountingDefaults[]       @relation("DefaultSavingsLiability")
+  accountingRuleAccounts      AccountingRuleAccount[]
   createdAt                   DateTime                          @default(now())
 
   @@unique([code, currencyCode, ownershipPoolId])
@@ -1284,6 +1290,63 @@ model JournalLine {
 
   @@index([journalId])
   @@index([accountId, createdAt])
+}
+
+// A predefined debit/credit account template a user can pick by name when posting a "Frequent
+// posting" (see post-accounting-rule-transaction.ts) instead of choosing raw accounts every time
+// -- e.g. "Petty Cash Replenishment: Dr Office Supplies Expense, Cr Cash". Each side (DEBIT/
+// CREDIT) can list one fixed account or several allowed accounts the poster picks from at
+// posting time (mirrors iLend's "Debit/Credit Tags" accounting rules).
+model AccountingRule {
+  id             String                  @id @default(uuid()) @db.Uuid
+  organizationId String                  @db.Uuid
+  // Null means the rule is usable from any office in the organization.
+  officeId       String?                 @db.Uuid
+  name           String
+  description    String?
+  active         Boolean                 @default(true)
+  organization   Organization            @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  office         Office?                 @relation(fields: [officeId], references: [id])
+  accounts       AccountingRuleAccount[]
+  createdAt      DateTime                @default(now())
+  updatedAt      DateTime                @updatedAt
+
+  @@unique([organizationId, name])
+  @@index([organizationId, active])
+}
+
+model AccountingRuleAccount {
+  id        String         @id @default(uuid()) @db.Uuid
+  ruleId    String         @db.Uuid
+  accountId String         @db.Uuid
+  side      EntryDirection
+  rule      AccountingRule @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+  account   LedgerAccount  @relation(fields: [accountId], references: [id])
+  createdAt DateTime       @default(now())
+
+  @@unique([ruleId, accountId, side])
+  @@index([ruleId, side])
+}
+
+// Period-end lock: once created, journals with a businessDate on/before the latest closure's
+// closingDate for an office are rejected by assertPeriodOpen() (see
+// src/modules/ledger/application/assert-period-open.ts). Purely additive and opt-in -- existing
+// posting behavior is completely unchanged for any office that has never had a closure created.
+// closingDate is expected to move forward only (enforced in manage-accounting-closures.ts), so
+// the latest row for an office is always the one with the greatest closingDate.
+model AccountingClosure {
+  id              String       @id @default(uuid()) @db.Uuid
+  organizationId  String       @db.Uuid
+  officeId        String       @db.Uuid
+  closingDate     DateTime     @db.Date
+  comment         String?
+  createdByUserId String
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  office          Office       @relation(fields: [officeId], references: [id])
+  createdByUser   User         @relation(fields: [createdByUserId], references: [id])
+  createdAt       DateTime     @default(now())
+
+  @@index([officeId, closingDate])
 }
 
 model PriceSnapshot {
