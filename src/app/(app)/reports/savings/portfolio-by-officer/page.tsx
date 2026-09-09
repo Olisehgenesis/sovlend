@@ -6,6 +6,7 @@ import { redirect } from "next/navigation";
 import { Breadcrumbs } from "@/components/breadcrumbs";
 import { ReportPicker } from "@/components/report-picker";
 import { ReportZeroToggle } from "@/components/report-zero-toggle";
+import { DataTable } from "@/components/ui/data-table";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { permissions } from "@/modules/identity/domain/permissions";
@@ -123,40 +124,25 @@ export default async function SavingsPortfolioByOfficerPage({
           </div>
           <Users size={19} />
         </div>
-        {report.rows.length === 0 ? (
-          <div className="empty-state">
-            <Users size={28} />
-            <strong>No savings accounts match this office filter</strong>
-            <p>Clear the filter or choose another office.</p>
-          </div>
-        ) : (
-          <div className="table-scroll">
-            <table>
-              <thead>
-                <tr>
-                  <th>Savings Officer</th>
-                  <th>Currency</th>
-                  <th>Number of Accounts</th>
-                  <th>Active Accounts</th>
-                  <th>Total Balance</th>
-                  <th>Average Balance</th>
-                </tr>
-              </thead>
-              <tbody>
-                {report.rows.map((row) => (
-                  <tr key={`${row.officerId ?? "unassigned"}::${row.currencyCode}`}>
-                    <td>{row.officerName}</td>
-                    <td>{row.currencyCode}</td>
-                    <td>{row.accountCount.toLocaleString()}</td>
-                    <td>{row.activeAccountCount.toLocaleString()}</td>
-                    <td className="mono">{formatMinor(row.totalBalanceMinor, row.currencyCode)}</td>
-                    <td className="mono">{formatMinor(row.averageBalanceMinor, row.currencyCode)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+        <DataTable
+          columns={[
+            { key: "officer", header: "Savings Officer", render: (row) => row.officerName },
+            { key: "currency", header: "Currency", render: (row) => row.currencyCode },
+            { key: "accounts", header: "Number of Accounts", render: (row) => row.accountCount.toLocaleString() },
+            { key: "active", header: "Active Accounts", render: (row) => row.activeAccountCount.toLocaleString() },
+            { key: "total", header: "Total Balance", cellClassName: "mono", render: (row) => formatMinor(row.totalBalanceMinor, row.currencyCode) },
+            { key: "average", header: "Average Balance", cellClassName: "mono", render: (row) => formatMinor(row.averageBalanceMinor, row.currencyCode) },
+          ]}
+          emptyState={
+            <div className="empty-state">
+              <Users size={28} />
+              <strong>No savings accounts match this office filter</strong>
+              <p>Clear the filter or choose another office.</p>
+            </div>
+          }
+          getRowKey={(row) => `${row.officerId ?? "unassigned"}::${row.currencyCode}`}
+          rows={report.rows}
+        />
       </section>
     </main>
   );

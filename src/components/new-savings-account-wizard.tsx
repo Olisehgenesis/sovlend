@@ -1,10 +1,11 @@
 "use client";
 
-import { Check, ChevronLeft, ChevronRight, Coins, LoaderCircle, Plus, X } from "lucide-react";
+import { Check, ChevronLeft, ChevronRight, Coins, LoaderCircle, Plus } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
+import { Dialog, type DialogHandle } from "@/components/ui/dialog";
 import { formatMinor } from "@/modules/money/domain/format-minor";
 
 type SavingsProductOption = Readonly<{ id: string; name: string; shortName: string; currencyCode: string; nominalAnnualRateBps: number; minOpeningBalanceMinor: string }>;
@@ -15,7 +16,7 @@ const steps = ["Details", "Terms", "Charges", "Review"] as const;
 
 export function NewSavingsAccountWizard({ clientId, products, officers, charges }: { clientId: string; products: readonly SavingsProductOption[]; officers: readonly OfficerOption[]; charges: readonly ChargeOption[] }) {
   const router = useRouter();
-  const dialogRef = useRef<HTMLDialogElement>(null);
+  const dialogRef = useRef<DialogHandle>(null);
   const [step, setStep] = useState(0);
   const [productId, setProductId] = useState("");
   const [submittedOn, setSubmittedOn] = useState(() => new Date().toISOString().slice(0, 10));
@@ -74,13 +75,7 @@ export function NewSavingsAccountWizard({ clientId, products, officers, charges 
   return (
     <>
       <button className="invest-button" onClick={() => dialogRef.current?.showModal()} type="button"><Plus size={16} /> Open savings account</button>
-      <dialog className="app-modal" onClose={resetWizard} ref={dialogRef}>
-        <div className="app-modal-heading">
-          <h2>Open savings account</h2>
-          <button aria-label="Close" className="icon-action" onClick={closeDialog} type="button">
-            <X size={16} />
-          </button>
-        </div>
+      <Dialog onClose={resetWizard} ref={dialogRef} title="Open savings account">
         <div className="savings-wizard">
           <nav className="savings-wizard-steps" aria-label="Savings application steps">
             {steps.map((label, index) => (
@@ -140,7 +135,7 @@ export function NewSavingsAccountWizard({ clientId, products, officers, charges 
             {step < steps.length - 1 ? <button className="invest-button" disabled={step === 0 && !productId} onClick={() => setStep((current) => current + 1)} type="button">Next <ChevronRight size={15} /></button> : <button className="invest-button" disabled={pending} onClick={submit} type="button">{pending ? <LoaderCircle className="spin" size={16} /> : <Check size={16} />} Submit</button>}
           </div>
         </div>
-      </dialog>
+      </Dialog>
     </>
   );
 }

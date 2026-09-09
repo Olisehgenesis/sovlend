@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 
 import { Breadcrumbs } from "@/components/breadcrumbs";
 import { ReportPicker } from "@/components/report-picker";
+import { DataTable } from "@/components/ui/data-table";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { AuthorizationService } from "@/modules/identity/application/authorization-service";
@@ -62,69 +63,75 @@ export default async function GroupPortfolioReportPage() {
           </div>
           <Network size={19} />
         </div>
-        {report.rows.length === 0 ? (
-          <div className="empty-state">
-            <Network size={28} />
-            <strong>No groups in scope</strong>
-            <p>Once group-owned savings or loans exist in your office scope, they will appear here.</p>
-          </div>
-        ) : (
-          <div className="table-scroll">
-            <table>
-              <thead>
-                <tr>
-                  <th>Group</th>
-                  <th>Account</th>
-                  <th>Officer</th>
-                  <th>Members</th>
-                  <th>Group savings</th>
-                  <th>Group loan portfolio</th>
-                  <th>Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {report.rows.map((row) => (
-                  <tr key={row.id}>
-                    <td>
-                      <strong>{row.name}</strong>
-                      <small>{row.savingsAccountCount} savings account{row.savingsAccountCount === 1 ? "" : "s"} · {row.loanCount} direct loan{row.loanCount === 1 ? "" : "s"}</small>
-                    </td>
-                    <td className="mono">{row.accountNumber}</td>
-                    <td>{row.officerName ?? "Unassigned"}</td>
-                    <td>{row.memberCount.toLocaleString()}</td>
-                    <td>
-                      <strong>{formatMinor(row.savingsBalanceMinor, row.currencyCode)}</strong>
-                      <small>{row.savingsAccountCount} owned account{row.savingsAccountCount === 1 ? "" : "s"}</small>
-                    </td>
-                    <td>
-                      <strong>{formatMinor(row.loanPrincipalMinor, row.currencyCode)}</strong>
-                      <small>
-                        {row.activeLoanCount} active · {row.arrearsLoanCount} arrears · {row.closedLoanCount} closed{row.otherLoanCount ? ` · ${row.otherLoanCount} other` : ""}
-                      </small>
-                      <small>{formatMinor(row.outstandingPrincipalMinor, row.currencyCode)} outstanding principal</small>
-                    </td>
-                    <td><span className={`status ${row.status === "ACTIVE" ? "up-to-date" : "review"}`}>{row.status}</span></td>
-                  </tr>
-                ))}
-              </tbody>
-              <tfoot>
-                <tr>
-                  <td><strong>Grand total</strong></td>
-                  <td>—</td>
-                  <td>—</td>
-                  <td><strong>{report.totals.memberCount.toLocaleString()}</strong></td>
-                  <td><strong>{formatMinor(report.totals.savingsBalanceMinor, report.totals.currencyCode)}</strong></td>
-                  <td>
-                    <strong>{formatMinor(report.totals.loanPrincipalMinor, report.totals.currencyCode)}</strong>
-                    <br />
-                    <small>{report.totals.activeLoanCount} active · {report.totals.arrearsLoanCount} arrears · {report.totals.closedLoanCount} closed</small>
-                  </td>
-                  <td><strong>{report.totals.groupCount.toLocaleString()} groups</strong></td>
-                </tr>
-              </tfoot>
-            </table>
-          </div>
-        )}
+        <DataTable
+          columns={[
+            {
+              key: "group",
+              header: "Group",
+              render: (row) => (
+                <>
+                  <strong>{row.name}</strong>
+                  <small>{row.savingsAccountCount} savings account{row.savingsAccountCount === 1 ? "" : "s"} · {row.loanCount} direct loan{row.loanCount === 1 ? "" : "s"}</small>
+                </>
+              ),
+            },
+            { key: "account", header: "Account", cellClassName: "mono", render: (row) => row.accountNumber },
+            { key: "officer", header: "Officer", render: (row) => row.officerName ?? "Unassigned" },
+            { key: "members", header: "Members", render: (row) => row.memberCount.toLocaleString() },
+            {
+              key: "savings",
+              header: "Group savings",
+              render: (row) => (
+                <>
+                  <strong>{formatMinor(row.savingsBalanceMinor, row.currencyCode)}</strong>
+                  <small>{row.savingsAccountCount} owned account{row.savingsAccountCount === 1 ? "" : "s"}</small>
+                </>
+              ),
+            },
+            {
+              key: "loans",
+              header: "Group loan portfolio",
+              render: (row) => (
+                <>
+                  <strong>{formatMinor(row.loanPrincipalMinor, row.currencyCode)}</strong>
+                  <small>
+                    {row.activeLoanCount} active · {row.arrearsLoanCount} arrears · {row.closedLoanCount} closed{row.otherLoanCount ? ` · ${row.otherLoanCount} other` : ""}
+                  </small>
+                  <small>{formatMinor(row.outstandingPrincipalMinor, row.currencyCode)} outstanding principal</small>
+                </>
+              ),
+            },
+            {
+              key: "status",
+              header: "Status",
+              render: (row) => <span className={`status ${row.status === "ACTIVE" ? "up-to-date" : "review"}`}>{row.status}</span>,
+            },
+          ]}
+          emptyState={
+            <div className="empty-state">
+              <Network size={28} />
+              <strong>No groups in scope</strong>
+              <p>Once group-owned savings or loans exist in your office scope, they will appear here.</p>
+            </div>
+          }
+          footer={
+            <tr>
+              <td><strong>Grand total</strong></td>
+              <td>—</td>
+              <td>—</td>
+              <td><strong>{report.totals.memberCount.toLocaleString()}</strong></td>
+              <td><strong>{formatMinor(report.totals.savingsBalanceMinor, report.totals.currencyCode)}</strong></td>
+              <td>
+                <strong>{formatMinor(report.totals.loanPrincipalMinor, report.totals.currencyCode)}</strong>
+                <br />
+                <small>{report.totals.activeLoanCount} active · {report.totals.arrearsLoanCount} arrears · {report.totals.closedLoanCount} closed</small>
+              </td>
+              <td><strong>{report.totals.groupCount.toLocaleString()} groups</strong></td>
+            </tr>
+          }
+          getRowKey={(row) => row.id}
+          rows={report.rows}
+        />
       </section>
     </main>
   );

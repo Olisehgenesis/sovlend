@@ -1,11 +1,12 @@
 "use client";
 
-import { LoaderCircle, Plus, Trash2 } from "lucide-react";
-import Link from "next/link";
+import { LoaderCircle, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
 
+import { AttachedItemForm } from "@/components/ui/attached-item-form";
+import { DataTable } from "@/components/ui/data-table";
 import { formatMinor } from "@/modules/money/domain/format-minor";
 
 type CollateralItem = Readonly<{
@@ -62,91 +63,65 @@ export function LoanCollateralPanel({ loanId, canManage, items }: { loanId: stri
 
   return (
     <>
-      {items.length === 0 ? (
-        <div className="empty-state compact-empty">
-          <strong>No collateral recorded</strong>
-          <p>Add pledged assets for this loan below.</p>
-        </div>
-      ) : (
-        <div className="table-scroll">
-          <table className="clickable-rows">
-            <thead>
-              <tr>
-                <th>Type</th>
-                <th>Description</th>
-                <th>Estimated value</th>
-                <th>Valuation date</th>
-                <th>Status</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((item) => (
-                <tr key={item.id}>
-                  <td>
-                    <strong>{item.type}</strong>
-                    <Link className="row-link" href={`/loans/${loanId}/collateral/${item.id}`} aria-label={`Open collateral ${item.type}`} />
-                  </td>
-                  <td>{item.description ?? "-"}</td>
-                  <td className="mono">
-                    {item.estimatedValueMinor ? formatMinor(BigInt(item.estimatedValueMinor), item.valuationCurrencyCode) : "-"}
-                  </td>
-                  <td>{item.valuationDateLabel ?? "-"}</td>
-                  <td>
-                    <span className={`status ${item.status === "ACTIVE" ? "up-to-date" : "review"}`}>{item.status}</span>
-                  </td>
-                  <td style={{ position: "relative", zIndex: 1 }}>
-                    {canManage ? (
-                      <button className="icon-action danger" disabled={pendingDelete === item.id} onClick={() => removeCollateral(item.id)} title="Remove collateral" type="button">
-                        {pendingDelete === item.id ? <LoaderCircle className="spin" size={14} /> : <Trash2 size={14} />}
-                      </button>
-                    ) : null}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-      {canManage ? (
-        <form action={createCollateral} className="entity-form compact-mapping">
-          <fieldset>
-            <legend>Add collateral</legend>
-            <div className="form-row three">
-              <label>
-                Type
-                <input name="type" placeholder="Land title, Vehicle, Equipment" required />
-              </label>
-              <label>
-                Estimated value (UGX)
-                <input min={1} name="estimatedValue" step="0.01" type="number" />
-              </label>
-              <label>
-                Status
-                <select defaultValue="ACTIVE" name="status">
-                  <option value="ACTIVE">ACTIVE</option>
-                  <option value="RELEASED">RELEASED</option>
-                  <option value="DISPOSED">DISPOSED</option>
-                </select>
-              </label>
-            </div>
-            <div className="form-row">
-              <label>
-                Valuation date
-                <input name="valuationDate" type="date" />
-              </label>
-              <label>
-                Description
-                <input name="description" placeholder="Asset details and reference" />
-              </label>
-            </div>
-          </fieldset>
-          <div className="form-actions">
-            <button className="invest-button" disabled={pendingCreate}>
-              {pendingCreate ? <LoaderCircle className="spin" size={16} /> : <Plus size={16} />} Add collateral
-            </button>
+      <DataTable
+        columns={[
+          { key: "type", header: "Type", render: (item) => <strong>{item.type}</strong> },
+          { key: "description", header: "Description", render: (item) => item.description ?? "-" },
+          {
+            key: "estimatedValue",
+            header: "Estimated value",
+            cellClassName: "mono",
+            render: (item) => (item.estimatedValueMinor ? formatMinor(BigInt(item.estimatedValueMinor), item.valuationCurrencyCode) : "-"),
+          },
+          { key: "valuationDate", header: "Valuation date", render: (item) => item.valuationDateLabel ?? "-" },
+          {
+            key: "status",
+            header: "Status",
+            render: (item) => <span className={`status ${item.status === "ACTIVE" ? "up-to-date" : "review"}`}>{item.status}</span>,
+          },
+          {
+            key: "actions",
+            header: "",
+            render: (item) => (
+              <div style={{ position: "relative", zIndex: 1 }}>
+                {canManage ? (
+                  <button className="icon-action danger" disabled={pendingDelete === item.id} onClick={() => removeCollateral(item.id)} title="Remove collateral" type="button">
+                    {pendingDelete === item.id ? <LoaderCircle className="spin" size={14} /> : <Trash2 size={14} />}
+                  </button>
+                ) : null}
+              </div>
+            ),
+          },
+        ]}
+        emptyState={
+          <div className="empty-state compact-empty">
+            <strong>No collateral recorded</strong>
+            <p>Add pledged assets for this loan below.</p>
           </div>
-        </form>
+        }
+        getRowAriaLabel={(item) => `Open collateral ${item.type}`}
+        getRowKey={(item) => item.id}
+        rowHref={(item) => `/loans/${loanId}/collateral/${item.id}`}
+        rows={items}
+      />
+      {canManage ? (
+        <AttachedItemForm
+          action={createCollateral}
+          fieldRows={[
+            [
+              { type: "text", name: "type", label: "Type", placeholder: "Land title, Vehicle, Equipment", required: true },
+              { type: "number", name: "estimatedValue", label: "Estimated value (UGX)", min: 1, step: "0.01" },
+              { type: "select", name: "status", label: "Status", options: ["ACTIVE", "RELEASED", "DISPOSED"], defaultValue: "ACTIVE" },
+            ],
+            [
+              { type: "date", name: "valuationDate", label: "Valuation date" },
+              { type: "text", name: "description", label: "Description", placeholder: "Asset details and reference" },
+            ],
+          ]}
+          legend="Add collateral"
+          pending={pendingCreate}
+          submitLabel="Add collateral"
+        />
       ) : null}
     </>
   );

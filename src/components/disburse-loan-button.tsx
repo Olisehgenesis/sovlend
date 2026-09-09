@@ -1,9 +1,10 @@
 "use client";
 
-import { Banknote, X } from "lucide-react";
+import { Banknote } from "lucide-react";
 import { useRef } from "react";
 
 import { DisburseLoanForm } from "@/components/disburse-loan-form";
+import { Dialog, type DialogHandle } from "@/components/ui/dialog";
 
 export function DisburseLoanButton({
   loanId,
@@ -19,7 +20,7 @@ export function DisburseLoanButton({
     productName?: string | null;
   }>;
 }) {
-  const dialogRef = useRef<HTMLDialogElement>(null);
+  const dialogRef = useRef<DialogHandle>(null);
 
   return (
     <>
@@ -30,25 +31,14 @@ export function DisburseLoanButton({
       >
         <Banknote size={16} /> Disburse
       </button>
-      <dialog className="app-modal" ref={dialogRef}>
-        <div className="app-modal-heading">
-          <h2>Disburse loan</h2>
-          <button
-            aria-label="Close"
-            className="icon-action"
-            onClick={() => dialogRef.current?.close()}
-            type="button"
-          >
-            <X size={16} />
-          </button>
-        </div>
+      <Dialog ref={dialogRef} title="Disburse loan">
         <DisburseLoanForm
           loanId={loanId}
           onSuccess={() => dialogRef.current?.close()}
           savingsAccounts={savingsAccounts}
           settlementAccounts={settlementAccounts}
         />
-      </dialog>
+      </Dialog>
     </>
   );
 }
