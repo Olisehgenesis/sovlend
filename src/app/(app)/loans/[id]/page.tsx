@@ -11,9 +11,11 @@ import { LoanOfficerAssignment } from "@/components/loan-officer-assignment";
 import { LoanServiceActionsPanel } from "@/components/loan-service-actions-panel";
 import { DisburseLoanButton } from "@/components/disburse-loan-button";
 import { RecordPaymentButton } from "@/components/record-payment-button";
+import { LoanTopUpButton } from "@/components/loan-top-up-button";
 import { RepaymentForm } from "@/components/repayment-form";
 import { Breadcrumbs } from "@/components/breadcrumbs";
 import { formatUgDate, transactionTypeLabel } from "./_lib/loan-records";
+import { transactionTypeVariants } from "@/lib/loan-transaction-type-variants";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { AuthorizationService } from "@/modules/identity/application/authorization-service";
@@ -62,6 +64,7 @@ export default async function LoanPage({
   const tab = (await searchParams).tab;
   const activeTab =
     tab === "schedule" ||
+    tab === "payments" ||
     tab === "record-payment" ||
     tab === "charges" ||
     tab === "overdue-charges" ||
@@ -115,6 +118,12 @@ export default async function LoanPage({
     organizationId: scope.organizationId,
     officeId: loan.officeId,
   });
+  const canTransact = await authorization.isAllowed({
+    actorUserId: session.user.id,
+    permission: permissions.savingsTransact,
+    organizationId: scope.organizationId,
+    officeId: loan.officeId,
+  });
 
   const today = new Date();
   const overdueCharges = loan.charges.filter(
@@ -139,12 +148,17 @@ export default async function LoanPage({
   const outstanding = loanOutstandingMinor(loan.installments, loan);
   const settlementAccounts = await prisma.settlementAccount.findMany({
     where: { organizationId: scope.organizationId, currencyCode: loan.denominationCurrency, active: true },
-    select: { id: true, name: true, type: true },
+    select: { id: true, name: true, type: true, provider: true, accountReference: true, currencyCode: true },
     orderBy: [{ type: "asc" }, { name: "asc" }],
   });
   const officeOfficers = await prisma.user.findMany({
     where: { organizationId: scope.organizationId, officeId: loan.officeId, systemRole: "LOAN_OFFICER" },
     select: { id: true, name: true },
+    orderBy: { name: "asc" },
+  });
+  const chargeDefinitions = await prisma.chargeDefinition.findMany({
+    where: { organizationId: scope.organizationId, appliesTo: "LOAN", active: true },
+    select: { id: true, name: true, calculationType: true, amountMinor: true, percentageBps: true, currencyCode: true, penalty: true },
     orderBy: { name: "asc" },
   });
   const serviceRequests = await prisma.loanServiceRequest.findMany({
@@ -163,11 +177,17 @@ export default async function LoanPage({
           id: true,
           accountNumber: true,
           isDefault: true,
+          accountType: true,
           product: { select: { name: true } },
         },
         orderBy: [{ isDefault: "desc" }, { createdAt: "asc" }],
       })
     : [];
+  // For the header "Top up" shortcut — only client-owned (not group) loans get it, mirroring the
+  // primary-savings-account pick used by ClientQuickActions on the client detail page.
+  const primarySavingsAccount = loan.clientId
+    ? savingsAccounts.find((account) => account.accountType === "SAVINGS") ?? null
+    : null;
   // Surfaces this client's other accounts from the loan detail page, mirroring how
   // savings-accounts/[accountNumber]/page.tsx links back to its owning client/group.
   const otherLoans = loan.clientId
@@ -223,11 +243,23 @@ export default async function LoanPage({
     .find((installment) => installmentOutstandingMinor(installment) > 0n);
   const nextDueAmountMinor = nextDueInstallment ? installmentOutstandingMinor(nextDueInstallment) : 0n;
   const repaymentTransactions = loan.transactions
-    .filter((item) => item.transactionType === "REPAYMENT" && !item.reversedById)
+    .filter((item) => transactionTypeVariants("REPAYMENT").includes(item.transactionType) && !item.reversedById)
     .map((item) => ({
       id: item.id,
       label: `${formatUgDate(item.businessDate)} · ${formatMinor(item.denominationAmountMinor, loan.denominationCurrency)}${item.externalReference ? ` · ${item.externalReference}` : ""}`,
     }));
+  // Money the borrower actually paid in — excludes ACCRUAL (internal daily interest bookkeeping,
+  // not a borrower action) and DISBURSEMENT (money going out). Legacy loans migrated from
+  // Fineract store the raw type code (e.g. `loanTransactionType.repayment`) instead of the
+  // canonical string, so match both forms via transactionTypeVariants.
+  const paymentTransactionTypes = new Set(
+    ["REPAYMENT", "REPAYMENT_AT_DISBURSEMENT", "RECOVERY_REPAYMENT"].flatMap((type) =>
+      transactionTypeVariants(type),
+    ),
+  );
+  const paymentTransactions = loan.transactions.filter((item) =>
+    paymentTransactionTypes.has(item.transactionType),
+  );
   return (
     <main className="directory-page">
       <Breadcrumbs
@@ -273,6 +305,18 @@ export default async function LoanPage({
               settlementAccounts={settlementAccounts}
             />
           ) : null}
+          {canTransact && loan.clientId && primarySavingsAccount ? (
+            <LoanTopUpButton
+              clientId={loan.clientId}
+              currentUserName={session.user.name ?? "Signed in user"}
+              savingsTarget={{
+                id: primarySavingsAccount.id,
+                accountNumber: primarySavingsAccount.accountNumber,
+                currencyCode: loan.denominationCurrency,
+              }}
+              settlementAccounts={settlementAccounts}
+            />
+          ) : null}
           <span
             className={`status status-prominent ${loan.status === "ACTIVE" ? "up-to-date" : loan.status === "IN_ARREARS" ? "in-arrears" : "review"}`}
           >
@@ -305,6 +349,7 @@ export default async function LoanPage({
       <nav className="client-tabs" aria-label="Loan record sections">
         <Link className={activeTab === "details" ? "active" : ""} href={`/loans/${loan.id}`}>Details</Link>
         <Link className={activeTab === "schedule" ? "active" : ""} href={`/loans/${loan.id}?tab=schedule`}>Repayment Schedule</Link>
+        <Link className={activeTab === "payments" ? "active" : ""} href={`/loans/${loan.id}?tab=payments`}>Payments</Link>
         {isOpenLoan ? (
           <Link className={activeTab === "record-payment" ? "active" : ""} href={`/loans/${loan.id}?tab=record-payment`}>Record Payment</Link>
         ) : null}
@@ -585,6 +630,16 @@ export default async function LoanPage({
           <LoanChargesPanel
             loanId={loan.id}
             canManage={canManageCharges}
+            chargeDefinitions={chargeDefinitions.map((definition) => ({
+              id: definition.id,
+              name: definition.name,
+              calculationType: definition.calculationType,
+              amountMinor: definition.amountMinor?.toString() ?? null,
+              percentageBps: definition.percentageBps,
+              currencyCode: definition.currencyCode,
+              penalty: definition.penalty,
+            }))}
+            principalMinor={loan.principalMinor.toString()}
             charges={loan.charges.map((charge) => ({
               id: charge.id,
               name: charge.name,
@@ -816,7 +871,7 @@ export default async function LoanPage({
             </div>
           ) : (
             <div className="table-scroll">
-              <table>
+              <table className={isOpenLoan ? "clickable-rows" : ""}>
                 <thead>
                   <tr>
                     <th>#</th>
@@ -834,9 +889,26 @@ export default async function LoanPage({
                   {loan.installments.map((item) => {
                     const paid = installmentPaidMinor(item);
                     const rowOutstanding = installmentOutstandingMinor(item);
+                    // Paid = fully settled; overdue = still owed past its due date; upcoming =
+                    // still owed but the due date hasn't arrived yet.
+                    const rowStatus =
+                      rowOutstanding <= 0n
+                        ? "schedule-row-paid"
+                        : item.dueOn < today
+                          ? "schedule-row-overdue"
+                          : "schedule-row-upcoming";
                     return (
-                      <tr key={item.id}>
-                        <td>{item.installmentNumber}</td>
+                      <tr key={item.id} className={rowStatus}>
+                        <td>
+                          {item.installmentNumber}
+                          {isOpenLoan ? (
+                            <Link
+                              className="row-link"
+                              href={`/loans/${loan.id}?tab=record-payment`}
+                              aria-label={`Record payment for installment ${item.installmentNumber}`}
+                            />
+                          ) : null}
+                        </td>
                         <td>{formatUgDate(item.dueOn)}</td>
                         <td>
                           {formatMinor(
@@ -880,52 +952,57 @@ export default async function LoanPage({
             </div>
           )}
         </article>
-        <article className="panel">
-          <div className="panel-heading">
-            <div>
-              <h2>Transactions</h2>
-              <p>Immutable account activity</p>
-            </div>
+      </section>
+      ) : null}
+      {activeTab === "payments" ? (
+      <section className="panel">
+        <div className="panel-heading">
+          <div>
+            <h2>Payments</h2>
+            <p>Money the borrower has actually paid toward this loan</p>
           </div>
-          {loan.transactions.length === 0 ? (
-            <div className="empty-state">
-              <CircleDollarSign size={28} />
-              <strong>No transactions</strong>
-            </div>
-          ) : (
-            <div className="table-scroll">
-              <table className="clickable-rows">
-                <thead>
-                  <tr>
-                    <th>Date</th>
-                    <th>Type</th>
-                    <th>Channel</th>
-                    <th>Amount</th>
-                    <th>Reference</th>
-                    <th>Recorded by</th>
+        </div>
+        {paymentTransactions.length === 0 ? (
+          <div className="empty-state">
+            <CircleDollarSign size={28} />
+            <strong>No payments yet</strong>
+          </div>
+        ) : (
+          <div className="table-scroll">
+            <table className="clickable-rows">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Type</th>
+                  <th>Channel</th>
+                  <th>Amount</th>
+                  <th>Reference</th>
+                  <th>Recorded by</th>
+                </tr>
+              </thead>
+              <tbody>
+                {paymentTransactions.map((item) => (
+                  <tr key={item.id} className={item.reversedById ? "schedule-row-overdue" : ""}>
+                    <td>
+                      {formatUgDate(item.businessDate)}
+                      <Link className="row-link" href={`/loans/${loan.id}/transactions/${item.id}`} aria-label={`Open ${transactionTypeLabel(item.transactionType).toLowerCase()} payment`} />
+                    </td>
+                    <td>
+                      {transactionTypeLabel(item.transactionType)}
+                      {item.reversedById ? " (reversed)" : ""}
+                    </td>
+                    <td>{item.settlementChannel}</td>
+                    <td>
+                      {formatMinor(item.denominationAmountMinor, loan.denominationCurrency)}
+                    </td>
+                    <td>{item.externalReference ?? "-"}</td>
+                    <td>{item.recordedBy?.name ?? "-"}</td>
                   </tr>
-                </thead>
-                <tbody>
-                  {loan.transactions.map((item) => (
-                    <tr key={item.id}>
-                      <td>
-                        {formatUgDate(item.businessDate)}
-                        <Link className="row-link" href={`/loans/${loan.id}/transactions/${item.id}`} aria-label={`Open ${transactionTypeLabel(item.transactionType).toLowerCase()} transaction`} />
-                      </td>
-                      <td>{transactionTypeLabel(item.transactionType)}</td>
-                      <td>{item.settlementChannel}</td>
-                      <td>
-                        {formatMinor(item.denominationAmountMinor, loan.denominationCurrency)}
-                      </td>
-                      <td>{item.externalReference ?? "-"}</td>
-                      <td>{item.recordedBy?.name ?? "-"}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </article>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </section>
       ) : null}
     </main>

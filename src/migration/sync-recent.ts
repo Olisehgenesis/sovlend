@@ -1,5 +1,4 @@
 import { PrismaClient, type LoanStatus, type Prisma } from "@prisma/client";
-import Decimal from "decimal.js";
 import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 
@@ -7,6 +6,7 @@ import { extractLegacy } from "./extract";
 import { extractLegacyLoanHistory } from "./extract-loans";
 import { importArchiveGroupsAndLoans } from "./import-archive-loans";
 import { importFoundation } from "./import-foundation";
+import { toMinor } from "./money";
 
 type CountSnapshot = {
   clients: number;
@@ -62,11 +62,11 @@ async function main() {
       `[sync-recent] Foundation import finished: run ${foundationImport.runId}, clients ${countsBefore.clients} -> ${countsAfterFoundation.clients}`,
     );
 
-    console.log("[sync-recent] Importing groups, memberships, and brand-new loans from archive...");
-    const archiveImport = await importArchiveGroupsAndLoans(prisma, root, organization.id, actor.id);
+    console.log("[sync-recent] Importing groups, memberships, new loans, and fresh transactions from archive...");
+    const archiveImport = await importArchiveGroupsAndLoans(prisma, root, organization.id, actor.id, { syncExistingLoans: true });
     const countsAfterArchiveImport = await getCounts(prisma);
     console.log(
-      `[sync-recent] Archive loan import finished: groups ${countsAfterFoundation.groups} -> ${countsAfterArchiveImport.groups}, loans ${countsAfterFoundation.loans} -> ${countsAfterArchiveImport.loans}`,
+      `[sync-recent] Archive loan import finished: groups ${countsAfterFoundation.groups} -> ${countsAfterArchiveImport.groups}, loans ${countsAfterFoundation.loans} -> ${countsAfterArchiveImport.loans}, existing loans synced ${archiveImport.loansSynced}, transactions imported ${archiveImport.transactionsImported}`,
     );
     if (archiveImport.loansSkipped.length > 0) {
       console.log(`[sync-recent] Archive importer skipped ${archiveImport.loansSkipped.length} loan(s):`);
@@ -93,6 +93,9 @@ async function main() {
       `- Groups upserted by archive import: ${archiveImport.groupsImported}; groups added: ${countsAfterArchiveImport.groups - countsAfterFoundation.groups} (${countsAfterFoundation.groups} -> ${countsAfterArchiveImport.groups})`,
       `- Group memberships upserted by archive import: ${archiveImport.membersImported}; memberships added: ${countsAfterArchiveImport.groupMembers - countsAfterFoundation.groupMembers} (${countsAfterFoundation.groupMembers} -> ${countsAfterArchiveImport.groupMembers})`,
       `- New loans imported: ${archiveImport.loansImported} (${countsAfterFoundation.loans} -> ${countsAfterArchiveImport.loans})`,
+      `- Existing legacy loans synced: ${archiveImport.loansSynced}`,
+      `- Missing legacy transactions imported: ${archiveImport.transactionsImported}`,
+      `- Installment rows refreshed: ${archiveImport.installmentsUpdated}`,
       `- Loans skipped by archive import: ${archiveImport.loansSkipped.length}`,
       "Status drift:",
       `- Existing loans corrected: ${statusCorrections.length}`,
@@ -221,10 +224,6 @@ function dateFromParts(value: unknown): Date | null {
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" ? (value as Record<string, unknown>) : null;
-}
-
-function toMinor(amount: number, exponent = 2): bigint {
-  return BigInt(new Decimal(amount).mul(new Decimal(10).pow(exponent)).toDecimalPlaces(0, Decimal.ROUND_HALF_UP).toFixed(0));
 }
 
 function loadLocalEnvFile() {

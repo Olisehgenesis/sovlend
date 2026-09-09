@@ -9,9 +9,12 @@ import { getUserDataScope } from "@/modules/identity/application/data-scope";
 import { permissions } from "@/modules/identity/domain/permissions";
 
 const createSchema = z.object({
-  name: z.string().trim().min(1).max(150),
-  amount: z.coerce.number().positive(),
+  name: z.string().trim().min(1).max(150).optional(),
+  amount: z.coerce.number().positive().optional(),
   dueOn: z.iso.date().optional(),
+  chargeDefinitionId: z.string().uuid().optional(),
+}).refine((value) => Boolean(value.chargeDefinitionId) || (Boolean(value.name) && value.amount !== undefined), {
+  message: "Provide a charge definition, or a name and amount for an ad-hoc charge",
 });
 
 export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -74,14 +77,39 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     throw error;
   }
 
-  const amountMinor = BigInt(Math.round(parsed.data.amount * 100));
+  let name = parsed.data.name;
+  let amountMinor: bigint;
+  let currencyCode = loan.denominationCurrency;
+  let chargeDefinitionId: string | undefined;
+
+  if (parsed.data.chargeDefinitionId) {
+    const definition = await prisma.chargeDefinition.findFirst({
+      where: { id: parsed.data.chargeDefinitionId, organizationId: scope.organizationId, appliesTo: "LOAN", active: true },
+    });
+    if (!definition) return NextResponse.json({ error: "Charge definition not found" }, { status: 404 });
+    chargeDefinitionId = definition.id;
+    name = name ?? definition.name;
+    currencyCode = definition.currencyCode;
+    amountMinor =
+      definition.calculationType === "PERCENTAGE"
+        ? (loan.principalMinor * BigInt(definition.percentageBps ?? 0)) / 10_000n
+        : definition.amountMinor ?? 0n;
+    // An explicit amount override still wins even when a definition is selected, so operators can
+    // adjust a prefilled percentage/flat charge for this specific loan without editing the catalog.
+    if (parsed.data.amount !== undefined) amountMinor = BigInt(Math.round(parsed.data.amount * 100));
+  } else {
+    amountMinor = BigInt(Math.round(parsed.data.amount! * 100));
+  }
+
   const charge = await prisma.charge.create({
     data: {
       clientId: loan.clientId,
       groupId: loan.groupId,
       loanId: loan.id,
-      name: parsed.data.name,
+      chargeDefinitionId,
+      name: name!,
       amountMinor,
+      currencyCode,
       dueOn: parsed.data.dueOn ? new Date(`${parsed.data.dueOn}T00:00:00.000Z`) : null,
     },
   });

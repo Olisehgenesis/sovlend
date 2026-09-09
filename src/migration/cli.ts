@@ -1,3 +1,4 @@
+import { backfillLegacyLoanAllocations } from "./backfill-legacy-loan-allocations";
 import { rebuildManifest, verifyArchive } from "./archive";
 import { extractLegacy } from "./extract";
 import { extractLegacyLoanHistory } from "./extract-loans";
@@ -69,14 +70,24 @@ async function main() {
     if (!root || !organizationName || !actorEmail) {
       throw new Error("Usage: MIGRATION_ORGANIZATION_NAME=... MIGRATION_ACTOR_EMAIL=... pnpm migration:import-archive-loans <archive-directory>");
     }
+    const syncExistingLoans = process.argv.includes("--sync-existing-loans");
     const organization = await prisma.organization.findFirstOrThrow({ where: { name: organizationName } });
     const actor = await prisma.user.findFirstOrThrow({ where: { email: actorEmail.toLowerCase() } });
-    const result = await importArchiveGroupsAndLoans(prisma, root, organization.id, actor.id);
-    console.log(`Imported ${result.groupsImported} groups, ${result.membersImported} group memberships, ${result.loansImported} loans from archive.`);
+    const result = await importArchiveGroupsAndLoans(prisma, root, organization.id, actor.id, { syncExistingLoans });
+    console.log(
+      `Imported ${result.groupsImported} groups, ${result.membersImported} group memberships, ${result.loansImported} new loans, synced ${result.loansSynced} existing loans, imported ${result.transactionsImported} transactions, and refreshed ${result.installmentsUpdated} installments from archive.`,
+    );
     if (result.loansSkipped.length > 0) console.log(`${result.loansSkipped.length} loans skipped:\n${result.loansSkipped.join("\n")}`);
     return;
   }
-  throw new Error("Usage: migration:extract | migration:extract-loans | migration:verify <archive-directory> | migration:manifest <archive-directory> | migration:import <archive-directory> | migration:import-archive-loans <archive-directory> | migration:import-all-clients");
+  if (command === "backfill-legacy-loan-allocations") {
+    const result = await backfillLegacyLoanAllocations(prisma, {
+      apply: process.argv.includes("--apply"),
+    });
+    if (result.skippedLoans.length > 0) console.log(`${result.skippedLoans.length} loans skipped:\n${result.skippedLoans.join("\n")}`);
+    return;
+  }
+  throw new Error("Usage: migration:extract | migration:extract-loans | migration:verify <archive-directory> | migration:manifest <archive-directory> | migration:import <archive-directory> | migration:import-archive-loans <archive-directory> [--sync-existing-loans] | migration:import-all-clients | migration:backfill-legacy-loan-allocations [--apply]");
 }
 
 void main().catch((error) => { console.error(error instanceof Error ? error.message : error); process.exitCode = 1; });
