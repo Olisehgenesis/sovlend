@@ -236,6 +236,71 @@ export function ProvisioningDefaultsForm({
   );
 }
 
+export function OpeningBalanceDefaultsForm({
+  organizationId,
+  equityAccounts,
+  defaults,
+}: {
+  organizationId: string;
+  equityAccounts: Account[];
+  defaults: { openingBalanceEquityAccountId: string | null } | null;
+}) {
+  const [pending, setPending] = useState(false);
+  const router = useRouter();
+
+  async function save(formData: FormData) {
+    setPending(true);
+    const response = await fetch("/api/accounting/opening-balance-defaults", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        organizationId,
+        openingBalanceEquityAccountId: formData.get("openingBalanceEquityAccountId"),
+      }),
+    });
+    const result = await response.json().catch(() => ({}));
+    setPending(false);
+    if (!response.ok) {
+      toast.error(result.error ?? "Opening balance default could not be saved");
+      return;
+    }
+    toast.success("Opening balance default saved");
+    router.refresh();
+  }
+
+  return (
+    <form action={save} className="entity-form compact-mapping">
+      <fieldset>
+        <legend>Opening balance equity account</legend>
+        <p className="fieldset-intro">
+          Required before Migrate opening balances can post -- every opening balance migration is offset against this account so the entry stays balanced.
+        </p>
+        <label>
+          <span>
+            Opening balance equity account
+            <b className="required-mark">Required</b>
+          </span>
+          <select defaultValue={defaults?.openingBalanceEquityAccountId ?? ""} name="openingBalanceEquityAccountId" required>
+            <option value="" disabled>
+              Select verified equity account
+            </option>
+            {equityAccounts.map((account) => (
+              <option key={account.id} value={account.id}>
+                {account.label}
+              </option>
+            ))}
+          </select>
+        </label>
+      </fieldset>
+      <div className="form-actions">
+        <BrandActionButton disabled={pending} icon={pending ? <LoaderCircle className="spin" size={17} /> : <Save size={17} />} type="submit">
+          Save opening balance default
+        </BrandActionButton>
+      </div>
+    </form>
+  );
+}
+
 export function SettlementMappingForm({ organizationId, assetAccounts, accounts }: { organizationId: string; assetAccounts: Account[]; accounts: SettlementAccount[] }) {
   const [pending, setPending] = useState(false);
   const router = useRouter();

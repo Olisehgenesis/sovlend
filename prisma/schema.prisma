@@ -168,58 +168,61 @@ enum MigrationRunStatus {
 }
 
 model Organization {
-  id                             String                          @id @default(uuid()) @db.Uuid
-  name                           String
-  baseCurrency                   String                          @default("UGX")
-  nextClientSequence             Int                             @default(1)
-  nextGroupSequence              Int                             @default(1)
-  offices                        Office[]
-  users                          User[]
-  clients                        Client[]
-  loanProducts                   LoanProduct[]
-  savingsProducts                SavingsProduct[]
-  chargeDefinitions              ChargeDefinition[]
-  ownershipPools                 OwnershipPool[]
-  permissionGroups               PermissionGroup[]
-  investorAccesses               InvestorOrganizationAccess[]
-  investorInvites                InvestorInvite[]
-  investorRequests               InvestorAccessRequest[]
-  investments                    InvestmentCommitment[]
-  funds                          Fund[]
-  settlementAccounts             SettlementAccount[]
-  accountingDefaults             LoanAccountingDefaults?
-  savingsAccountingDefaults      SavingsAccountingDefaults?
-  groups                         Group[]
-  loanExportJobs                 LoanExportJob[]
-  accountingRules                AccountingRule[]
-  accountingClosures             AccountingClosure[]
-  provisioningAccountingDefaults ProvisioningAccountingDefaults?
-  provisioningPostings           ProvisioningPosting[]
-  createdAt                      DateTime                        @default(now())
-  updatedAt                      DateTime                        @updatedAt
+  id                               String                            @id @default(uuid()) @db.Uuid
+  name                             String
+  baseCurrency                     String                            @default("UGX")
+  nextClientSequence               Int                               @default(1)
+  nextGroupSequence                Int                               @default(1)
+  offices                          Office[]
+  users                            User[]
+  clients                          Client[]
+  loanProducts                     LoanProduct[]
+  savingsProducts                  SavingsProduct[]
+  chargeDefinitions                ChargeDefinition[]
+  ownershipPools                   OwnershipPool[]
+  permissionGroups                 PermissionGroup[]
+  investorAccesses                 InvestorOrganizationAccess[]
+  investorInvites                  InvestorInvite[]
+  investorRequests                 InvestorAccessRequest[]
+  investments                      InvestmentCommitment[]
+  funds                            Fund[]
+  settlementAccounts               SettlementAccount[]
+  accountingDefaults               LoanAccountingDefaults?
+  savingsAccountingDefaults        SavingsAccountingDefaults?
+  groups                           Group[]
+  loanExportJobs                   LoanExportJob[]
+  accountingRules                  AccountingRule[]
+  accountingClosures               AccountingClosure[]
+  provisioningAccountingDefaults   ProvisioningAccountingDefaults?
+  provisioningPostings             ProvisioningPosting[]
+  openingBalanceAccountingDefaults OpeningBalanceAccountingDefaults?
+  openingBalanceMigrations         OpeningBalanceMigration[]
+  createdAt                        DateTime                          @default(now())
+  updatedAt                        DateTime                          @updatedAt
 }
 
 model Office {
-  id                    String                     @id @default(uuid()) @db.Uuid
-  organizationId        String                     @db.Uuid
-  parentId              String?                    @db.Uuid
-  name                  String
-  externalId            String?
-  organization          Organization               @relation(fields: [organizationId], references: [id])
-  parent                Office?                    @relation("OfficeHierarchy", fields: [parentId], references: [id])
-  children              Office[]                   @relation("OfficeHierarchy")
-  users                 User[]
-  clients               Client[]
-  loans                 Loan[]
-  loanApplications      LoanApplication[]
-  journals              Journal[]
-  permissionAssignments UserPermissionAssignment[]
-  groups                Group[]
-  accountingRules       AccountingRule[]
-  accountingClosures    AccountingClosure[]
-  provisioningPostings  ProvisioningPosting[]
-  createdAt             DateTime                   @default(now())
-  updatedAt             DateTime                   @updatedAt
+  id                       String                     @id @default(uuid()) @db.Uuid
+  organizationId           String                     @db.Uuid
+  parentId                 String?                    @db.Uuid
+  name                     String
+  externalId               String?
+  organization             Organization               @relation(fields: [organizationId], references: [id])
+  parent                   Office?                    @relation("OfficeHierarchy", fields: [parentId], references: [id])
+  children                 Office[]                   @relation("OfficeHierarchy")
+  users                    User[]
+  clients                  Client[]
+  loans                    Loan[]
+  loanApplications         LoanApplication[]
+  journals                 Journal[]
+  permissionAssignments    UserPermissionAssignment[]
+  groups                   Group[]
+  accountingRules          AccountingRule[]
+  accountingClosures       AccountingClosure[]
+  provisioningPostings     ProvisioningPosting[]
+  openingBalanceMigrations OpeningBalanceMigration[]
+  createdAt                DateTime                   @default(now())
+  updatedAt                DateTime                   @updatedAt
 
   @@unique([organizationId, name])
   @@index([organizationId, parentId])
@@ -269,6 +272,7 @@ model User {
   applicationNotes            LoanApplicationNote[]
   accountingClosures          AccountingClosure[]
   provisioningPostings        ProvisioningPosting[]
+  openingBalanceMigrations    OpeningBalanceMigration[]
   createdAt                   DateTime                   @default(now())
   updatedAt                   DateTime                   @updatedAt
 
@@ -1116,45 +1120,47 @@ model OwnershipPool {
 }
 
 model LedgerAccount {
-  id                          String                            @id @default(uuid()) @db.Uuid
-  code                        String
-  name                        String
-  type                        AccountType
-  currencyCode                String                            @db.VarChar(10)
-  ownershipPoolId             String?                           @db.Uuid
-  active                      Boolean                           @default(true)
-  externalId                  String?
-  usage                       String                            @default("DETAIL")
-  description                 String?
-  manualEntriesAllowed        Boolean                           @default(false)
-  currency                    Currency                          @relation(fields: [currencyCode], references: [code])
-  ownershipPool               OwnershipPool?                    @relation(fields: [ownershipPoolId], references: [id])
-  lines                       JournalLine[]
-  principalMappings           LoanProductAccountingMapping[]    @relation("PrincipalReceivable")
-  interestReceivableMappings  LoanProductAccountingMapping[]    @relation("InterestReceivable")
-  interestIncomeMappings      LoanProductAccountingMapping[]    @relation("InterestIncome")
-  feeIncomeMappings           LoanProductAccountingMapping[]    @relation("FeeIncome")
-  monitoringFeeIncomeMappings LoanProductAccountingMapping[]    @relation("MonitoringFeeIncome")
-  processingFeeIncomeMappings LoanProductAccountingMapping[]    @relation("ProcessingFeeIncome")
-  admissionFeeIncomeMappings  LoanProductAccountingMapping[]    @relation("AdmissionFeeIncome")
-  penaltyIncomeMappings       LoanProductAccountingMapping[]    @relation("PenaltyIncome")
-  penaltyReceivableMappings   LoanProductAccountingMapping[]    @relation("PenaltyReceivable")
-  writeOffMappings            LoanProductAccountingMapping[]    @relation("WriteOffExpense")
-  overpaymentMappings         LoanProductAccountingMapping[]    @relation("OverpaymentLiability")
-  funds                       Fund[]
-  settlementAccounts          SettlementAccount[]
-  defaultPrincipalFor         LoanAccountingDefaults[]          @relation("DefaultPrincipalReceivable")
-  defaultInterestFor          LoanAccountingDefaults[]          @relation("DefaultInterestIncome")
-  defaultFeeFor               LoanAccountingDefaults[]          @relation("DefaultFeeIncome")
-  defaultPenaltyFor           LoanAccountingDefaults[]          @relation("DefaultPenaltyIncome")
-  defaultWriteOffFor          LoanAccountingDefaults[]          @relation("DefaultWriteOffExpense")
-  defaultOverpaymentFor       LoanAccountingDefaults[]          @relation("DefaultOverpaymentLiability")
-  savingsLiabilityMappings    SavingsProductAccountingMapping[] @relation("SavingsLiability")
-  defaultSavingsLiabilityFor  SavingsAccountingDefaults[]       @relation("DefaultSavingsLiability")
-  accountingRuleAccounts      AccountingRuleAccount[]
-  defaultProvisionExpenseFor  ProvisioningAccountingDefaults[]  @relation("DefaultProvisionExpense")
-  defaultLoanLossProvisionFor ProvisioningAccountingDefaults[]  @relation("DefaultLoanLossProvision")
-  createdAt                   DateTime                          @default(now())
+  id                             String                             @id @default(uuid()) @db.Uuid
+  code                           String
+  name                           String
+  type                           AccountType
+  currencyCode                   String                             @db.VarChar(10)
+  ownershipPoolId                String?                            @db.Uuid
+  active                         Boolean                            @default(true)
+  externalId                     String?
+  usage                          String                             @default("DETAIL")
+  description                    String?
+  manualEntriesAllowed           Boolean                            @default(false)
+  currency                       Currency                           @relation(fields: [currencyCode], references: [code])
+  ownershipPool                  OwnershipPool?                     @relation(fields: [ownershipPoolId], references: [id])
+  lines                          JournalLine[]
+  principalMappings              LoanProductAccountingMapping[]     @relation("PrincipalReceivable")
+  interestReceivableMappings     LoanProductAccountingMapping[]     @relation("InterestReceivable")
+  interestIncomeMappings         LoanProductAccountingMapping[]     @relation("InterestIncome")
+  feeIncomeMappings              LoanProductAccountingMapping[]     @relation("FeeIncome")
+  monitoringFeeIncomeMappings    LoanProductAccountingMapping[]     @relation("MonitoringFeeIncome")
+  processingFeeIncomeMappings    LoanProductAccountingMapping[]     @relation("ProcessingFeeIncome")
+  admissionFeeIncomeMappings     LoanProductAccountingMapping[]     @relation("AdmissionFeeIncome")
+  penaltyIncomeMappings          LoanProductAccountingMapping[]     @relation("PenaltyIncome")
+  penaltyReceivableMappings      LoanProductAccountingMapping[]     @relation("PenaltyReceivable")
+  writeOffMappings               LoanProductAccountingMapping[]     @relation("WriteOffExpense")
+  overpaymentMappings            LoanProductAccountingMapping[]     @relation("OverpaymentLiability")
+  funds                          Fund[]
+  settlementAccounts             SettlementAccount[]
+  defaultPrincipalFor            LoanAccountingDefaults[]           @relation("DefaultPrincipalReceivable")
+  defaultInterestFor             LoanAccountingDefaults[]           @relation("DefaultInterestIncome")
+  defaultFeeFor                  LoanAccountingDefaults[]           @relation("DefaultFeeIncome")
+  defaultPenaltyFor              LoanAccountingDefaults[]           @relation("DefaultPenaltyIncome")
+  defaultWriteOffFor             LoanAccountingDefaults[]           @relation("DefaultWriteOffExpense")
+  defaultOverpaymentFor          LoanAccountingDefaults[]           @relation("DefaultOverpaymentLiability")
+  savingsLiabilityMappings       SavingsProductAccountingMapping[]  @relation("SavingsLiability")
+  defaultSavingsLiabilityFor     SavingsAccountingDefaults[]        @relation("DefaultSavingsLiability")
+  accountingRuleAccounts         AccountingRuleAccount[]
+  defaultProvisionExpenseFor     ProvisioningAccountingDefaults[]   @relation("DefaultProvisionExpense")
+  defaultLoanLossProvisionFor    ProvisioningAccountingDefaults[]   @relation("DefaultLoanLossProvision")
+  defaultOpeningBalanceEquityFor OpeningBalanceAccountingDefaults[]
+  openingBalanceMigrations       OpeningBalanceMigration[]
+  createdAt                      DateTime                           @default(now())
 
   @@unique([code, currencyCode, ownershipPoolId])
   @@index([type, currencyCode])
@@ -1272,22 +1278,23 @@ model SettlementAccount {
 }
 
 model Journal {
-  id                  String               @id @default(uuid()) @db.Uuid
-  officeId            String               @db.Uuid
-  businessDate        DateTime             @db.Date
-  referenceType       String
-  referenceId         String?
-  narration           String
-  status              JournalStatus        @default(PENDING)
-  reversalOfId        String?              @unique @db.Uuid
-  idempotencyKey      String               @unique
-  office              Office               @relation(fields: [officeId], references: [id])
-  lines               JournalLine[]
-  reversalOf          Journal?             @relation("JournalReversal", fields: [reversalOfId], references: [id])
-  reversedBy          Journal?             @relation("JournalReversal")
-  provisioningPosting ProvisioningPosting?
-  postedAt            DateTime?
-  createdAt           DateTime             @default(now())
+  id                      String                   @id @default(uuid()) @db.Uuid
+  officeId                String                   @db.Uuid
+  businessDate            DateTime                 @db.Date
+  referenceType           String
+  referenceId             String?
+  narration               String
+  status                  JournalStatus            @default(PENDING)
+  reversalOfId            String?                  @unique @db.Uuid
+  idempotencyKey          String                   @unique
+  office                  Office                   @relation(fields: [officeId], references: [id])
+  lines                   JournalLine[]
+  reversalOf              Journal?                 @relation("JournalReversal", fields: [reversalOfId], references: [id])
+  reversedBy              Journal?                 @relation("JournalReversal")
+  provisioningPosting     ProvisioningPosting?
+  openingBalanceMigration OpeningBalanceMigration?
+  postedAt                DateTime?
+  createdAt               DateTime                 @default(now())
 
   @@index([officeId, businessDate, status])
   @@index([referenceType, referenceId])
@@ -1409,6 +1416,44 @@ model ProvisioningPosting {
 
   @@unique([officeId, asOfDate])
   @@index([officeId, asOfDate])
+}
+
+model OpeningBalanceAccountingDefaults {
+  id                            String         @id @default(uuid()) @db.Uuid
+  organizationId                String         @unique @db.Uuid
+  // Contra account credited/debited to keep each opening balance migration journal balanced
+  // (iLend/Mifos "Opening Balance Equity" / "Opening Balances Contra Account").
+  openingBalanceEquityAccountId String?        @db.Uuid
+  organization                  Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  openingBalanceEquityAccount   LedgerAccount? @relation(fields: [openingBalanceEquityAccountId], references: [id])
+  createdAt                     DateTime       @default(now())
+  updatedAt                     DateTime       @updatedAt
+}
+
+// One row per office+GL account migrated -- "Migrate Opening Balances (Office-wise)" (item 7).
+// A super-admin sets the starting balance of a GL account at a specific office as of a date; this
+// posts a single balanced journal (referenceType "OPENING_BALANCE") against the org's Opening
+// Balance Equity contra account and records it here so it can only be migrated once per
+// office+account (re-attempting returns the original result rather than posting a duplicate).
+model OpeningBalanceMigration {
+  id              String         @id @default(uuid()) @db.Uuid
+  organizationId  String         @db.Uuid
+  officeId        String         @db.Uuid
+  ledgerAccountId String         @db.Uuid
+  asOfDate        DateTime       @db.Date
+  direction       EntryDirection
+  amountMinor     BigInt
+  journalId       String         @unique @db.Uuid
+  createdByUserId String
+  organization    Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  office          Office         @relation(fields: [officeId], references: [id])
+  ledgerAccount   LedgerAccount  @relation(fields: [ledgerAccountId], references: [id])
+  journal         Journal        @relation(fields: [journalId], references: [id])
+  createdByUser   User           @relation(fields: [createdByUserId], references: [id])
+  createdAt       DateTime       @default(now())
+
+  @@unique([officeId, ledgerAccountId])
+  @@index([officeId, ledgerAccountId])
 }
 
 model PriceSnapshot {

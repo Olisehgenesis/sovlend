@@ -254,6 +254,9 @@ export function AppHeader({
                   <Link href="/backoffice/accounting/closures" onClick={closeMenus}>
                     Closing entries
                   </Link>
+                  <Link href="/backoffice/accounting/opening-balances" onClick={closeMenus}>
+                    Migrate opening balances
+                  </Link>
                 </>
               ) : null}
             </div>
