@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
 
+import { BrandActionButton } from "@/components/ui/brand-action-button";
+
 export function ApproveLoanForm({ applicationId, proposedAmount }: { applicationId: string; proposedAmount: string }) {
   const router = useRouter();
   const [pending, setPending] = useState(false);
@@ -30,5 +32,5 @@ export function ApproveLoanForm({ applicationId, proposedAmount }: { application
     router.refresh();
   }
 
-  return <form action={approve} className="entity-form approval-form"><fieldset><legend>Checker decision</legend><label>Approved principal (UGX)<input name="amount" defaultValue={proposedAmount} inputMode="decimal" pattern="[0-9]+([.][0-9]{1,2})?" required /></label><label>Approval note<textarea name="reason" rows={3} /></label></fieldset><div className="form-actions"><button className="invest-button" disabled={pending}>{pending ? <LoaderCircle className="spin" size={18} /> : <CheckCircle2 size={18} />} Approve application</button></div></form>;
+  return <form action={approve} className="entity-form approval-form"><fieldset><legend>Checker decision</legend><label>Approved principal (UGX)<input name="amount" defaultValue={proposedAmount} inputMode="decimal" pattern="[0-9]+([.][0-9]{1,2})?" required /></label><label>Approval note<textarea name="reason" rows={3} /></label></fieldset><div className="form-actions"><BrandActionButton disabled={pending} icon={pending ? <LoaderCircle className="spin" size={18} /> : <CheckCircle2 size={18} />} type="submit">Approve application</BrandActionButton></div></form>;
 }

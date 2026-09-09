@@ -5,6 +5,7 @@ import { useRef } from "react";
 
 import { DisburseLoanForm } from "@/components/disburse-loan-form";
 import { Dialog, type DialogHandle } from "@/components/ui/dialog";
+import { BrandActionButton } from "@/components/ui/brand-action-button";
 
 export function DisburseLoanButton({
   loanId,
@@ -24,13 +25,13 @@ export function DisburseLoanButton({
 
   return (
     <>
-      <button
-        className="invest-button"
+      <BrandActionButton
+        icon={<Banknote size={16} />}
         onClick={() => dialogRef.current?.showModal()}
         type="button"
       >
-        <Banknote size={16} /> Disburse
-      </button>
+        Disburse
+      </BrandActionButton>
       <Dialog ref={dialogRef} title="Disburse loan">
         <DisburseLoanForm
           loanId={loanId}

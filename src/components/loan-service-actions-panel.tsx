@@ -7,6 +7,7 @@ import { useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { Dialog, type DialogHandle } from "@/components/ui/dialog";
+import { BrandActionButton } from "@/components/ui/brand-action-button";
 import { formatMinor } from "@/modules/money/domain/format-minor";
 
 type ServiceRequest = Readonly<{
@@ -198,9 +199,9 @@ export function LoanServiceActionsPanel({
       {canRequest && !pendingRequest ? (
         <>
           <div className="form-actions">
-            <button className="invest-button" onClick={() => dialogRef.current?.showModal()} type="button">
+            <BrandActionButton onClick={() => dialogRef.current?.showModal()} type="button">
               Request servicing action
-            </button>
+            </BrandActionButton>
           </div>
           <Dialog onClose={resetRequestDialog} ref={dialogRef} title="Request a servicing action">
             <form action={createRequest} className="entity-form compact-mapping" key={formVersion}>
@@ -281,9 +282,9 @@ export function LoanServiceActionsPanel({
                 </dl>
               ) : null}
               <div className="form-actions">
-                <button className="invest-button" disabled={pendingCreate}>
-                  {pendingCreate ? <LoaderCircle className="spin" size={18} /> : null} Submit for approval
-                </button>
+                <BrandActionButton disabled={pendingCreate} icon={pendingCreate ? <LoaderCircle className="spin" size={18} /> : undefined} type="submit">
+                  Submit for approval
+                </BrandActionButton>
               </div>
             </form>
           </Dialog>

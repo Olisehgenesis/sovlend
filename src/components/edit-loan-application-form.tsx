@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
 
+import { BrandActionButton } from "@/components/ui/brand-action-button";
+
 import {
   buildChargePayload,
   buildCollateralPayload,
@@ -367,9 +369,9 @@ export function EditLoanApplicationForm({
 
           <div className="form-actions">
             <button className="secondary-action" disabled={pending} onClick={close} type="button">Cancel</button>
-            <button className="invest-button" disabled={pending} type="submit">
-              {pending ? <LoaderCircle className="spin" size={18} /> : <CircleDollarSign size={18} />} Save changes
-            </button>
+            <BrandActionButton disabled={pending} icon={pending ? <LoaderCircle className="spin" size={18} /> : <CircleDollarSign size={18} />} type="submit">
+              Save changes
+            </BrandActionButton>
           </div>
         </form>
       ) : (

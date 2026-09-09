@@ -28,6 +28,6 @@ export function TransferClientForm({ clientId, accountNumber, currentOfficeId, o
 
   return <form action={transfer} className="entity-form">
     <fieldset><legend>Destination office</legend><label>Office<select defaultValue={currentOfficeId} name="officeId" required>{offices.map((office) => <option key={office.id} value={office.id}>{office.name}</option>)}</select></label><p className="muted-text">Transferring a client clears their assigned loan officer.</p></fieldset>
-    <div className="form-actions"><BrandActionButton disabled={pending} icon={pending ? <LoaderCircle className="spin" size={18} /> : <ArrowRightLeft size={18} />}>Transfer client</BrandActionButton></div>
+    <div className="form-actions"><BrandActionButton disabled={pending} icon={pending ? <LoaderCircle className="spin" size={18} /> : <ArrowRightLeft size={18} />} type="submit">Transfer client</BrandActionButton></div>
   </form>;
 }

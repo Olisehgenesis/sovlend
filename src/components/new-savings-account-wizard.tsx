@@ -6,6 +6,7 @@ import { useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { Dialog, type DialogHandle } from "@/components/ui/dialog";
+import { BrandActionButton } from "@/components/ui/brand-action-button";
 import { formatMinor } from "@/modules/money/domain/format-minor";
 
 type SavingsProductOption = Readonly<{ id: string; name: string; shortName: string; currencyCode: string; nominalAnnualRateBps: number; minOpeningBalanceMinor: string }>;
@@ -74,7 +75,7 @@ export function NewSavingsAccountWizard({ clientId, products, officers, charges 
 
   return (
     <>
-      <button className="invest-button" onClick={() => dialogRef.current?.showModal()} type="button"><Plus size={16} /> Open savings account</button>
+      <BrandActionButton icon={<Plus size={16} />} onClick={() => dialogRef.current?.showModal()} type="button">Open savings account</BrandActionButton>
       <Dialog onClose={resetWizard} ref={dialogRef} title="Open savings account">
         <div className="savings-wizard">
           <nav className="savings-wizard-steps" aria-label="Savings application steps">
@@ -132,7 +133,7 @@ export function NewSavingsAccountWizard({ clientId, products, officers, charges 
 
           <div className="savings-wizard-actions">
             <button className="secondary-action" onClick={() => (step === 0 ? closeDialog() : setStep((current) => current - 1))} type="button">{step === 0 ? "Cancel" : <><ChevronLeft size={15} /> Back</>}</button>
-            {step < steps.length - 1 ? <button className="invest-button" disabled={step === 0 && !productId} onClick={() => setStep((current) => current + 1)} type="button">Next <ChevronRight size={15} /></button> : <button className="invest-button" disabled={pending} onClick={submit} type="button">{pending ? <LoaderCircle className="spin" size={16} /> : <Check size={16} />} Submit</button>}
+            {step < steps.length - 1 ? <button className="invest-button" disabled={step === 0 && !productId} onClick={() => setStep((current) => current + 1)} type="button">Next <ChevronRight size={15} /></button> : <BrandActionButton disabled={pending} icon={pending ? <LoaderCircle className="spin" size={16} /> : <Check size={16} />} onClick={submit} type="button">Submit</BrandActionButton>}
           </div>
         </div>
       </Dialog>

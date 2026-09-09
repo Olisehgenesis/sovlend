@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 
+import { BrandActionButton } from "@/components/ui/brand-action-button";
+
 import {
   buildChargePayload,
   buildCollateralPayload,
@@ -367,7 +369,7 @@ export function CreateLoanApplicationForm({
         {step < steps.length - 1 ? (
           <button className="invest-button" disabled={(step === 0 && !detailsValid()) || (step === 1 && !termsValid())} onClick={() => setStep((current) => current + 1)} type="button">Next</button>
         ) : (
-          <button className="invest-button" disabled={pending} onClick={submit} type="button">{pending ? <LoaderCircle className="spin" size={18} /> : <CircleDollarSign size={18} />} Submit loan application</button>
+          <BrandActionButton disabled={pending} icon={pending ? <LoaderCircle className="spin" size={18} /> : <CircleDollarSign size={18} />} onClick={submit} type="button">Submit loan application</BrandActionButton>
         )}
       </div>
     </div>

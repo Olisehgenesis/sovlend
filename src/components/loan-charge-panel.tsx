@@ -6,6 +6,7 @@ import { useMemo, useState } from "react";
 import { toast } from "sonner";
 
 import { DataTable } from "@/components/ui/data-table";
+import { BrandActionButton } from "@/components/ui/brand-action-button";
 import { formatMinor } from "@/modules/money/domain/format-minor";
 
 type LoanCharge = Readonly<{
@@ -214,9 +215,9 @@ export function LoanChargesPanel({
             ) : null}
           </fieldset>
           <div className="form-actions">
-            <button className="invest-button" disabled={pendingCreate}>
-              {pendingCreate ? <LoaderCircle className="spin" size={16} /> : <Plus size={16} />} Add charge
-            </button>
+            <BrandActionButton disabled={pendingCreate} icon={pendingCreate ? <LoaderCircle className="spin" size={16} /> : <Plus size={16} />} type="submit">
+              Add charge
+            </BrandActionButton>
           </div>
         </form>
       ) : null}

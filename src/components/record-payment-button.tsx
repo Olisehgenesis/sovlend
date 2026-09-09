@@ -5,6 +5,7 @@ import { useRef } from "react";
 
 import { RepaymentForm } from "@/components/repayment-form";
 import { Dialog, type DialogHandle } from "@/components/ui/dialog";
+import { BrandActionButton } from "@/components/ui/brand-action-button";
 
 /** Header-level shortcut so an operator can record a repayment without leaving whatever
  * tab of the loan page they're on — wraps the existing RepaymentForm (used by the
@@ -22,9 +23,9 @@ export function RecordPaymentButton({
 
   return (
     <>
-      <button className="invest-button" onClick={() => dialogRef.current?.showModal()} type="button">
-        <Banknote size={16} /> Record payment
-      </button>
+      <BrandActionButton icon={<Banknote size={16} />} onClick={() => dialogRef.current?.showModal()} type="button">
+        Record payment
+      </BrandActionButton>
       <Dialog ref={dialogRef} title="Record repayment">
         <RepaymentForm
           defaultAmountMinor={defaultAmountMinor}

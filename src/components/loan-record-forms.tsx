@@ -6,6 +6,8 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
 
+import { BrandActionButton } from "@/components/ui/brand-action-button";
+
 type LoanNote = Readonly<{ id: string; body: string; authorName: string; createdAtLabel: string }>;
 type LoanDocument = Readonly<{ id: string; name: string; description: string | null; mediaType: string; createdAtLabel: string }>;
 
@@ -57,9 +59,9 @@ export function LoanNotesPanel({ loanId, notes, canManage }: { loanId: string; n
             </label>
           </fieldset>
           <div className="form-actions">
-            <button className="invest-button" disabled={pending}>
-              {pending ? <LoaderCircle className="spin" size={16} /> : <Plus size={16} />} Add note
-            </button>
+            <BrandActionButton disabled={pending} icon={pending ? <LoaderCircle className="spin" size={16} /> : <Plus size={16} />} type="submit">
+              Add note
+            </BrandActionButton>
           </div>
         </form>
       ) : null}
@@ -144,9 +146,9 @@ export function LoanDocumentsPanel({ loanId, documents, canManage }: { loanId: s
             </label>
           </fieldset>
           <div className="form-actions">
-            <button className="invest-button" disabled={pendingUpload}>
-              {pendingUpload ? <LoaderCircle className="spin" size={16} /> : <Upload size={16} />} Upload
-            </button>
+            <BrandActionButton disabled={pendingUpload} icon={pendingUpload ? <LoaderCircle className="spin" size={16} /> : <Upload size={16} />} type="submit">
+              Upload
+            </BrandActionButton>
           </div>
         </form>
       ) : null}
@@ -212,9 +214,9 @@ export function CollateralNotesPanel({
             </label>
           </fieldset>
           <div className="form-actions">
-            <button className="invest-button" disabled={pending}>
-              {pending ? <LoaderCircle className="spin" size={16} /> : <Plus size={16} />} Add note
-            </button>
+            <BrandActionButton disabled={pending} icon={pending ? <LoaderCircle className="spin" size={16} /> : <Plus size={16} />} type="submit">
+              Add note
+            </BrandActionButton>
           </div>
         </form>
       ) : null}
@@ -312,9 +314,9 @@ export function CollateralDocumentsPanel({
             </label>
           </fieldset>
           <div className="form-actions">
-            <button className="invest-button" disabled={pendingUpload}>
-              {pendingUpload ? <LoaderCircle className="spin" size={16} /> : <Upload size={16} />} Upload
-            </button>
+            <BrandActionButton disabled={pendingUpload} icon={pendingUpload ? <LoaderCircle className="spin" size={16} /> : <Upload size={16} />} type="submit">
+              Upload
+            </BrandActionButton>
           </div>
         </form>
       ) : null}

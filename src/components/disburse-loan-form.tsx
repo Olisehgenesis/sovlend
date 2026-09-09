@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 
+import { BrandActionButton } from "@/components/ui/brand-action-button";
+
 type SettlementAccountOption = Readonly<{
   id: string;
   name: string;
@@ -133,10 +135,9 @@ export function DisburseLoanForm({
         </div>
       </fieldset>
       <div className="form-actions">
-        <button className="invest-button" disabled={submitDisabled}>
-          {pending ? <LoaderCircle className="spin" size={18} /> : <PiggyBank size={18} />}{" "}
+        <BrandActionButton disabled={submitDisabled} icon={pending ? <LoaderCircle className="spin" size={18} /> : <PiggyBank size={18} />} type="submit">
           Disburse loan
-        </button>
+        </BrandActionButton>
       </div>
     </form>
   );

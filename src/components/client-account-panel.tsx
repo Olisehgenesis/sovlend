@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
+import { BrandActionButton } from "@/components/ui/brand-action-button";
 import { formatMinor } from "@/modules/money/domain/format-minor";
 
 export type SettlementAccountOption = Readonly<{
@@ -204,7 +205,7 @@ export function DepositWithdrawForm({
       {selectedTarget ? <p className="field-help">{selectedTarget.hint}</p> : null}
       {compatibleSettlementAccounts.length === 0 && selectedTarget ? <aside className="configuration-note"><strong>Settlement setup required</strong><span>Add an active {selectedTarget.currencyCode} settlement account in Backoffice → Accounting mappings before recording this transaction.</span></aside> : null}
       <div className="account-card-actions">
-        {allowedActions.includes("DEPOSIT") ? <button className="invest-button" disabled={pending !== null || compatibleSettlementAccounts.length === 0 || !selectedTarget} onClick={() => transact("DEPOSIT")} type="button">{pending === "DEPOSIT" ? <LoaderCircle className="spin" size={15} /> : <Plus size={15} />} {selectedTarget?.kind === "loan" ? "Apply to loan" : "Deposit"}</button> : null}
+        {allowedActions.includes("DEPOSIT") ? <BrandActionButton disabled={pending !== null || compatibleSettlementAccounts.length === 0 || !selectedTarget} icon={pending === "DEPOSIT" ? <LoaderCircle className="spin" size={15} /> : <Plus size={15} />} onClick={() => transact("DEPOSIT")} type="button">{selectedTarget?.kind === "loan" ? "Apply to loan" : "Deposit"}</BrandActionButton> : null}
         {allowedActions.includes("WITHDRAWAL") ? <button className="secondary-action" disabled={pending !== null || compatibleSettlementAccounts.length === 0 || selectedTarget?.kind !== "savings"} onClick={() => transact("WITHDRAWAL")} type="button">{pending === "WITHDRAWAL" ? <LoaderCircle className="spin" size={15} /> : <Minus size={15} />} Withdraw</button> : null}
       </div>
     </div>
@@ -291,7 +292,7 @@ export function TransferToLoanForm({
       {source ? <p className="field-help">Available balance: {formatMinor(BigInt(source.balanceMinor), source.currencyCode)}</p> : null}
       {destination ? <p className="field-help">{BigInt(destination.overdueMinor) > 0n ? `${formatMinor(BigInt(destination.overdueMinor), destination.currencyCode)} overdue \u00b7 ${formatMinor(BigInt(destination.outstandingMinor), destination.currencyCode)} outstanding` : `${formatMinor(BigInt(destination.outstandingMinor), destination.currencyCode)} outstanding`}</p> : null}
       <div className="account-card-actions">
-        <button className="invest-button" disabled={pending || !source || !destination} onClick={transfer} type="button">{pending ? <LoaderCircle className="spin" size={15} /> : <Plus size={15} />} Transfer to loan</button>
+        <BrandActionButton disabled={pending || !source || !destination} icon={pending ? <LoaderCircle className="spin" size={15} /> : <Plus size={15} />} onClick={transfer} type="button">Transfer to loan</BrandActionButton>
       </div>
     </div>
   );
@@ -390,6 +391,6 @@ export function AddChargeForm({ clientId }: { clientId: string }) {
 
   return <form action={submit} className="entity-form compact-mapping">
     <fieldset><legend>Add charge</legend><div className="form-row three"><label>Name<input name="name" placeholder="Processing fee" required /></label><label>Amount (UGX)<input min={1} name="amount" required step="0.01" type="number" /></label><label>Due date<input name="dueOn" type="date" /></label></div></fieldset>
-    <div className="form-actions"><button className="invest-button" disabled={pending}>{pending ? <LoaderCircle className="spin" size={16} /> : <Plus size={16} />} Add charge</button></div>
+    <div className="form-actions"><BrandActionButton disabled={pending} icon={pending ? <LoaderCircle className="spin" size={16} /> : <Plus size={16} />} type="submit">Add charge</BrandActionButton></div>
   </form>;
 }
