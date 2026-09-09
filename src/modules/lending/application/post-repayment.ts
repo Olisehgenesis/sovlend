@@ -3,6 +3,7 @@ import type { Prisma, PrismaClient } from "@prisma/client";
 
 import { AuthorizationService } from "@/modules/identity/application/authorization-service";
 import { permissions } from "@/modules/identity/domain/permissions";
+import { assertPeriodOpen } from "@/modules/ledger/application/assert-period-open";
 import { assertBalancedJournal } from "@/modules/ledger/domain/journal";
 import { recordSavingsTransactionInTransaction } from "@/modules/savings/application/record-savings-transaction";
 import { resolveSavingsLiabilityAccountId } from "@/modules/savings/application/savings-ledger";
@@ -108,6 +109,7 @@ export async function applyRepaymentInTransaction(transaction: Tx, params: Apply
   });
   const mapping = current.product.accountingMapping;
   if (!mapping) throw new Error("Loan product accounting mapping is required before repayment");
+  await assertPeriodOpen(transaction, { officeId: current.officeId, businessDate: params.businessDate });
   const allocation = allocateRepayment(current.installments, params.amountMinor);
   if (allocation.interestMinor > 0n && !mapping.interestIncomeAccountId) throw new Error("Interest income account is not configured");
   if (allocation.feesMinor > 0n && !mapping.feeIncomeAccountId) throw new Error("Fee income account is not configured");

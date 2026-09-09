@@ -13,6 +13,7 @@ type MockOptions = Readonly<{
   penaltyIncomeAccountId?: string | null;
   penaltyReceivableAccountId?: string | null;
   updateCount?: number;
+  closureDate?: Date | null;
 }>;
 
 function buildPrismaMock(options: MockOptions = {}) {
@@ -108,6 +109,9 @@ function buildPrismaMock(options: MockOptions = {}) {
         return data;
       }),
     },
+    accountingClosure: {
+      findFirst: vi.fn(async () => (options.closureDate ? { closingDate: options.closureDate } : null)),
+    },
   };
 
   const prisma = {
@@ -201,6 +205,21 @@ describe("assessLoanPenalties", () => {
     expect(result.skippedCount).toBe(1);
     expect(result.skipped[0]?.reason).toContain("outside the one-time penalty assessment window");
     expect(captures.loanInstallmentUpdateArgs).toBeNull();
+    expect(captures.journalCreateData).toBeNull();
+  });
+
+  it("skips (does not crash the batch) an installment whose office accounting period is closed", async () => {
+    const { prisma, captures, businessDate } = buildPrismaMock({
+      businessDate: new Date("2026-09-09T00:00:00.000Z"),
+      dueOn: new Date("2026-09-07T00:00:00.000Z"),
+      closureDate: new Date("2026-09-09T00:00:00.000Z"),
+    });
+
+    const result = await assessLoanPenalties(prisma, { businessDate });
+
+    expect(result.assessedCount).toBe(0);
+    expect(result.skippedCount).toBe(1);
+    expect(result.skipped[0]?.reason).toMatch(/accounting period/i);
     expect(captures.journalCreateData).toBeNull();
   });
 

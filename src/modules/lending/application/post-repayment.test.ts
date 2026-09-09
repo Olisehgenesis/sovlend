@@ -182,6 +182,7 @@ function buildPrismaMock(options: MockOptions = {}) {
     },
     auditEvent: { create: vi.fn(async () => ({})) },
     outboxEvent: { create: vi.fn(async () => ({})) },
+    accountingClosure: { findFirst: vi.fn(async () => null) },
   };
 
   const prisma = {
@@ -199,7 +200,7 @@ function buildPrismaMock(options: MockOptions = {}) {
     ),
   } as unknown as PrismaClient;
 
-  return { prisma, captures };
+  return { prisma, captures, transaction };
 }
 
 function expectBalanced(lines: unknown[]) {
@@ -434,5 +435,21 @@ describe("postRepayment", () => {
     expect(warn).toHaveBeenCalledOnce();
     expectBalanced(captures.journalLines);
     warn.mockRestore();
+  });
+
+  it("rejects repayment when the office's accounting period is closed on/before the businessDate", async () => {
+    const { prisma, transaction } = buildPrismaMock({});
+    (transaction.accountingClosure.findFirst as ReturnType<typeof vi.fn>).mockResolvedValueOnce({ closingDate: new Date("2026-09-09T00:00:00.000Z") });
+
+    await expect(
+      postRepayment(prisma, {
+        loanId: "loan-1",
+        actorUserId: "operator-1",
+        amountMinor: 1_000n,
+        settlementAccountId: "settlement-1",
+        businessDate: new Date("2026-09-09T00:00:00.000Z"),
+        idempotencyKey: "repayment-closed-period-1",
+      }),
+    ).rejects.toThrow("closed on or before");
   });
 });

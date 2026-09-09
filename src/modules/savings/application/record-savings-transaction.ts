@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 
 import type { Prisma } from "@prisma/client";
 
+import { assertPeriodOpen } from "@/modules/ledger/application/assert-period-open";
 import { assertBalancedJournal } from "@/modules/ledger/domain/journal";
 
 import { resolveSavingsLiabilityAccountId } from "./savings-ledger";
@@ -97,6 +98,8 @@ export async function recordSavingsTransactionInTransaction(transaction: Tx, com
     if (!officeId) {
       throw new Error("Savings account owner has no office; cannot post a ledger journal");
     }
+    const businessDate = command.businessDate ?? new Date();
+    await assertPeriodOpen(transaction, { officeId, businessDate });
     const savingsLiabilityAccountId = await resolveSavingsLiabilityAccountId(transaction, {
       organizationId,
       savingsProductId: current.productId,
@@ -115,7 +118,6 @@ export async function recordSavingsTransactionInTransaction(transaction: Tx, com
           ];
     assertBalancedJournal(journalLines.map((line) => ({ ...line, currencyCode: current.currencyCode })));
 
-    const businessDate = command.businessDate ?? new Date();
     const journal = await transaction.journal.create({
       data: {
         officeId,

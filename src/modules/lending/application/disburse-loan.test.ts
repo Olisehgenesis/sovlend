@@ -201,6 +201,7 @@ function buildPrismaMock(options: MockOptions = {}) {
     savingsAccount: {
       findMany: transaction.savingsAccount.findMany,
     },
+    accountingClosure: { findFirst: vi.fn(async () => null) },
     $transaction: vi.fn(async (callback: (tx: typeof transaction) => unknown) => callback(transaction)),
   } as unknown as PrismaClient;
 
@@ -486,5 +487,19 @@ describe("disburseLoan", () => {
       { journalId: "journal-1", accountId: "ledger-savings-liability", direction: "CREDIT", amountMinor: 935_000n, memo: "SV-0001" },
     ]);
     expectBalanced(captures.journalLines as unknown[]);
+  });
+
+  it("rejects disbursement when the office's accounting period is closed on/before the businessDate", async () => {
+    const { prisma } = buildPrismaMock({});
+    (prisma.accountingClosure.findFirst as ReturnType<typeof vi.fn>).mockResolvedValueOnce({ closingDate: new Date("2026-09-08T00:00:00.000Z") });
+
+    await expect(
+      disburseLoan(prisma, {
+        loanId: "loan-1",
+        actorUserId: "operator-1",
+        businessDate: new Date("2026-09-08T00:00:00.000Z"),
+        idempotencyKey: "1c9c2a3e-8f9a-4b6d-9c1a-2f3e4d5c6b7a",
+      }),
+    ).rejects.toThrow("closed on or before");
   });
 });
