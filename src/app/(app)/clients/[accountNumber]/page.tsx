@@ -82,7 +82,11 @@ export default async function ClientDetailPage({ params, searchParams }: { param
   // savings vs. other account kinds -- every row here already belongs to the SavingsAccount model.
   // Legacy-imported accounts never carry the value "SAVINGS", so filtering on it silently matched
   // zero accounts and hid Top up/Withdraw for every client. Filter on status alone.
-  const primarySavingsAccount = client.savingsAccounts.find((account) => account.status === "ACTIVE") ?? null;
+  // A client can hold more than one active savings account (e.g. personal + group-linked) --
+  // every one of them is offered to the record-payment/top-up/withdraw forms so an operator can
+  // pick the right account instead of always landing on whichever one the query returns first.
+  const activeSavingsAccounts = client.savingsAccounts.filter((account) => account.status === "ACTIVE");
+  const savingsTargets = activeSavingsAccounts.map((account) => ({ id: account.id, accountNumber: account.accountNumber, currencyCode: account.currencyCode, isDefault: account.isDefault }));
   const businessDate = new Date(`${new Date().toISOString().slice(0, 10)}T00:00:00.000Z`);
 
   const loanRows = client.loans.map((loan) => {
@@ -178,7 +182,7 @@ export default async function ClientDetailPage({ params, searchParams }: { param
           clientId={client.id}
           currentUserName={session.user.name ?? "Signed in user"}
           loanTargets={loanPaymentTargets}
-          savingsTarget={canTransact && primarySavingsAccount ? { id: primarySavingsAccount.id, accountNumber: primarySavingsAccount.accountNumber, currencyCode: primarySavingsAccount.currencyCode } : null}
+          savingsTargets={canTransact ? savingsTargets : []}
           settlementAccounts={settlementAccounts}
         />
         <span className={`status-dot ${client.status === "ACTIVE" ? "up-to-date" : "review"}`} />
@@ -255,7 +259,7 @@ export default async function ClientDetailPage({ params, searchParams }: { param
         <section className="panel">
           <div className="panel-heading"><div><h2>Savings</h2><p>Savings, share and deposit accounts held by this client</p></div>{canTransact && client.status === "ACTIVE" && client.savingsAccounts.length === 0 ? <NewSavingsAccountWizard charges={savingsCharges.map((charge) => ({ id: charge.id, name: charge.name, calculationType: charge.calculationType, amountMinor: charge.amountMinor?.toString() ?? null, percentageBps: charge.percentageBps, currencyCode: charge.currencyCode }))} clientId={client.id} officers={officers} products={savingsProducts.map((product) => ({ id: product.id, name: product.name, shortName: product.shortName, currencyCode: product.currencyCode, nominalAnnualRateBps: product.nominalAnnualRateBps, minOpeningBalanceMinor: product.minOpeningBalanceMinor.toString() }))} /> : null}</div>
           {client.savingsAccounts.length === 0 ? <div className="empty-state compact-empty"><PiggyBank size={26} /><strong>No savings accounts yet</strong><p>Open one above to start recording deposits.</p></div> : <div className="table-scroll"><table><thead><tr><th>Account</th><th>Type</th><th>Product</th><th>Currency</th><th>Balance</th><th>Status</th><th>Opened</th><th></th></tr></thead><tbody>{savingsRows.map(({ account, balanceMinor }) => <tr key={account.id}><td className="mono"><Link className="green-link" href={`/savings-accounts/${account.accountNumber}`}>{account.accountNumber}</Link></td><td>{account.accountType.replaceAll("_", " ")}</td><td>{account.product?.name ?? "\u2014"}</td><td>{account.currencyCode}</td><td>{formatMinor(balanceMinor, account.currencyCode)}</td><td><span className={`status ${account.status === "ACTIVE" ? "up-to-date" : "review"}`}>{account.status === "SUBMITTED" ? "Pending approval" : account.status}</span></td><td>{new Intl.DateTimeFormat("en-UG", { dateStyle: "medium" }).format(account.createdAt)}</td><td>{account.status === "SUBMITTED" && canApproveSavings && account.submittedById !== session.user.id ? <ApproveSavingsAccountButton clientId={client.id} savingsAccountId={account.id} /> : null}</td></tr>)}</tbody></table></div>}
-          {client.status === "ACTIVE" && ((canTransact && primarySavingsAccount) || loanPaymentTargets.length > 0) ? <DepositWithdrawForm clientId={client.id} currentUserName={session.user.name ?? "Signed in user"} loanTargets={loanPaymentTargets} savingsTarget={canTransact && primarySavingsAccount ? { id: primarySavingsAccount.id, accountNumber: primarySavingsAccount.accountNumber, currencyCode: primarySavingsAccount.currencyCode } : null} settlementAccounts={settlementAccounts} /> : null}
+          {client.status === "ACTIVE" && ((canTransact && savingsTargets.length > 0) || loanPaymentTargets.length > 0) ? <DepositWithdrawForm clientId={client.id} currentUserName={session.user.name ?? "Signed in user"} loanTargets={loanPaymentTargets} savingsTargets={canTransact ? savingsTargets : []} settlementAccounts={settlementAccounts} /> : null}
         </section>
       ) : null}
 

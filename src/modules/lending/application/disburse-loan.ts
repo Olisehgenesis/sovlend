@@ -7,13 +7,20 @@ import { AuthorizationService } from "@/modules/identity/application/authorizati
 import { permissions } from "@/modules/identity/domain/permissions";
 import { assertBalancedJournal } from "@/modules/ledger/domain/journal";
 import { canDisburseWithoutMakerCheckerSplit } from "@/modules/lending/application/loan-application-access";
+import { transferSavingsToLoan } from "@/modules/lending/application/post-repayment";
 import { recordSavingsTransactionInTransaction } from "@/modules/savings/application/post-savings-transaction";
 import {
   buildLoanDisbursementSavingsIdempotencyKey,
   resolveSavingsLiabilityAccountId,
 } from "@/modules/savings/application/savings-ledger";
 
+import { loanOutstandingMinor } from "../domain/loan-outstanding";
 import { generateRepaymentSchedule } from "../domain/repayment-schedule";
+
+// Mirrors OPEN_LOAN_STATUSES in post-repayment.ts -- a loan can only be paid off if it's still
+// open. Duplicated here (rather than imported) to avoid coupling disburse-loan.ts to a private
+// constant in a sibling module.
+const OPEN_LOAN_STATUSES = ["ACTIVE", "IN_ARREARS", "OVERPAID"] as const;
 
 const termsSchema = z.object({
   annualRateBps: z.number().int().nonnegative(),
@@ -36,6 +43,12 @@ export type LoanDisbursementCommand = {
   businessDate: Date;
   externalReference?: string;
   idempotencyKey: string;
+  // Optional: the id of another open loan owned by the same client that this disbursement's
+  // proceeds should pay off before the remainder is released to the client (see
+  // payOffPreviousLoanOnDisbursement below, which does the actual money movement). Only the
+  // link is recorded here -- disburseLoan() still credits the full net proceeds to savings
+  // exactly as it always has.
+  topUpOfLoanId?: string;
 };
 
 async function resolveSavingsDestination(
@@ -144,6 +157,30 @@ export async function disburseLoan(
     throw new Error("Selected payment method is not available");
   }
 
+  // Validated up front, alongside the other optional-input checks above -- must be another
+  // open loan owned by the same client (never a group loan; the top-up-payoff checkbox is only
+  // ever offered on client loans). The actual payoff transfer happens after this transaction
+  // commits (see payOffPreviousLoanOnDisbursement); this only confirms the link is legitimate
+  // before it's written onto the new loan.
+  if (command.topUpOfLoanId) {
+    if (!loan.clientId) {
+      throw new Error("Only client loans can pay off a previous loan on disbursement");
+    }
+    if (command.topUpOfLoanId === loan.id) {
+      throw new Error("A loan cannot pay off itself");
+    }
+    const targetLoan = await prisma.loan.findFirst({
+      where: { id: command.topUpOfLoanId, clientId: loan.clientId },
+      select: { status: true },
+    });
+    if (!targetLoan) {
+      throw new Error("Selected loan to pay off was not found for this client");
+    }
+    if (!(OPEN_LOAN_STATUSES as readonly string[]).includes(targetLoan.status)) {
+      throw new Error("Selected loan to pay off is not open");
+    }
+  }
+
   const terms = termsSchema.parse(loan.termsSnapshot);
 
   await new AuthorizationService(prisma).assertAllowed({
@@ -173,6 +210,7 @@ export async function disburseLoan(
           status: "ACTIVE",
           disbursedOn: command.businessDate,
           maturesOn: schedule.at(-1)?.dueOn,
+          topUpOfLoanId: command.topUpOfLoanId ?? null,
         },
       });
       if (changed.count !== 1) {
@@ -346,6 +384,7 @@ export async function disburseLoan(
         feesMinor: feesMinor.toString(),
         netProceedsMinor: netProceedsMinor.toString(),
         externalReference: command.externalReference ?? null,
+        topUpOfLoanId: command.topUpOfLoanId ?? null,
       };
       const eventHash = createHash("sha256")
         .update(JSON.stringify({ correlationId, action: "loan.disbursed", metadata }))
@@ -375,4 +414,56 @@ export async function disburseLoan(
     },
     { isolationLevel: "Serializable" },
   );
+}
+
+/**
+ * Disburses a loan exactly as disburseLoan() always has (crediting the borrower's savings
+ * account net of fees), then -- when the operator checked "pay off previous loan" -- immediately
+ * pays down the client's selected earlier loan out of those same proceeds via
+ * transferSavingsToLoan(), capped at whichever is smaller: that loan's outstanding balance, or
+ * the net proceeds just credited. Whatever remains in the savings account after that transfer is
+ * what the client actually walks away with; if there's nothing left to pay off (or nothing was
+ * selected), this behaves identically to a plain disbursement.
+ *
+ * Runs as two separate top-level operations rather than one nested transaction (transferSavingsToLoan
+ * manages its own $transaction) -- each step is independently atomic and idempotent, so a failure
+ * between the two is safe to retry: the disbursement already succeeded and the payoff can be
+ * resubmitted on its own without double-crediting or double-paying anything.
+ */
+export async function disburseLoanAndPayOffPrevious(prisma: PrismaClient, command: LoanDisbursementCommand) {
+  const disbursement = await disburseLoan(prisma, command);
+  if (!command.topUpOfLoanId) return { disbursement, payoff: null };
+
+  // Discover which savings account actually received the proceeds -- this reliably identifies
+  // the account even on an idempotent replay, without trusting whatever the caller happened to
+  // pass this time around.
+  const savingsCredit = await prisma.savingsTransaction.findUnique({
+    where: { idempotencyKey: buildLoanDisbursementSavingsIdempotencyKey(disbursement.id, "credit") },
+    select: { savingsAccountId: true },
+  });
+  if (!savingsCredit || disbursement.settlementAmountMinor <= 0n) {
+    return { disbursement, payoff: null };
+  }
+
+  const targetLoan = await prisma.loan.findUnique({
+    where: { id: command.topUpOfLoanId },
+    include: { installments: true },
+  });
+  if (!targetLoan) return { disbursement, payoff: null };
+
+  const outstandingMinor = loanOutstandingMinor(targetLoan.installments, targetLoan);
+  const payoffAmountMinor =
+    outstandingMinor < disbursement.settlementAmountMinor ? outstandingMinor : disbursement.settlementAmountMinor;
+  if (payoffAmountMinor <= 0n) return { disbursement, payoff: null };
+
+  const payoff = await transferSavingsToLoan(prisma, {
+    loanId: targetLoan.id,
+    savingsAccountId: savingsCredit.savingsAccountId,
+    actorUserId: command.actorUserId,
+    amountMinor: payoffAmountMinor,
+    businessDate: command.businessDate,
+    externalReference: `Top-up payoff from disbursement ${disbursement.id}`,
+    idempotencyKey: `topup-payoff:${disbursement.id}`,
+  });
+  return { disbursement, payoff };
 }

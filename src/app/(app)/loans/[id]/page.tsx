@@ -183,12 +183,15 @@ export default async function LoanPage({
         orderBy: [{ isDefault: "desc" }, { createdAt: "asc" }],
       })
     : [];
-  // For the header "Top up" shortcut — only client-owned (not group) loans get it, mirroring the
-  // primary-savings-account pick used by ClientQuickActions on the client detail page.
+  // For the header "Top up" shortcut — only client-owned (not group) loans get it, mirroring
+  // the savings-account list used by ClientQuickActions on the client detail page. A client can
+  // hold more than one active savings account, so all of them are offered rather than just one.
   // `accountType` is a product category ("Individual"/"Group"), not a savings-vs-other
   // discriminator, so it must not be used to filter here — the query above already scopes this
-  // list to ACTIVE savings accounts. Ordering already prefers the default account.
-  const primarySavingsAccount = loan.clientId ? savingsAccounts[0] ?? null : null;
+  // list to ACTIVE savings accounts.
+  const savingsTargets = loan.clientId
+    ? savingsAccounts.map((account) => ({ id: account.id, accountNumber: account.accountNumber, currencyCode: loan.denominationCurrency, isDefault: account.isDefault }))
+    : [];
   // Surfaces this client's other accounts from the loan detail page, mirroring how
   // savings-accounts/[accountNumber]/page.tsx links back to its owning client/group.
   const otherLoans = loan.clientId
@@ -201,10 +204,22 @@ export default async function LoanPage({
           principalMinor: true,
           denominationCurrency: true,
           product: { select: { name: true } },
+          principalWrittenOffMinor: true,
+          interestWrittenOffMinor: true,
+          feesWrittenOffMinor: true,
+          penaltiesWrittenOffMinor: true,
+          installments: { select: { principalDueMinor: true, interestDueMinor: true, feesDueMinor: true, penaltiesDueMinor: true, monitoringFeeDueMinor: true, principalPaidMinor: true, interestPaidMinor: true, feesPaidMinor: true, penaltiesPaidMinor: true, monitoringFeePaidMinor: true, principalWaivedMinor: true, interestWaivedMinor: true, feesWaivedMinor: true, penaltiesWaivedMinor: true, monitoringFeeWaivedMinor: true } },
         },
         orderBy: { createdAt: "desc" },
       })
     : [];
+  // "Top up" at disbursement: any other open loan of this client with money still owed on it can
+  // be paid off from this loan's proceeds (see disburse-loan.ts's disburseLoanAndPayOffPrevious).
+  const openLoanStatuses = ["ACTIVE", "IN_ARREARS", "OVERPAID"];
+  const payoffLoanOptions = otherLoans
+    .filter((item) => openLoanStatuses.includes(item.status) && item.denominationCurrency === loan.denominationCurrency)
+    .map((item) => ({ id: item.id, accountNumber: item.accountNumber, currencyCode: item.denominationCurrency, outstandingMinor: loanOutstandingMinor(item.installments, item).toString() }))
+    .filter((item) => BigInt(item.outstandingMinor) > 0n);
   const clientSavingsAccounts = loan.clientId
     ? await prisma.savingsAccount.findMany({
         where: { clientId: loan.clientId },
@@ -290,6 +305,7 @@ export default async function LoanPage({
           {canDisburseFromHeader ? (
             <DisburseLoanButton
               loanId={loan.id}
+              payoffLoanOptions={payoffLoanOptions}
               savingsAccounts={savingsAccounts.map((account) => ({
                 id: account.id,
                 accountNumber: account.accountNumber,
@@ -306,15 +322,11 @@ export default async function LoanPage({
               settlementAccounts={settlementAccounts}
             />
           ) : null}
-          {canTransact && loan.clientId && primarySavingsAccount ? (
+          {canTransact && loan.clientId && savingsTargets.length > 0 ? (
             <LoanTopUpButton
               clientId={loan.clientId}
               currentUserName={session.user.name ?? "Signed in user"}
-              savingsTarget={{
-                id: primarySavingsAccount.id,
-                accountNumber: primarySavingsAccount.accountNumber,
-                currencyCode: loan.denominationCurrency,
-              }}
+              savingsTargets={savingsTargets}
               settlementAccounts={settlementAccounts}
             />
           ) : null}

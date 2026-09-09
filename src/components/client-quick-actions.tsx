@@ -17,18 +17,20 @@ import { Dialog, type DialogHandle } from "@/components/ui/dialog";
  * hunting for the Savings tab. All three reuse the same accounting-safe DepositWithdrawForm the
  * Savings tab already uses -- this only adds faster, purpose-built entry points into it, each
  * pre-selecting the relevant target and restricting which action(s) it offers:
- *   - Record payment: the generic entry point -- works against either a loan (repayment,
- *     defaulting to the most overdue one) or the savings account, both deposit and withdraw
- *     available depending on the chosen target. Replaces the old separate "Repay loan" button,
- *     which opened the exact same form.
- *   - Top up: locked to the savings account, deposit only.
- *   - Withdraw: locked to the savings account, withdrawal only.
+ *   - Record payment: only shown when the client has an open loan (this is a loan repayment
+ *     shortcut, not a general deposit tool -- use Top up for savings). Defaults to the most
+ *     overdue loan but still lets the operator switch between the client's savings accounts and
+ *     any other open loan, same as before.
+ *   - Top up: restricted to the client's savings accounts, deposit only. When the client holds
+ *     more than one savings account, the operator picks which one to credit.
+ *   - Withdraw: restricted to the client's savings accounts, withdrawal only, same multi-account
+ *     picker as Top up.
  */
 export function ClientQuickActions({
   clientId,
   currentUserName,
   settlementAccounts,
-  savingsTarget,
+  savingsTargets,
   loanTargets,
   canTransact,
   canRecordRepayment,
@@ -36,7 +38,7 @@ export function ClientQuickActions({
   clientId: string;
   currentUserName: string;
   settlementAccounts: readonly SettlementAccountOption[];
-  savingsTarget: SavingsDepositTarget | null;
+  savingsTargets: readonly SavingsDepositTarget[];
   loanTargets: readonly LoanDepositTarget[];
   canTransact: boolean;
   canRecordRepayment: boolean;
@@ -44,9 +46,11 @@ export function ClientQuickActions({
   const dialogRef = useRef<DialogHandle>(null);
   const [mode, setMode] = useState<"record" | "topup" | "withdraw">("record");
 
-  const canRecordPayment = (canTransact && Boolean(savingsTarget)) || (canRecordRepayment && loanTargets.length > 0);
-  const canTopUp = canTransact && Boolean(savingsTarget);
-  const canWithdraw = canTransact && Boolean(savingsTarget);
+  // Record payment is a loan-repayment shortcut -- only worth showing when the client actually
+  // has an open loan to pay against, regardless of whether they also have savings.
+  const canRecordPayment = canRecordRepayment && loanTargets.length > 0;
+  const canTopUp = canTransact && savingsTargets.length > 0;
+  const canWithdraw = canTransact && savingsTargets.length > 0;
 
   if (!canRecordPayment && !canTopUp && !canWithdraw) return null;
 
@@ -60,6 +64,7 @@ export function ClientQuickActions({
     topup: "Top up savings",
     withdraw: "Withdraw from savings",
   };
+  const defaultSavingsTarget = savingsTargets.find((account) => account.isDefault) ?? savingsTargets[0] ?? null;
 
   return (
     <div className="client-quick-actions">
@@ -71,11 +76,11 @@ export function ClientQuickActions({
           allowedActions={mode === "topup" ? ["DEPOSIT"] : mode === "withdraw" ? ["WITHDRAWAL"] : ["DEPOSIT", "WITHDRAWAL"]}
           clientId={clientId}
           currentUserName={currentUserName}
-          initialTargetKey={(mode === "topup" || mode === "withdraw") && savingsTarget ? `savings:${savingsTarget.id}` : undefined}
+          initialTargetKey={(mode === "topup" || mode === "withdraw") && defaultSavingsTarget ? `savings:${defaultSavingsTarget.id}` : undefined}
           loanTargets={mode === "record" ? loanTargets : []}
           lockTarget={mode === "topup" || mode === "withdraw"}
           onSuccess={() => dialogRef.current?.close()}
-          savingsTarget={savingsTarget}
+          savingsTargets={canTransact ? savingsTargets : []}
           settlementAccounts={settlementAccounts}
         />
       </Dialog>

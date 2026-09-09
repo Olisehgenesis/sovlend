@@ -21,6 +21,10 @@ export type SavingsDepositTarget = Readonly<{
   id: string;
   accountNumber: string;
   currencyCode: string;
+  // A client can hold more than one savings account (e.g. personal + group-linked accounts) --
+  // this flags which one is the designated default so forms can pre-select it without forcing
+  // an operator to hunt for the right account when there's more than one option.
+  isDefault: boolean;
 }>;
 
 export type LoanDepositTarget = Readonly<{
@@ -48,7 +52,7 @@ export function DepositWithdrawForm({
   clientId,
   currentUserName,
   settlementAccounts,
-  savingsTarget,
+  savingsTargets,
   loanTargets,
   initialTargetKey,
   lockTarget = false,
@@ -58,13 +62,18 @@ export function DepositWithdrawForm({
   clientId: string;
   currentUserName: string;
   settlementAccounts: readonly SettlementAccountOption[];
-  savingsTarget: SavingsDepositTarget | null;
+  // A client can hold several active savings accounts at once (e.g. personal + group-linked) --
+  // every one of them is offered here so an operator can pick the right account instead of
+  // always landing on whichever the query happened to return first.
+  savingsTargets: readonly SavingsDepositTarget[];
   loanTargets: readonly LoanDepositTarget[];
   // Pre-selects a target (e.g. "loan:<id>" or "savings:<id>") when this form is opened from a
   // purpose-built quick action (Top up / Withdraw) instead of the generic entry point.
   initialTargetKey?: string;
-  // Hides the target selector and pins it to initialTargetKey -- used by the Top up and Withdraw
-  // quick actions, which are only ever meant to act on the client's savings account.
+  // Restricts the target selector to savings accounts only -- used by the Top up and Withdraw
+  // quick actions, which are only ever meant to act on one of the client's savings accounts (not
+  // a loan). Still lets the operator choose between multiple savings accounts when there is more
+  // than one; only collapses to a static read-only field when there's exactly one option.
   lockTarget?: boolean;
   // Restricts which of Deposit/Withdraw are offered -- Top up only shows Deposit, Withdraw only
   // shows Withdraw, and the generic Record payment keeps both (default).
@@ -77,15 +86,15 @@ export function DepositWithdrawForm({
   const [pending, setPending] = useState<"DEPOSIT" | "WITHDRAWAL" | null>(null);
   const targetOptions = useMemo(() => {
     const options: Array<{ key: string; id: string; kind: "savings" | "loan"; accountNumber: string; currencyCode: string; label: string; hint: string }> = [];
-    if (savingsTarget) {
+    for (const savingsTarget of savingsTargets) {
       options.push({
         key: `savings:${savingsTarget.id}`,
         id: savingsTarget.id,
         kind: "savings",
         accountNumber: savingsTarget.accountNumber,
         currencyCode: savingsTarget.currencyCode,
-        label: `Savings account · ${savingsTarget.accountNumber}`,
-        hint: "Posts a normal deposit or withdrawal on the active savings account.",
+        label: `Savings account · ${savingsTarget.accountNumber}${savingsTarget.isDefault ? " · default" : ""}`,
+        hint: "Posts a normal deposit or withdrawal on this savings account.",
       });
     }
     for (const loan of loanTargets) {
@@ -102,25 +111,36 @@ export function DepositWithdrawForm({
       });
     }
     return options;
-  }, [loanTargets, savingsTarget]);
+  }, [loanTargets, savingsTargets]);
+  // When locked to savings-only (Top up / Withdraw), the selectable list excludes loans entirely
+  // -- otherwise every option (savings accounts + open loans) is selectable, as in Record payment.
+  const selectableOptions = useMemo(
+    () => (lockTarget ? targetOptions.filter((option) => option.kind === "savings") : targetOptions),
+    [lockTarget, targetOptions],
+  );
+  const defaultSavingsTarget = useMemo(() => savingsTargets.find((account) => account.isDefault) ?? savingsTargets[0] ?? null, [savingsTargets]);
   const defaultTargetKey = useMemo(() => {
-    if (initialTargetKey && targetOptions.some((option) => option.key === initialTargetKey)) return initialTargetKey;
+    if (initialTargetKey && selectableOptions.some((option) => option.key === initialTargetKey)) return initialTargetKey;
+    if (lockTarget) return defaultSavingsTarget ? `savings:${defaultSavingsTarget.id}` : "";
     const overdueLoan = loanTargets.find((loan) => BigInt(loan.overdueMinor) > 0n);
     if (overdueLoan) return `loan:${overdueLoan.id}`;
-    if (savingsTarget) return `savings:${savingsTarget.id}`;
+    if (defaultSavingsTarget) return `savings:${defaultSavingsTarget.id}`;
     return loanTargets[0] ? `loan:${loanTargets[0].id}` : "";
-  }, [initialTargetKey, loanTargets, savingsTarget, targetOptions]);
+  }, [defaultSavingsTarget, initialTargetKey, lockTarget, loanTargets, selectableOptions]);
   const [targetKey, setTargetKey] = useState(defaultTargetKey);
-  const selectedTarget = targetOptions.find((option) => option.key === targetKey) ?? targetOptions[0] ?? null;
-  const compatibleSettlementAccounts = useMemo(
-    () => settlementAccounts.filter((account) => !selectedTarget || account.currencyCode === selectedTarget.currencyCode),
-    [selectedTarget, settlementAccounts],
-  );
+  const selectedTarget = selectableOptions.find((option) => option.key === targetKey) ?? selectableOptions[0] ?? null;
+  const compatibleSettlementAccounts = useMemo(() => {
+    const compatible = settlementAccounts.filter((account) => !selectedTarget || account.currencyCode === selectedTarget.currencyCode);
+    // Cash is the most common payment method in practice, so it's pre-selected over whatever
+    // bank/mobile-money account happens to be listed first (still changeable in the dropdown).
+    const cashFirst = compatible.find((account) => account.type === "CASH");
+    return cashFirst ? [cashFirst, ...compatible.filter((account) => account.id !== cashFirst.id)] : compatible;
+  }, [selectedTarget, settlementAccounts]);
   const [settlementAccountId, setSettlementAccountId] = useState(compatibleSettlementAccounts[0]?.id ?? "");
 
   useEffect(() => {
-    if (!targetOptions.some((option) => option.key === targetKey)) setTargetKey(defaultTargetKey);
-  }, [defaultTargetKey, targetKey, targetOptions]);
+    if (!selectableOptions.some((option) => option.key === targetKey)) setTargetKey(defaultTargetKey);
+  }, [defaultTargetKey, selectableOptions, targetKey]);
 
   useEffect(() => {
     if (!compatibleSettlementAccounts.some((account) => account.id === settlementAccountId)) {
@@ -198,7 +218,7 @@ export function DepositWithdrawForm({
         <label>Payment method<select disabled={compatibleSettlementAccounts.length === 0} onChange={(event) => setSettlementAccountId(event.target.value)} value={settlementAccountId}><option value="" disabled>Select settlement account</option>{compatibleSettlementAccounts.map((account) => <option key={account.id} value={account.id}>{settlementLabel(account)}</option>)}</select></label>
       </div>
       <div className="form-row">
-        {lockTarget ? <label>Account<input disabled readOnly value={selectedTarget?.label ?? ""} /></label> : <label>Deposit target<select onChange={(event) => setTargetKey(event.target.value)} value={selectedTarget?.key ?? ""}>{targetOptions.map((option) => <option key={option.key} value={option.key}>{option.label}</option>)}</select></label>}
+        {selectableOptions.length > 1 ? <label>{lockTarget ? "Savings account" : "Deposit target"}<select onChange={(event) => setTargetKey(event.target.value)} value={selectedTarget?.key ?? ""}>{selectableOptions.map((option) => <option key={option.key} value={option.key}>{option.label}</option>)}</select></label> : <label>Account<input disabled readOnly value={selectedTarget?.label ?? ""} /></label>}
         <label>Recorded by<input disabled readOnly value={currentUserName} /></label>
       </div>
       <label>Reason / note<input maxLength={200} onChange={(event) => setReason(event.target.value)} placeholder="Member savings top-up" value={reason} /></label>

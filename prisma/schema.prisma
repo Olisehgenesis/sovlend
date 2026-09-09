@@ -814,6 +814,12 @@ model Loan {
   penaltiesWrittenOffMinor BigInt               @default(0)
   writtenOffOn             DateTime?            @db.Date
   writtenOffByName         String?
+  // Set at disbursement time when the operator checked "pay off previous loan" (see
+  // disburse-loan.ts): identifies the client's earlier loan this disbursement paid down before
+  // handing the remainder to the client. Informational/audit only -- the actual money movement
+  // is a separate transferSavingsToLoan() repayment transaction against topUpOfLoan, not
+  // anything this field drives directly.
+  topUpOfLoanId            String?              @db.Uuid
   application              LoanApplication      @relation(fields: [applicationId], references: [id])
   client                   Client?              @relation(fields: [clientId], references: [id])
   group                    Group?               @relation(fields: [groupId], references: [id])
@@ -821,6 +827,8 @@ model Loan {
   office                   Office               @relation(fields: [officeId], references: [id])
   fund                     Fund?                @relation(fields: [fundId], references: [id])
   loanOfficer              User?                @relation("AssignedLoanOfficer", fields: [loanOfficerId], references: [id])
+  topUpOfLoan              Loan?                @relation("LoanTopUpChain", fields: [topUpOfLoanId], references: [id])
+  topUpLoans               Loan[]               @relation("LoanTopUpChain")
   installments             LoanInstallment[]
   transactions             LoanTransaction[]
   charges                  Charge[]
@@ -836,6 +844,7 @@ model Loan {
   @@index([officeId, status])
   @@index([clientId, status])
   @@index([groupId, status])
+  @@index([topUpOfLoanId])
   @@index([fundId, status])
 }
 
