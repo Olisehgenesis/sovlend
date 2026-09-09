@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
 
+import { BrandActionButton } from "@/components/ui/brand-action-button";
+
 export function CreateGroupForm({ offices, staff }: { offices: Array<{ id: string; name: string }>; staff: Array<{ id: string; name: string }> }) {
   const router = useRouter();
   const [pending, setPending] = useState(false);
@@ -30,5 +32,5 @@ export function CreateGroupForm({ offices, staff }: { offices: Array<{ id: strin
     router.refresh();
   }
 
-  return <form action={createGroup} className="entity-form"><fieldset><legend>Office and identity</legend><label>Office<select name="officeId" required>{offices.map((office) => <option key={office.id} value={office.id}>{office.name}</option>)}</select></label><div className="form-row"><label>Name<input name="name" required /></label><label>External ID<input name="externalId" /></label></div><label>Staff<select name="staffId" defaultValue=""><option value="">Unassigned</option>{staff.map((member) => <option key={member.id} value={member.id}>{member.name}</option>)}</select></label><div className="check-row"><label><input name="active" type="checkbox" /> Activate immediately</label></div></fieldset><div className="form-actions"><button className="invest-button" disabled={pending}>{pending ? <LoaderCircle className="spin" size={18} /> : <UsersRound size={18} />} Create group</button></div></form>;
+  return <form action={createGroup} className="entity-form"><fieldset><legend>Office and identity</legend><label>Office<select name="officeId" required>{offices.map((office) => <option key={office.id} value={office.id}>{office.name}</option>)}</select></label><div className="form-row"><label>Name<input name="name" required /></label><label>External ID<input name="externalId" /></label></div><label>Staff<select name="staffId" defaultValue=""><option value="">Unassigned</option>{staff.map((member) => <option key={member.id} value={member.id}>{member.name}</option>)}</select></label><div className="check-row"><label><input name="active" type="checkbox" /> Activate immediately</label></div></fieldset><div className="form-actions"><BrandActionButton disabled={pending} icon={pending ? <LoaderCircle className="spin" size={18} /> : <UsersRound size={18} />}>Create group</BrandActionButton></div></form>;
 }

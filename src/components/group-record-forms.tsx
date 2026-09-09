@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
 
+import { BrandActionButton } from "@/components/ui/brand-action-button";
+
 export function AddGroupMemberForm({ groupId }: { groupId: string }) {
   const router = useRouter();
   const [pending, setPending] = useState(false);
@@ -19,7 +21,7 @@ export function AddGroupMemberForm({ groupId }: { groupId: string }) {
     router.refresh();
   }
 
-  return <form action={addMember} className="entity-form compact-mapping"><fieldset><legend>Add member</legend><label>Client account number<input name="clientAccountNumber" placeholder="20260902-000001" required /></label></fieldset><div className="form-actions"><button className="invest-button" disabled={pending}>{pending ? <LoaderCircle className="spin" size={16} /> : <UserPlus size={16} />} Add member</button></div></form>;
+  return <form action={addMember} className="entity-form compact-mapping"><fieldset><legend>Add member</legend><label>Client account number<input name="clientAccountNumber" placeholder="20260902-000001" required /></label></fieldset><div className="form-actions"><BrandActionButton disabled={pending} icon={pending ? <LoaderCircle className="spin" size={16} /> : <UserPlus size={16} />}>Add member</BrandActionButton></div></form>;
 }
 
 export function AddGroupNoteForm({ groupId }: { groupId: string }) {
@@ -36,5 +38,5 @@ export function AddGroupNoteForm({ groupId }: { groupId: string }) {
     router.refresh();
   }
 
-  return <form action={addNote} className="entity-form compact-mapping"><fieldset><legend>Add note</legend><label>Note<textarea name="body" required rows={3} /></label></fieldset><div className="form-actions"><button className="invest-button" disabled={pending}>{pending ? <LoaderCircle className="spin" size={16} /> : <Plus size={16} />} Add note</button></div></form>;
+  return <form action={addNote} className="entity-form compact-mapping"><fieldset><legend>Add note</legend><label>Note<textarea name="body" required rows={3} /></label></fieldset><div className="form-actions"><BrandActionButton disabled={pending} icon={pending ? <LoaderCircle className="spin" size={16} /> : <Plus size={16} />}>Add note</BrandActionButton></div></form>;
 }
