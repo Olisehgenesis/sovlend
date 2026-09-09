@@ -28,14 +28,6 @@ type ReportSection = {
   totalMinor: bigint;
 };
 
-type LineWithAccount = {
-  journalId: string;
-  accountId: string;
-  direction: EntryDirection;
-  amountMinor: bigint;
-  account: { type: AccountType };
-};
-
 export type BalanceSheetReport = {
   asOfDate: Date;
   officeId: string | null;
@@ -112,6 +104,38 @@ export type GeneralLedgerReport = {
   closingBalanceSide: BalanceSide;
 };
 
+export type ChartOfAccountsRow = ReportAccount & {
+  debitTotalMinor: bigint;
+  creditTotalMinor: bigint;
+  balanceMinor: bigint;
+  balanceSide: BalanceSide;
+};
+
+export type ChartOfAccountsSection = {
+  label: string;
+  type: AccountType;
+  rows: ChartOfAccountsRow[];
+  totalMinor: bigint;
+  nonZeroCount: number;
+};
+
+export type ChartOfAccountsReport = {
+  balanceDate: Date;
+  activityStartDate: Date;
+  activityEndDate: Date;
+  officeId: string | null;
+  accountType: AccountType | null;
+  accountCount: number;
+  sections: ChartOfAccountsSection[];
+  selectedAccountRow: ChartOfAccountsRow | null;
+  totalAssetsMinor: bigint;
+  totalLiabilitiesMinor: bigint;
+  totalEquityMinor: bigint;
+  totalRevenueMinor: bigint;
+  totalExpensesMinor: bigint;
+  generalLedger: GeneralLedgerReport;
+};
+
 export type JournalReconciliationLine = ReportAccount & {
   lineId: string;
   direction: EntryDirection;
@@ -148,6 +172,16 @@ export type JournalReconciliationReport = {
   differenceMinor: bigint;
   journals: JournalReconciliationJournal[];
 };
+
+const OPENING_BALANCE_START_DATE = new Date("1970-01-01T00:00:00.000Z");
+
+export const accountingAccountTypeSections: ReadonlyArray<{ label: string; type: AccountType }> = [
+  { label: "Assets", type: "ASSET" },
+  { label: "Liabilities", type: "LIABILITY" },
+  { label: "Equity", type: "EQUITY" },
+  { label: "Revenue", type: "REVENUE" },
+  { label: "Expenses", type: "EXPENSE" },
+];
 
 export async function listAccountingReportOffices(db: ReportPrisma, scope: UserDataScope): Promise<ReportOffice[]> {
   return db.office.findMany({
@@ -215,6 +249,14 @@ export function resolveOfficeFilter(offices: readonly ReportOffice[], requestedO
 export function resolveAccountFilter(accounts: readonly ReportAccount[], requestedAccountId: string | null) {
   if (!requestedAccountId) return null;
   return accounts.some((account) => account.id === requestedAccountId) ? requestedAccountId : null;
+}
+
+export function resolveAccountTypeFilter(requestedAccountType: string | null | undefined): AccountType | null {
+  if (!requestedAccountType) return null;
+  const normalized = requestedAccountType.toUpperCase();
+  return accountingAccountTypeSections.some((section) => section.type === normalized)
+    ? normalized as AccountType
+    : null;
 }
 
 export function accountTypeLabel(type: AccountType) {
@@ -540,6 +582,83 @@ export async function getGeneralLedgerReport(
   };
 }
 
+export async function getChartOfAccountsReport(
+  db: ReportPrisma,
+  scope: UserDataScope,
+  filters: {
+    balanceDate: Date;
+    activityStartDate: Date;
+    activityEndDate: Date;
+    officeId: string | null;
+    accountType: AccountType | null;
+    accountId: string | null;
+  },
+): Promise<ChartOfAccountsReport> {
+  const [accounts, trialBalance] = await Promise.all([
+    listAccountingReportAccounts(db),
+    getTrialBalanceReport(db, scope, {
+      startDate: OPENING_BALANCE_START_DATE,
+      endDate: filters.balanceDate,
+      officeId: filters.officeId,
+    }),
+  ]);
+
+  const balancesByAccountId = new Map(trialBalance.rows.map((row) => [row.id, row]));
+  const rows = accounts.map((account) => {
+    const totals = balancesByAccountId.get(account.id);
+    return {
+      ...account,
+      debitTotalMinor: totals?.debitTotalMinor ?? 0n,
+      creditTotalMinor: totals?.creditTotalMinor ?? 0n,
+      balanceMinor: totals?.balanceMinor ?? 0n,
+      balanceSide: totals?.balanceSide ?? "ZERO",
+    };
+  });
+
+  const sections = accountingAccountTypeSections
+    .filter((section) => !filters.accountType || section.type === filters.accountType)
+    .map(({ label, type }) => {
+      const typedRows = rows.filter((row) => row.type === type);
+      return {
+        label,
+        type,
+        rows: typedRows,
+        totalMinor: typedRows.reduce((sum, row) => sum + row.balanceMinor, 0n),
+        nonZeroCount: typedRows.filter((row) => row.balanceMinor !== 0n).length,
+      };
+    });
+
+  const selectableRows = rows.filter((row) => !filters.accountType || row.type === filters.accountType);
+  const defaultRow = selectableRows.find((row) => row.balanceMinor !== 0n) ?? selectableRows[0] ?? null;
+  const selectedAccountId = resolveAccountFilter(selectableRows, filters.accountId) ?? defaultRow?.id ?? null;
+  const selectedAccountRow = selectedAccountId ? rows.find((row) => row.id === selectedAccountId) ?? null : null;
+  const generalLedger = selectedAccountId
+    ? await getGeneralLedgerReport(db, scope, {
+        startDate: filters.activityStartDate,
+        endDate: filters.activityEndDate,
+        officeId: filters.officeId,
+        accountId: selectedAccountId,
+      })
+    : emptyGeneralLedgerReport(filters.activityStartDate, filters.activityEndDate, filters.officeId);
+
+  return {
+    balanceDate: filters.balanceDate,
+    activityStartDate: filters.activityStartDate,
+    activityEndDate: filters.activityEndDate,
+    officeId: filters.officeId,
+    accountType: filters.accountType,
+    accountCount: rows.length,
+    sections,
+    selectedAccountRow,
+    totalAssetsMinor: sumBalancesByType(rows, "ASSET"),
+    totalLiabilitiesMinor: sumBalancesByType(rows, "LIABILITY"),
+    totalEquityMinor: sumBalancesByType(rows, "EQUITY"),
+    totalRevenueMinor: sumBalancesByType(rows, "REVENUE"),
+    totalExpensesMinor: sumBalancesByType(rows, "EXPENSE"),
+    generalLedger,
+  };
+}
+
 export async function getJournalReconciliationReport(
   db: ReportPrisma,
   scope: UserDataScope,
@@ -830,6 +949,80 @@ export function serializeGeneralLedgerReport(report: GeneralLedgerReport) {
   };
 }
 
+export function chartOfAccountsReportCsv(report: ChartOfAccountsReport) {
+  return rowsToCsv(
+    report.sections.flatMap((section) =>
+      section.rows.map((row) => ({
+        Section: section.label,
+        "Account Code": row.code,
+        "Account Name": row.name,
+        "Account Type": row.type,
+        "Current Balance": row.balanceMinor.toString(),
+        "Balance Side": row.balanceSide,
+        "Lifetime Debits": row.debitTotalMinor.toString(),
+        "Lifetime Credits": row.creditTotalMinor.toString(),
+      })),
+    ),
+    [
+      "Section",
+      "Account Code",
+      "Account Name",
+      "Account Type",
+      "Current Balance",
+      "Balance Side",
+      "Lifetime Debits",
+      "Lifetime Credits",
+    ],
+  );
+}
+
+export function serializeChartOfAccountsReport(report: ChartOfAccountsReport) {
+  return {
+    balanceDate: dateToString(report.balanceDate),
+    activityStartDate: dateToString(report.activityStartDate),
+    activityEndDate: dateToString(report.activityEndDate),
+    officeId: report.officeId,
+    accountType: report.accountType,
+    accountCount: report.accountCount,
+    totalAssetsMinor: minorToString(report.totalAssetsMinor),
+    totalLiabilitiesMinor: minorToString(report.totalLiabilitiesMinor),
+    totalEquityMinor: minorToString(report.totalEquityMinor),
+    totalRevenueMinor: minorToString(report.totalRevenueMinor),
+    totalExpensesMinor: minorToString(report.totalExpensesMinor),
+    sections: report.sections.map((section) => ({
+      label: section.label,
+      type: section.type,
+      totalMinor: minorToString(section.totalMinor),
+      nonZeroCount: section.nonZeroCount,
+      rows: section.rows.map((row) => ({
+        id: row.id,
+        code: row.code,
+        name: row.name,
+        type: row.type,
+        currencyCode: row.currencyCode,
+        debitTotalMinor: minorToString(row.debitTotalMinor),
+        creditTotalMinor: minorToString(row.creditTotalMinor),
+        balanceMinor: minorToString(row.balanceMinor),
+        balanceSide: row.balanceSide,
+      })),
+    })),
+    selectedAccountRow: report.selectedAccountRow
+      ? {
+          id: report.selectedAccountRow.id,
+          code: report.selectedAccountRow.code,
+          name: report.selectedAccountRow.name,
+          type: report.selectedAccountRow.type,
+          currencyCode: report.selectedAccountRow.currencyCode,
+          debitTotalMinor: minorToString(report.selectedAccountRow.debitTotalMinor),
+          creditTotalMinor: minorToString(report.selectedAccountRow.creditTotalMinor),
+          balanceMinor: minorToString(report.selectedAccountRow.balanceMinor),
+          balanceSide: report.selectedAccountRow.balanceSide,
+        }
+      : null,
+    generalLedger: serializeGeneralLedgerReport(report.generalLedger),
+  };
+}
+
 export function journalReconciliationReportCsv(report: JournalReconciliationReport) {
   return rowsToCsv(
     report.journals.flatMap((journal) =>
@@ -942,6 +1135,27 @@ function balanceSideForAccount(type: AccountType, balanceMinor: bigint): Balance
   const positiveMeansDebit = type === "ASSET" || type === "EXPENSE";
   if (balanceMinor > 0n) return positiveMeansDebit ? "DEBIT" : "CREDIT";
   return positiveMeansDebit ? "CREDIT" : "DEBIT";
+}
+
+function sumBalancesByType(rows: readonly ChartOfAccountsRow[], type: AccountType) {
+  return rows.filter((row) => row.type === type).reduce((sum, row) => sum + row.balanceMinor, 0n);
+}
+
+function emptyGeneralLedgerReport(startDate: Date, endDate: Date, officeId: string | null): GeneralLedgerReport {
+  return {
+    startDate,
+    endDate,
+    officeId,
+    account: null,
+    journalCount: 0,
+    lineCount: 0,
+    hasActivity: false,
+    entries: [],
+    debitTotalMinor: 0n,
+    creditTotalMinor: 0n,
+    closingBalanceMinor: 0n,
+    closingBalanceSide: "ZERO",
+  };
 }
 
 function serializeSection(section: ReportSection) {
