@@ -222,6 +222,9 @@ export function AppHeader({
               <ChevronDown size={13} />
             </summary>
             <div className="header-dropdown">
+              <Link href="/reports/accounting/chart-of-accounts" onClick={closeMenus}>
+                Chart of accounts
+              </Link>
               <Link href="/backoffice/accounting" onClick={closeMenus}>
                 Accounting mappings
               </Link>
