@@ -8,6 +8,7 @@ import { formatMinor } from "@/modules/money/domain/format-minor";
 import {
   formatUgDate,
   formatUgDateTime,
+  transactionTypeLabel,
   getLoanBorrowerAccount,
   getLoanBorrowerLabel,
   getLoanRouteContext,
@@ -69,13 +70,13 @@ export default async function LoanTransactionPage({
           { label: "Loans", href: "/loans" },
           { label: loan.accountNumber, href: `/loans/${loan.id}` },
           { label: "Transactions", href: `/loans/${loan.id}` },
-          { label: transaction.transactionType.replaceAll("_", " ") },
+          { label: transactionTypeLabel(transaction.transactionType) },
         ]}
       />
       <header className="directory-header">
         <div>
           <p className="eyebrow">Loan transaction</p>
-          <h1>{transaction.transactionType.replaceAll("_", " ")}</h1>
+          <h1>{transactionTypeLabel(transaction.transactionType)}</h1>
           <p>
             {getLoanBorrowerLabel(loan)} · {formatUgDate(transaction.businessDate)}
           </p>
@@ -167,7 +168,7 @@ export default async function LoanTransactionPage({
             <dd>
               {transaction.reverses ? (
                 <Link className="green-link" href={`/loans/${loan.id}/transactions/${transaction.reverses.id}`}>
-                  {transaction.reverses.transactionType.replaceAll("_", " ")} · {formatUgDate(transaction.reverses.businessDate)}
+                  {transactionTypeLabel(transaction.reverses.transactionType)} · {formatUgDate(transaction.reverses.businessDate)}
                 </Link>
               ) : (
                 "—"
@@ -179,7 +180,7 @@ export default async function LoanTransactionPage({
             <dd>
               {transaction.reversedBy ? (
                 <Link className="green-link" href={`/loans/${loan.id}/transactions/${transaction.reversedBy.id}`}>
-                  {transaction.reversedBy.transactionType.replaceAll("_", " ")} · {formatUgDate(transaction.reversedBy.businessDate)}
+                  {transactionTypeLabel(transaction.reversedBy.transactionType)} · {formatUgDate(transaction.reversedBy.businessDate)}
                 </Link>
               ) : (
                 "Not reversed"

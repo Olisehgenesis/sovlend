@@ -7,7 +7,7 @@ import { toast } from "sonner";
 
 import { formatMinor } from "@/modules/money/domain/format-minor";
 
-type SettlementAccountOption = Readonly<{
+export type SettlementAccountOption = Readonly<{
   id: string;
   name: string;
   type: string;
@@ -16,13 +16,13 @@ type SettlementAccountOption = Readonly<{
   currencyCode: string;
 }>;
 
-type SavingsDepositTarget = Readonly<{
+export type SavingsDepositTarget = Readonly<{
   id: string;
   accountNumber: string;
   currencyCode: string;
 }>;
 
-type LoanDepositTarget = Readonly<{
+export type LoanDepositTarget = Readonly<{
   id: string;
   accountNumber: string;
   productName: string;
@@ -49,12 +49,18 @@ export function DepositWithdrawForm({
   settlementAccounts,
   savingsTarget,
   loanTargets,
+  initialTargetKey,
+  onSuccess,
 }: {
   clientId: string;
   currentUserName: string;
   settlementAccounts: readonly SettlementAccountOption[];
   savingsTarget: SavingsDepositTarget | null;
   loanTargets: readonly LoanDepositTarget[];
+  // Pre-selects a target (e.g. "loan:<id>" or "savings:<id>") when this form is opened from a
+  // purpose-built quick action (Repay loan / Top up) instead of the generic entry point.
+  initialTargetKey?: string;
+  onSuccess?: () => void;
 }) {
   const router = useRouter();
   const [amount, setAmount] = useState("");
@@ -89,11 +95,12 @@ export function DepositWithdrawForm({
     return options;
   }, [loanTargets, savingsTarget]);
   const defaultTargetKey = useMemo(() => {
+    if (initialTargetKey && targetOptions.some((option) => option.key === initialTargetKey)) return initialTargetKey;
     const overdueLoan = loanTargets.find((loan) => BigInt(loan.overdueMinor) > 0n);
     if (overdueLoan) return `loan:${overdueLoan.id}`;
     if (savingsTarget) return `savings:${savingsTarget.id}`;
     return loanTargets[0] ? `loan:${loanTargets[0].id}` : "";
-  }, [loanTargets, savingsTarget]);
+  }, [initialTargetKey, loanTargets, savingsTarget, targetOptions]);
   const [targetKey, setTargetKey] = useState(defaultTargetKey);
   const selectedTarget = targetOptions.find((option) => option.key === targetKey) ?? targetOptions[0] ?? null;
   const compatibleSettlementAccounts = useMemo(
@@ -167,6 +174,7 @@ export function DepositWithdrawForm({
       setAmount("");
       setReason("");
       router.refresh();
+      onSuccess?.();
     } catch {
       toast.error(selectedTarget?.kind === "loan" ? "Could not record this loan repayment" : type === "DEPOSIT" ? "Could not record this savings deposit" : "Could not record this savings withdrawal");
     } finally {
@@ -190,6 +198,92 @@ export function DepositWithdrawForm({
       <div className="account-card-actions">
         <button className="invest-button" disabled={pending !== null || compatibleSettlementAccounts.length === 0 || !selectedTarget} onClick={() => transact("DEPOSIT")} type="button">{pending === "DEPOSIT" ? <LoaderCircle className="spin" size={15} /> : <Plus size={15} />} {selectedTarget?.kind === "loan" ? "Apply to loan" : "Deposit"}</button>
         <button className="secondary-action" disabled={pending !== null || compatibleSettlementAccounts.length === 0 || selectedTarget?.kind !== "savings"} onClick={() => transact("WITHDRAWAL")} type="button">{pending === "WITHDRAWAL" ? <LoaderCircle className="spin" size={15} /> : <Minus size={15} />} Withdraw</button>
+      </div>
+    </div>
+  );
+}
+
+type TransferSourceAccount = Readonly<{
+  id: string;
+  accountNumber: string;
+  currencyCode: string;
+  balanceMinor: string;
+}>;
+
+/**
+ * Internal transfer: moves money from the client's own savings balance straight onto a loan,
+ * with no settlement account and no cash leaving the institution -- see
+ * transferSavingsToLoan() in post-repayment.ts for the accounting treatment. Deliberately kept
+ * separate from DepositWithdrawForm since it posts to a dedicated endpoint and has no payment
+ * method to choose.
+ */
+export function TransferToLoanForm({
+  savingsAccounts,
+  loanTargets,
+  onSuccess,
+}: {
+  savingsAccounts: readonly TransferSourceAccount[];
+  loanTargets: readonly LoanDepositTarget[];
+  onSuccess?: () => void;
+}) {
+  const router = useRouter();
+  const [amount, setAmount] = useState("");
+  const [reason, setReason] = useState("");
+  const [pending, setPending] = useState(false);
+  const [savingsAccountId, setSavingsAccountId] = useState(savingsAccounts[0]?.id ?? "");
+  const defaultLoanId = useMemo(() => {
+    const overdueLoan = loanTargets.find((loan) => BigInt(loan.overdueMinor) > 0n);
+    return overdueLoan?.id ?? loanTargets[0]?.id ?? "";
+  }, [loanTargets]);
+  const [loanId, setLoanId] = useState(defaultLoanId);
+  const source = savingsAccounts.find((account) => account.id === savingsAccountId) ?? null;
+  const destination = loanTargets.find((loan) => loan.id === loanId) ?? null;
+
+  async function transfer() {
+    const amountMinor = parseAmountToMinor(amount);
+    if (!amountMinor || BigInt(amountMinor) <= 0n) { toast.error("Enter a valid amount"); return; }
+    if (!source) { toast.error("Select a savings account to transfer from"); return; }
+    if (!destination) { toast.error("Select a loan to pay down"); return; }
+    if (BigInt(amountMinor) > BigInt(source.balanceMinor)) { toast.error("Amount exceeds the available savings balance"); return; }
+    setPending(true);
+    try {
+      const response = await fetch(`/api/loans/${destination.id}/transfer-from-savings`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          savingsAccountId: source.id,
+          amountMinor,
+          businessDate: new Date().toISOString().slice(0, 10),
+          externalReference: reason.trim() || undefined,
+          idempotencyKey: crypto.randomUUID(),
+        }),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) { toast.error(result.error ?? "Could not transfer savings to this loan"); return; }
+      toast.success(`Transferred to loan ${destination.accountNumber} from savings ${source.accountNumber}`);
+      setAmount("");
+      setReason("");
+      router.refresh();
+      onSuccess?.();
+    } catch {
+      toast.error("Could not transfer savings to this loan");
+    } finally {
+      setPending(false);
+    }
+  }
+
+  return (
+    <div className="account-card-form">
+      <div className="form-row">
+        <label>From savings<select onChange={(event) => setSavingsAccountId(event.target.value)} value={savingsAccountId}>{savingsAccounts.map((account) => <option key={account.id} value={account.id}>{`${account.accountNumber} \u00b7 ${formatMinor(BigInt(account.balanceMinor), account.currencyCode)}`}</option>)}</select></label>
+        <label>To loan<select onChange={(event) => setLoanId(event.target.value)} value={loanId}>{loanTargets.map((loan) => <option key={loan.id} value={loan.id}>{`${loan.accountNumber} \u00b7 ${loan.productName}`}</option>)}</select></label>
+      </div>
+      <label>Amount<input inputMode="decimal" min={1} onChange={(event) => setAmount(event.target.value)} placeholder="0.00" step="0.01" type="number" value={amount} /></label>
+      <label>Reason / note<input maxLength={200} onChange={(event) => setReason(event.target.value)} placeholder="Clearing overdue installment from savings" value={reason} /></label>
+      {source ? <p className="field-help">Available balance: {formatMinor(BigInt(source.balanceMinor), source.currencyCode)}</p> : null}
+      {destination ? <p className="field-help">{BigInt(destination.overdueMinor) > 0n ? `${formatMinor(BigInt(destination.overdueMinor), destination.currencyCode)} overdue \u00b7 ${formatMinor(BigInt(destination.outstandingMinor), destination.currencyCode)} outstanding` : `${formatMinor(BigInt(destination.outstandingMinor), destination.currencyCode)} outstanding`}</p> : null}
+      <div className="account-card-actions">
+        <button className="invest-button" disabled={pending || !source || !destination} onClick={transfer} type="button">{pending ? <LoaderCircle className="spin" size={15} /> : <Plus size={15} />} Transfer to loan</button>
       </div>
     </div>
   );

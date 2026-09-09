@@ -2,7 +2,10 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { Breadcrumbs } from "@/components/breadcrumbs";
+import { LoanChargeActions } from "@/components/loan-charge-actions";
 import { prisma } from "@/lib/prisma";
+import { AuthorizationService } from "@/modules/identity/application/authorization-service";
+import { permissions } from "@/modules/identity/domain/permissions";
 import { formatMinor } from "@/modules/money/domain/format-minor";
 
 import {
@@ -19,7 +22,7 @@ export default async function LoanChargePage({
   params: Promise<{ id: string; chargeId: string }>;
 }) {
   const { id, chargeId } = await params;
-  const { loan } = await getLoanRouteContext(id);
+  const { session, scope, loan } = await getLoanRouteContext(id);
 
   const charge = await prisma.charge.findFirst({
     where: { id: chargeId, loanId: loan.id },
@@ -31,6 +34,13 @@ export default async function LoanChargePage({
   });
 
   if (!charge) notFound();
+
+  const canManageCharges = await new AuthorizationService(prisma).isAllowed({
+    actorUserId: session.user.id,
+    permission: permissions.clientManage,
+    organizationId: scope.organizationId,
+    officeId: loan.officeId,
+  });
 
   return (
     <main className="directory-page">
@@ -51,6 +61,7 @@ export default async function LoanChargePage({
           </p>
         </div>
         <div className="header-actions">
+          {canManageCharges ? <LoanChargeActions chargeId={charge.id} loanId={loan.id} status={charge.status} /> : null}
           <Link className="secondary-action" href={`/loans/${loan.id}?tab=charges`}>
             Back to charges
           </Link>

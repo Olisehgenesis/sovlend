@@ -12,6 +12,7 @@ import {
   getLoanBorrowerLabel,
   getLoanRouteContext,
   isRecord,
+  transactionTypeLabel,
 } from "../../_lib/loan-records";
 
 const actionLabels: Record<string, string> = {
@@ -186,7 +187,7 @@ export default async function LoanServiceRequestPage({
                   className="green-link"
                   href={`/loans/${loan.id}/transactions/${request.resultTransaction.id}`}
                 >
-                  {request.resultTransaction.transactionType.replaceAll("_", " ")} · {formatMinor(request.resultTransaction.denominationAmountMinor, loan.denominationCurrency)}
+                  {transactionTypeLabel(request.resultTransaction.transactionType)} · {formatMinor(request.resultTransaction.denominationAmountMinor, loan.denominationCurrency)}
                 </Link>
               ) : (
                 "No transaction posted"
@@ -201,7 +202,7 @@ export default async function LoanServiceRequestPage({
                   className="green-link"
                   href={`/loans/${loan.id}/transactions/${targetTransaction.id}`}
                 >
-                  {targetTransaction.transactionType.replaceAll("_", " ")} · {formatMinor(targetTransaction.denominationAmountMinor, loan.denominationCurrency)}
+                  {transactionTypeLabel(targetTransaction.transactionType)} · {formatMinor(targetTransaction.denominationAmountMinor, loan.denominationCurrency)}
                 </Link>
               ) : (
                 "—"
