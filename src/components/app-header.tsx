@@ -12,12 +12,14 @@ export type ReportNavSection = { id: string; title: string; reports: { href: str
 export function AppHeader({
   admin = false,
   canManageProducts = false,
+  canPostLedger = false,
   workspaceName,
   officeName,
   reportSections = [],
 }: {
   admin?: boolean;
   canManageProducts?: boolean;
+  canPostLedger?: boolean;
   workspaceName?: string | null;
   officeName?: string | null;
   reportSections?: ReportNavSection[];
@@ -210,7 +212,7 @@ export function AppHeader({
             </Link>
           </div>
         </details>
-        {admin ? (
+        {admin || canPostLedger ? (
           <details open={openMenu === "accounting"}>
             <summary
               onClick={(event) => {
@@ -222,12 +224,23 @@ export function AppHeader({
               <ChevronDown size={13} />
             </summary>
             <div className="header-dropdown">
-              <Link href="/reports/accounting/chart-of-accounts" onClick={closeMenus}>
-                Chart of accounts
+              <Link href="/backoffice/accounting/income" onClick={closeMenus}>
+                Record income
               </Link>
-              <Link href="/backoffice/accounting" onClick={closeMenus}>
-                Accounting mappings
+              <Link href="/backoffice/accounting/expense" onClick={closeMenus}>
+                Record expense
               </Link>
+              {admin ? (
+                <>
+                  <hr className="header-dropdown-divider" />
+                  <Link href="/reports/accounting/chart-of-accounts" onClick={closeMenus}>
+                    Chart of accounts
+                  </Link>
+                  <Link href="/backoffice/accounting" onClick={closeMenus}>
+                    Accounting mappings
+                  </Link>
+                </>
+              ) : null}
             </div>
           </details>
         ) : null}

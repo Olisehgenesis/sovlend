@@ -82,7 +82,7 @@ export const allReportPermissions = [...accountingReportPermissions, ...riskRepo
 export const defaultPermissionGroups: Record<string, readonly PermissionCode[]> = {
   "General Manager": Object.values(permissions).filter((code) => code !== permissions.treasuryApprove),
   "Branch Manager": [
-    permissions.clientView, permissions.clientManage, permissions.loanView, permissions.loanApply, permissions.loanApprove, permissions.loanDisburse, permissions.loanRepayment, permissions.loanClose, permissions.loanReverse, permissions.savingsView, permissions.savingsTransact, permissions.savingsApprove, permissions.ledgerView, permissions.reportView, permissions.productManage,
+    permissions.clientView, permissions.clientManage, permissions.loanView, permissions.loanApply, permissions.loanApprove, permissions.loanDisburse, permissions.loanRepayment, permissions.loanClose, permissions.loanReverse, permissions.savingsView, permissions.savingsTransact, permissions.savingsApprove, permissions.ledgerView, permissions.ledgerPost, permissions.reportView, permissions.productManage,
     ...allReportPermissions,
   ],
   Teller: [permissions.clientView, permissions.loanView, permissions.loanRepayment, permissions.savingsView, permissions.savingsTransact, permissions.reportView, permissions.reportClientStatement, permissions.reportSavingsAccountListing, permissions.reportSavingsTransactions],
