@@ -31,7 +31,8 @@
     "migration:seed-charge-definitions": "tsx src/migration/seed-charge-definitions.ts",
     "admin:bootstrap": "tsx src/scripts/bootstrap-admin.ts",
     "permissions:reseed": "tsx src/scripts/reseed-permissions.ts",
-    "backfill:savings-journals": "tsx src/scripts/backfill-savings-journals.ts"
+    "backfill:savings-journals": "tsx src/scripts/backfill-savings-journals.ts",
+    "reconcile:ledger": "node --env-file-if-exists=.env --env-file-if-exists=.env.local ./node_modules/tsx/dist/cli.mjs src/scripts/reconcile-ledger.ts"
   },
   "dependencies": {
     "@better-auth/passkey": "^1.7.2",
