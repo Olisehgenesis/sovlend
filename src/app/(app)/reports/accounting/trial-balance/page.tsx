@@ -13,7 +13,7 @@ import { permissions } from "@/modules/identity/domain/permissions";
 import { formatMinor } from "@/modules/money/domain/format-minor";
 import { loadReportPickerOptions } from "@/modules/reports/report-catalog";
 import {
-  accountTypeLabel,
+  accountingAccountTypeSections,
   buildReportQueryString,
   currentMonthDateRange,
   formatDateInputValue,
@@ -25,6 +25,7 @@ import {
   resolveOfficeFilter,
   sideLabel,
   summarizeBalance,
+  type TrialBalanceRow,
 } from "@/modules/reports/domain/accounting-report";
 
 export default async function TrialBalancePage({
@@ -128,7 +129,7 @@ export default async function TrialBalancePage({
       <section className="panel">
         <div className="panel-heading">
           <div>
-            <h2>Ledger balances</h2>
+            <h2>Trial balance</h2>
             <p>
               {report.rows.length.toLocaleString()} account{report.rows.length === 1 ? "" : "s"} · {report.journalCount.toLocaleString()} posted journal
               {report.journalCount === 1 ? "" : "s"}
@@ -146,55 +147,91 @@ export default async function TrialBalancePage({
             <p>The trial balance will populate once posted journals exist in the selected period and office scope.</p>
           </div>
         ) : (
-          <div className="table-scroll">
-            <table>
-              <thead>
-                <tr>
-                  <th>Account</th>
-                  <th>Type</th>
-                  <th>Debits</th>
-                  <th>Credits</th>
-                  <th>Balance</th>
-                </tr>
-              </thead>
-              <tbody>
-                {report.rows.map((row) => {
-                  const balance = summarizeBalance(row.type, row.balanceMinor);
-                  return (
-                    <tr key={row.id}>
-                      <td>
-                        <strong>{row.code}</strong>
-                        <small>{row.name}</small>
-                      </td>
-                      <td>{accountTypeLabel(row.type)}</td>
-                      <td className="mono">{formatMinor(row.debitTotalMinor, "UGX")}</td>
-                      <td className="mono">{formatMinor(row.creditTotalMinor, "UGX")}</td>
-                      <td className="mono">
-                        {formatMinor(balance.absoluteMinor, "UGX")} {sideLabel(balance.balanceSide)}
-                      </td>
-                    </tr>
-                  );
-                })}
-                <tr>
-                  <td>
-                    <strong>Grand total</strong>
-                  </td>
-                  <td>—</td>
-                  <td className="mono">
-                    <strong>{formatMinor(report.totalDebitsMinor, "UGX")}</strong>
-                  </td>
-                  <td className="mono">
-                    <strong>{formatMinor(report.totalCreditsMinor, "UGX")}</strong>
-                  </td>
-                  <td className="mono">
+          <div className="statement-body">
+            {accountingAccountTypeSections.map((section) => {
+              const rows = report.rows.filter((row) => row.type === section.type);
+              if (rows.length === 0) return null;
+              const sectionTotal = rows.reduce(
+                (sum, row) => sum + summarizeBalance(row.type, row.balanceMinor).absoluteMinor,
+                0n,
+              );
+
+              return (
+                <div className="statement-section" key={section.type}>
+                  <h3 className="statement-section-heading">{section.label}</h3>
+                  <div className="statement-rows">
+                    {rows.map((row) => (
+                      <StatementRow
+                        endDate={endDate}
+                        key={row.id}
+                        officeId={officeId}
+                        row={row}
+                        startDate={startDate}
+                      />
+                    ))}
+                  </div>
+                  <div className="statement-subtotal">
+                    <span>Total {section.label.toLowerCase()}</span>
+                    <span className="mono">{formatMinor(sectionTotal, "UGX")}</span>
+                  </div>
+                </div>
+              );
+            })}
+
+            <div className="statement-section statement-grand-total">
+              <div className="statement-rows">
+                <div className="statement-row">
+                  <span>Total debits</span>
+                  <span className="mono">{formatMinor(report.totalDebitsMinor, "UGX")}</span>
+                </div>
+                <div className="statement-row">
+                  <span>Total credits</span>
+                  <span className="mono">{formatMinor(report.totalCreditsMinor, "UGX")}</span>
+                </div>
+                <div className="statement-row">
+                  <span>
+                    <strong>Difference</strong>
+                  </span>
+                  <span className="mono">
                     <strong>{formatMinor(report.differenceMinor, "UGX")}</strong>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
+                  </span>
+                </div>
+              </div>
+            </div>
           </div>
         )}
       </section>
     </main>
+  );
+}
+
+function StatementRow({
+  row,
+  officeId,
+  startDate,
+  endDate,
+}: {
+  row: TrialBalanceRow;
+  officeId: string | null;
+  startDate: Date;
+  endDate: Date;
+}) {
+  const balance = summarizeBalance(row.type, row.balanceMinor);
+  const href = `/reports/accounting/general-ledger?${buildReportQueryString({
+    startDate: formatDateInputValue(startDate),
+    endDate: formatDateInputValue(endDate),
+    officeId,
+    accountId: row.id,
+  })}`;
+
+  return (
+    <Link className="statement-row statement-row-link" href={href}>
+      <span className="statement-row-account">
+        <strong>{row.code}</strong> {row.name}
+      </span>
+      <span className="mono">
+        {formatMinor(balance.absoluteMinor, "UGX")} {sideLabel(balance.balanceSide)}
+      </span>
+    </Link>
   );
 }
