@@ -40,4 +40,14 @@ describe("repayment allocation", () => {
     expect(result.monitoringFeeMinor).toBe(0n);
     expect(result.allocations[0]).toMatchObject({ monitoringFeeMinor: 0n });
   });
+
+  it("carries an installment's penaltyAssessedOn flag into the allocation when present", () => {
+    const penaltyAssessedOn = new Date("2026-09-04T00:00:00.000Z");
+    const result = allocateRepayment([{ ...installment, penaltyAssessedOn }], 300n);
+    expect(result.allocations[0]).toMatchObject({
+      installmentId: "one",
+      penaltiesMinor: 300n,
+      penaltyAssessedOn,
+    });
+  });
 });

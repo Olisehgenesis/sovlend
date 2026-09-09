@@ -15,6 +15,7 @@ export type AllocatableInstallment = Readonly<{
   // the Problem 2 fix populate these.
   monitoringFeeDueMinor?: bigint;
   monitoringFeePaidMinor?: bigint;
+  penaltyAssessedOn?: Date | null;
 }>;
 
 export type InstallmentAllocation = Readonly<{
@@ -24,6 +25,7 @@ export type InstallmentAllocation = Readonly<{
   feesMinor: bigint;
   penaltiesMinor: bigint;
   monitoringFeeMinor: bigint;
+  penaltyAssessedOn?: Date | null;
 }>;
 
 export function allocateRepayment(installments: readonly AllocatableInstallment[], paymentMinor: bigint) {
@@ -33,7 +35,17 @@ export function allocateRepayment(installments: readonly AllocatableInstallment[
   const allocations: InstallmentAllocation[] = [];
 
   for (const installment of sorted) {
-    const allocation = { installmentId: installment.id, principalMinor: 0n, interestMinor: 0n, feesMinor: 0n, penaltiesMinor: 0n, monitoringFeeMinor: 0n };
+    const allocation = {
+      installmentId: installment.id,
+      principalMinor: 0n,
+      interestMinor: 0n,
+      feesMinor: 0n,
+      penaltiesMinor: 0n,
+      monitoringFeeMinor: 0n,
+      ...(Object.prototype.hasOwnProperty.call(installment, "penaltyAssessedOn")
+        ? { penaltyAssessedOn: installment.penaltyAssessedOn ?? null }
+        : {}),
+    };
     allocation.penaltiesMinor = take(installment.penaltiesDueMinor - installment.penaltiesPaidMinor, remaining); remaining -= allocation.penaltiesMinor;
     allocation.feesMinor = take(installment.feesDueMinor - installment.feesPaidMinor, remaining); remaining -= allocation.feesMinor;
     allocation.monitoringFeeMinor = take((installment.monitoringFeeDueMinor ?? 0n) - (installment.monitoringFeePaidMinor ?? 0n), remaining); remaining -= allocation.monitoringFeeMinor;

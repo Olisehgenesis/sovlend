@@ -189,6 +189,7 @@ export async function bootstrapLedger(prisma: PrismaClient): Promise<BootstrapRe
     SHARED_CODES.genericPenaltyIncome,
     SHARED_CODES.recoveryIncome,
     SHARED_CODES.cash,
+    SAVINGS_LIABILITY_FALLBACK_CODE,
   ]);
   for (const entry of Object.values(PRODUCT_INCOME_CODES)) {
     if (entry.interestIncome) allCodes.add(entry.interestIncome);
@@ -254,6 +255,14 @@ export async function bootstrapLedger(prisma: PrismaClient): Promise<BootstrapRe
       penaltyIncomeAccountId: requireAccount(SHARED_CODES.genericPenaltyIncome),
       writeOffExpenseAccountId: requireAccount(SHARED_CODES.writeOffExpense),
       overpaymentLiabilityAccountId: requireAccount(SHARED_CODES.overpaymentLiability),
+    },
+    update: {},
+  });
+  await prisma.savingsAccountingDefaults.upsert({
+    where: { organizationId },
+    create: {
+      organizationId,
+      savingsLiabilityAccountId: requireAccount(SAVINGS_LIABILITY_FALLBACK_CODE),
     },
     update: {},
   });

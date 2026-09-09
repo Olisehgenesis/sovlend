@@ -6,14 +6,34 @@ import { useState } from "react";
 import { toast } from "sonner";
 
 type Account = { id: string; label: string; type: string };
-type Product = { id: string; name: string; mapping: { principalReceivableAccountId: string; interestIncomeAccountId: string; feeIncomeAccountId: string | null; penaltyIncomeAccountId: string | null; writeOffExpenseAccountId: string | null; overpaymentLiabilityAccountId: string | null } | null };
+type SavingsDefaults = { savingsLiabilityAccountId: string | null } | null;
+type Product = {
+  id: string;
+  name: string;
+  mapping: {
+    principalReceivableAccountId: string;
+    interestIncomeAccountId: string;
+    feeIncomeAccountId: string | null;
+    monitoringFeeIncomeAccountId: string | null;
+    processingFeeIncomeAccountId: string | null;
+    admissionFeeIncomeAccountId: string | null;
+    penaltyIncomeAccountId: string | null;
+    penaltyReceivableAccountId: string | null;
+    writeOffExpenseAccountId: string | null;
+    overpaymentLiabilityAccountId: string | null;
+  } | null;
+};
 type SettlementAccount = { id: string; name: string; type: string; provider: string | null; accountReference: string | null; ledgerAccountId: string; active: boolean };
 
 const accountHelp = {
   principal: "Asset account debited when principal is disbursed and credited as principal is repaid.",
   interest: "Revenue account credited when the borrower pays interest.",
   fee: "Optional revenue account for loan fees collected through repayment.",
+  monitoringFee: "Optional dedicated revenue account for monitoring fees collected through repayment. Falls back to Fee income account if not set.",
+  processingFee: "Optional dedicated revenue account for processing fees at disbursement. Falls back to Fee income account if not set.",
+  admissionFee: "Optional dedicated revenue account for admission fees at disbursement. Falls back to Fee income account if not set.",
   penalty: "Optional revenue account for late-payment penalties.",
+  penaltyReceivable: "Optional asset account used for accrued penalties before cash collection. Required before penalty accrual can be enabled for this product.",
   writeOff: "Optional expense account used when principal is approved for write-off.",
   overpayment: "Optional liability account holding money paid beyond the scheduled balance.",
 };
@@ -45,9 +65,87 @@ function suggestAccountId(field: keyof typeof accountHelp, productName: string, 
   if (field === "writeOff") return findByLabel(candidates, "written off")?.id ?? "";
   if (field === "overpayment") return findByLabel(candidates, "overpayment")?.id ?? "";
   if (field === "fee") return findByLabel(candidates, "fee income")?.id ?? "";
+  if (field === "monitoringFee") return findByLabel(candidates, "monitoring")?.id ?? findByLabel(candidates, "fee income")?.id ?? "";
+  if (field === "processingFee") return findByLabel(candidates, "processing")?.id ?? findByLabel(candidates, "fee income")?.id ?? "";
+  if (field === "admissionFee") return findByLabel(candidates, "admission")?.id ?? findByLabel(candidates, "fee income")?.id ?? "";
   if (field === "interest") return bestKeywordMatch(productName, candidates)?.id ?? findByLabel(candidates, "financial revenue from loan portfolio")?.id ?? "";
   if (field === "penalty") return bestKeywordMatch(productName, candidates)?.id ?? findByLabel(candidates, "penalty income")?.id ?? "";
+  if (field === "penaltyReceivable") return findByLabel(candidates, "penalties receivable")?.id ?? findByLabel(candidates, "penalty receivable")?.id ?? bestKeywordMatch(`${productName} penalty`, candidates)?.id ?? "";
   return "";
+}
+
+export function SavingsDefaultsForm({
+  organizationId,
+  liabilityAccounts,
+  defaults,
+}: {
+  organizationId: string;
+  liabilityAccounts: Account[];
+  defaults: SavingsDefaults;
+}) {
+  const [pending, setPending] = useState(false);
+  const router = useRouter();
+
+  async function save(formData: FormData) {
+    setPending(true);
+    const response = await fetch("/api/accounting/savings-defaults", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        organizationId,
+        savingsLiabilityAccountId: formData.get("savingsLiabilityAccountId"),
+      }),
+    });
+    const result = await response.json().catch(() => ({}));
+    setPending(false);
+    if (!response.ok) {
+      toast.error(result.error ?? "Savings default could not be saved");
+      return;
+    }
+    toast.success("Savings default saved");
+    router.refresh();
+  }
+
+  return (
+    <form action={save} className="entity-form compact-mapping">
+      <fieldset>
+        <legend>Organization savings default</legend>
+        <p className="fieldset-intro">
+          Choose the fallback liability account credited on deposits and debited on withdrawals when a savings product has no dedicated override.
+        </p>
+        <label>
+          <span>
+            Savings liability account
+            <b className="required-mark">Required</b>
+          </span>
+          <select
+            defaultValue={defaults?.savingsLiabilityAccountId ?? ""}
+            name="savingsLiabilityAccountId"
+            required
+          >
+            <option value="" disabled>
+              Select verified liability account
+            </option>
+            {liabilityAccounts.map((account) => (
+              <option key={account.id} value={account.id}>
+                {account.label}
+              </option>
+            ))}
+          </select>
+          <small className="field-help">
+            This org-wide fallback is used before the legacy hardcoded GL-code table whenever a savings
+            product does not have its own accounting mapping.
+          </small>
+        </label>
+      </fieldset>
+      <div className="form-actions">
+        <button className="invest-button" disabled={pending}>
+          {pending ? <LoaderCircle className="spin" size={17} /> : <Save size={17} />} Save savings
+          default
+        </button>
+      </div>
+    </form>
+  );
 }
 
 export function SettlementMappingForm({ organizationId, assetAccounts, accounts }: { organizationId: string; assetAccounts: Account[]; accounts: SettlementAccount[] }) {
@@ -72,7 +170,7 @@ export function ProductMappingForm({ product, accounts }: { product: Product; ac
   async function save(formData: FormData) {
     setPending(true);
     const nullable = (name: string) => String(formData.get(name) || "") || null;
-    const response = await fetch("/api/accounting/product-mappings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ productId: product.id, principalReceivableAccountId: formData.get("principal"), interestIncomeAccountId: formData.get("interest"), feeIncomeAccountId: nullable("fee"), penaltyIncomeAccountId: nullable("penalty"), writeOffExpenseAccountId: nullable("writeOff"), overpaymentLiabilityAccountId: nullable("overpayment") }) });
+    const response = await fetch("/api/accounting/product-mappings", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ productId: product.id, principalReceivableAccountId: formData.get("principal"), interestIncomeAccountId: formData.get("interest"), feeIncomeAccountId: nullable("fee"), monitoringFeeIncomeAccountId: nullable("monitoringFee"), processingFeeIncomeAccountId: nullable("processingFee"), admissionFeeIncomeAccountId: nullable("admissionFee"), penaltyIncomeAccountId: nullable("penalty"), penaltyReceivableAccountId: nullable("penaltyReceivable"), writeOffExpenseAccountId: nullable("writeOff"), overpaymentLiabilityAccountId: nullable("overpayment") }) });
     const result = await response.json(); setPending(false);
     if (!response.ok) { toast.error(result.error ?? "Mapping could not be saved"); return; }
     toast.success(`${product.name} mapping saved`); router.refresh();
@@ -82,5 +180,5 @@ export function ProductMappingForm({ product, accounts }: { product: Product; ac
     const suggestion = value ? null : suggestAccountId(name, product.name, candidates);
     return <label><span>{label}{required ? <b className="required-mark">Required</b> : <b className="optional-mark">Optional</b>}</span><select name={name} defaultValue={value ?? suggestion ?? ""} required={required}><option value="">Not configured</option>{candidates.map((account) => <option key={account.id} value={account.id}>{account.label}</option>)}</select><small className="field-help">{suggestion ? "Suggested default — review before saving. " : ""}{accountHelp[name]}</small></label>;
   };
-  return <details className="mapping-product" open={!product.mapping}><summary><span><strong>{product.name}</strong><small>{product.mapping ? "Ready for mapped transactions" : "Required before disbursement"}</small></span><span className={`mapping-state ${product.mapping ? "ready" : "missing"}`}>{product.mapping ? "Configured" : "Incomplete"}</span></summary><form action={save} className="entity-form compact-mapping"><div className="form-row">{select("principal", "Principal receivable", "ASSET", product.mapping?.principalReceivableAccountId, true)}{select("interest", "Interest income", "REVENUE", product.mapping?.interestIncomeAccountId, true)}</div><div className="form-row three">{select("fee", "Fee income", "REVENUE", product.mapping?.feeIncomeAccountId)}{select("penalty", "Penalty income", "REVENUE", product.mapping?.penaltyIncomeAccountId)}{select("writeOff", "Write-off expense", "EXPENSE", product.mapping?.writeOffExpenseAccountId)}</div>{select("overpayment", "Overpayment liability", "LIABILITY", product.mapping?.overpaymentLiabilityAccountId)}<div className="form-actions"><button className="invest-button" disabled={pending}>{pending ? <LoaderCircle className="spin" size={17} /> : <Save size={17} />} Save product mapping</button></div></form></details>;
+  return <details className="mapping-product" open={!product.mapping}><summary><span><strong>{product.name}</strong><small>{product.mapping ? "Ready for mapped transactions" : "Required before disbursement"}</small></span><span className={`mapping-state ${product.mapping ? "ready" : "missing"}`}>{product.mapping ? "Configured" : "Incomplete"}</span></summary><form action={save} className="entity-form compact-mapping"><div className="form-row">{select("principal", "Principal receivable", "ASSET", product.mapping?.principalReceivableAccountId, true)}{select("interest", "Interest income", "REVENUE", product.mapping?.interestIncomeAccountId, true)}</div><div className="form-row three">{select("fee", "Fee income", "REVENUE", product.mapping?.feeIncomeAccountId)}{select("monitoringFee", "Monitoring fee income", "REVENUE", product.mapping?.monitoringFeeIncomeAccountId)}{select("penalty", "Penalty income", "REVENUE", product.mapping?.penaltyIncomeAccountId)}</div><div className="form-row three">{select("processingFee", "Processing fee income", "REVENUE", product.mapping?.processingFeeIncomeAccountId)}{select("admissionFee", "Admission fee income", "REVENUE", product.mapping?.admissionFeeIncomeAccountId)}{select("penaltyReceivable", "Penalty receivable", "ASSET", product.mapping?.penaltyReceivableAccountId)}</div><div className="form-row">{select("writeOff", "Write-off expense", "EXPENSE", product.mapping?.writeOffExpenseAccountId)}{select("overpayment", "Overpayment liability", "LIABILITY", product.mapping?.overpaymentLiabilityAccountId)}</div><div className="form-actions"><button className="invest-button" disabled={pending}>{pending ? <LoaderCircle className="spin" size={17} /> : <Save size={17} />} Save product mapping</button></div></form></details>;
 }
