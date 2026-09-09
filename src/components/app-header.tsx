@@ -230,6 +230,12 @@ export function AppHeader({
               <Link href="/backoffice/accounting/expense" onClick={closeMenus}>
                 Record expense
               </Link>
+              <Link href="/backoffice/accounting/frequent-postings" onClick={closeMenus}>
+                Frequent postings
+              </Link>
+              <Link href="/reports/accounting/journal-reconciliation" onClick={closeMenus}>
+                Search journal entries
+              </Link>
               {admin ? (
                 <>
                   <hr className="header-dropdown-divider" />
@@ -238,6 +244,12 @@ export function AppHeader({
                   </Link>
                   <Link href="/backoffice/accounting" onClick={closeMenus}>
                     Accounting mappings
+                  </Link>
+                  <Link href="/backoffice/accounting/rules" onClick={closeMenus}>
+                    Accounting rules
+                  </Link>
+                  <Link href="/backoffice/accounting/closures" onClick={closeMenus}>
+                    Closing entries
                   </Link>
                 </>
               ) : null}
