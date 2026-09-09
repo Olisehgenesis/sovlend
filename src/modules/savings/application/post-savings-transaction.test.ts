@@ -1,9 +1,17 @@
-import type { Prisma } from "@prisma/client";
+import type { Prisma, PrismaClient } from "@prisma/client";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { assertBalancedJournal } from "@/modules/ledger/domain/journal";
 
-import { recordSavingsTransactionInTransaction } from "./post-savings-transaction";
+vi.mock("@/modules/lending/application/execute-standing-order-sweep", () => ({
+  executeStandingOrderSweepsForSavingsDeposit: vi.fn(async () => 0),
+}));
+
+import { executeStandingOrderSweepsForSavingsDeposit } from "@/modules/lending/application/execute-standing-order-sweep";
+import {
+  postSavingsTransaction,
+  recordSavingsTransactionInTransaction,
+} from "./post-savings-transaction";
 
 type MockOptions = Readonly<{
   openingBalanceMinor?: bigint;
@@ -209,5 +217,63 @@ describe("recordSavingsTransactionInTransaction", () => {
       { journalId: "journal-1", accountId: "ledger-cash", direction: "DEBIT", amountMinor: 15_000n, memo: "Main till" },
       { journalId: "journal-1", accountId: "ledger-product-specific-liability", direction: "CREDIT", amountMinor: 15_000n, memo: "SV-0001" },
     ]);
+  });
+});
+
+describe("postSavingsTransaction", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("immediately checks due loans after a real client deposit posts", async () => {
+    const { transaction } = buildTransactionMock();
+    const prisma = {
+      savingsTransaction: {
+        findUnique: vi.fn(async () => null),
+      },
+      savingsAccount: {
+        findUnique: vi.fn(async () => ({ id: "savings-1", status: "ACTIVE" })),
+      },
+      $transaction: vi.fn(async (callback: (tx: Prisma.TransactionClient) => unknown) =>
+        callback(transaction),
+      ),
+    } as unknown as PrismaClient;
+
+    const businessDate = new Date("2026-09-09T08:00:00.000Z");
+    await postSavingsTransaction(prisma, {
+      savingsAccountId: "savings-1",
+      actorUserId: "teller-1",
+      transactionType: "DEPOSIT",
+      amountMinor: 40_000n,
+      settlementAccountId: "settlement-1",
+      idempotencyKey: "deposit-1",
+      businessDate,
+    });
+
+    expect(executeStandingOrderSweepsForSavingsDeposit).toHaveBeenCalledWith(prisma, {
+      savingsAccountId: "savings-1",
+      savingsTransactionId: "savings-tx-1",
+      now: businessDate,
+    });
+  });
+
+  it("does not re-trigger standing-order sweeps for internal mirror deposits", async () => {
+    const prisma = {
+      savingsTransaction: {
+        findUnique: vi.fn(async () => ({ id: "savings-tx-existing", savingsAccountId: "savings-1" })),
+      },
+    } as unknown as PrismaClient;
+
+    await postSavingsTransaction(prisma, {
+      savingsAccountId: "savings-1",
+      actorUserId: null,
+      transactionType: "DEPOSIT",
+      amountMinor: 40_000n,
+      settlementAccountId: "settlement-1",
+      idempotencyKey: "deposit-2",
+      postJournal: false,
+    });
+
+    expect(executeStandingOrderSweepsForSavingsDeposit).not.toHaveBeenCalled();
   });
 });

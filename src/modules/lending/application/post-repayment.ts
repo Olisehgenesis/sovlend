@@ -4,8 +4,8 @@ import type { Prisma, PrismaClient } from "@prisma/client";
 import { AuthorizationService } from "@/modules/identity/application/authorization-service";
 import { permissions } from "@/modules/identity/domain/permissions";
 import { assertBalancedJournal } from "@/modules/ledger/domain/journal";
+import { recordSavingsTransactionInTransaction } from "@/modules/savings/application/record-savings-transaction";
 import { resolveSavingsLiabilityAccountId } from "@/modules/savings/application/savings-ledger";
-import { recordSavingsTransactionInTransaction } from "@/modules/savings/application/post-savings-transaction";
 import { allocateRepayment } from "../domain/repayment-allocation";
 import { installmentDueMinor, installmentPaidMinor } from "../domain/loan-outstanding";
 
@@ -23,7 +23,7 @@ type RepaymentDebitSource = Readonly<{
   settlementAccountId?: string;
 }>;
 
-type ApplyRepaymentParams = Readonly<{
+export type ApplyRepaymentParams = Readonly<{
   loanId: string;
   amountMinor: bigint;
   businessDate: Date;
@@ -97,7 +97,7 @@ async function resolveOverpaymentSweepSavingsAccount(
  * events. Callers are responsible for their own idempotency short-circuit before/after this runs
  * inside their own $transaction, and for any authorization checks.
  */
-async function applyRepaymentInTransaction(transaction: Tx, params: ApplyRepaymentParams) {
+export async function applyRepaymentInTransaction(transaction: Tx, params: ApplyRepaymentParams) {
   const current = await transaction.loan.findUniqueOrThrow({
     where: { id: params.loanId },
     include: {

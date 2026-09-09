@@ -1,10 +1,20 @@
 import { describe, expect, it } from "vitest";
 
-import { computeSweepAmountMinor, standingOrderSweepJobId, standingOrderSweepJobSchema } from "./standing-order-sweep";
+import {
+  buildStandingOrderDailyRequestKey,
+  buildStandingOrderDepositRequestKey,
+  computeSweepAmountMinor,
+  standingOrderSweepJobId,
+  standingOrderSweepJobSchema,
+} from "./standing-order-sweep";
 
 describe("standing order sweep jobs", () => {
-  it("keys deduplication by loan id and due date, ignoring the time portion", () => {
+  it("keys daily-scan deduplication by loan id and scan date", () => {
     const data = standingOrderSweepJobSchema.parse({
+      requestKey: buildStandingOrderDailyRequestKey(
+        "10c37978-c861-4aac-9d4a-5ff72c9a660a",
+        new Date("2026-09-09T14:22:00.000Z"),
+      ),
       loanId: "10c37978-c861-4aac-9d4a-5ff72c9a660a",
       installmentId: "d8359aa2-57f4-4e6b-8070-973695c18fad",
       clientId: "3c6dad45-3665-49f4-bc4e-d5f33c830bae",
@@ -17,14 +27,25 @@ describe("standing order sweep jobs", () => {
     });
 
     expect(standingOrderSweepJobId(data)).toBe(
-      "standing-order-sweep:10c37978-c861-4aac-9d4a-5ff72c9a660a:2026-09-01",
+      "standing-order-sweep:10c37978-c861-4aac-9d4a-5ff72c9a660a:daily:2026-09-09",
+    );
+  });
+
+  it("keys deposit-triggered deduplication by loan id and deposit transaction", () => {
+    expect(
+      buildStandingOrderDepositRequestKey(
+        "10c37978-c861-4aac-9d4a-5ff72c9a660a",
+        "7a43269b-ff38-4714-8d2a-77ba4e2f24cb",
+      ),
+    ).toBe(
+      "standing-order-sweep:10c37978-c861-4aac-9d4a-5ff72c9a660a:deposit:7a43269b-ff38-4714-8d2a-77ba4e2f24cb",
     );
   });
 
   describe("computeSweepAmountMinor", () => {
-    it("sweeps the smaller of available balance and outstanding amount", () => {
+    it("sweeps the smaller of available balance and due/overdue outstanding amount", () => {
       expect(computeSweepAmountMinor(50_000n, 30_000n)).toBe(30_000n);
-      expect(computeSweepAmountMinor(10_000n, 30_000n)).toBe(10_000n);
+      expect(computeSweepAmountMinor(90_000n, 120_000n)).toBe(90_000n);
     });
 
     it("never sweeps a non-positive amount", () => {
