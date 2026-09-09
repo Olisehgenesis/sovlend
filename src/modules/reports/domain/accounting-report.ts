@@ -223,6 +223,27 @@ export function todayDate(now = new Date()) {
   return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
 }
 
+export function thisWeekDateRange(now = new Date()) {
+  const today = todayDate(now);
+  // ISO week starts Monday; getUTCDay() returns 0 (Sun) .. 6 (Sat).
+  const dayOfWeek = today.getUTCDay();
+  const daysSinceMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+  const startDate = new Date(today);
+  startDate.setUTCDate(startDate.getUTCDate() - daysSinceMonday);
+  return { startDate, endDate: today };
+}
+
+export type ReportDatePreset = "today" | "week" | "month";
+
+export function resolveDatePreset(now = new Date(), preset: ReportDatePreset) {
+  if (preset === "today") {
+    const today = todayDate(now);
+    return { startDate: today, endDate: today };
+  }
+  if (preset === "week") return thisWeekDateRange(now);
+  return currentMonthDateRange(now);
+}
+
 export function parseDateInput(value: string | null | undefined, fallback: Date) {
   if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return fallback;
   const parsed = new Date(`${value}T00:00:00.000Z`);

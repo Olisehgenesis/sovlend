@@ -78,7 +78,11 @@ export default async function ClientDetailPage({ params, searchParams }: { param
   const fullName = [client.firstName, client.middleName, client.lastName].filter(Boolean).join(" ");
   const walletFormatted = formatMinor(wallet.netBalanceMinor, wallet.currencyCode);
   const idPhoto = client.identifiers.flatMap((identifier) => identifier.documents).find((document) => document.mediaType.startsWith("image/"));
-  const primarySavingsAccount = client.savingsAccounts.find((account) => account.accountType === "SAVINGS" && account.status === "ACTIVE") ?? null;
+  // `accountType` is a product category (e.g. "Individual"/"Group"), not a discriminator between
+  // savings vs. other account kinds -- every row here already belongs to the SavingsAccount model.
+  // Legacy-imported accounts never carry the value "SAVINGS", so filtering on it silently matched
+  // zero accounts and hid Top up/Withdraw for every client. Filter on status alone.
+  const primarySavingsAccount = client.savingsAccounts.find((account) => account.status === "ACTIVE") ?? null;
   const businessDate = new Date(`${new Date().toISOString().slice(0, 10)}T00:00:00.000Z`);
 
   const loanRows = client.loans.map((loan) => {
