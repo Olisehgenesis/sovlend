@@ -151,10 +151,10 @@ export default async function LoanPage({
     include: { requestedBy: { select: { name: true } }, decidedBy: { select: { name: true } } },
     orderBy: { requestedAt: "desc" },
   });
-  const savingsAccounts = loan.clientId
+  const savingsAccounts = loan.clientId || loan.groupId
     ? await prisma.savingsAccount.findMany({
         where: {
-          clientId: loan.clientId,
+          ...(loan.clientId ? { clientId: loan.clientId } : { groupId: loan.groupId }),
           status: "ACTIVE",
           currencyCode: loan.denominationCurrency,
         },
