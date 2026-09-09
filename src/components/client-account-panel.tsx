@@ -50,6 +50,8 @@ export function DepositWithdrawForm({
   savingsTarget,
   loanTargets,
   initialTargetKey,
+  lockTarget = false,
+  allowedActions = ["DEPOSIT", "WITHDRAWAL"],
   onSuccess,
 }: {
   clientId: string;
@@ -58,8 +60,14 @@ export function DepositWithdrawForm({
   savingsTarget: SavingsDepositTarget | null;
   loanTargets: readonly LoanDepositTarget[];
   // Pre-selects a target (e.g. "loan:<id>" or "savings:<id>") when this form is opened from a
-  // purpose-built quick action (Repay loan / Top up) instead of the generic entry point.
+  // purpose-built quick action (Top up / Withdraw) instead of the generic entry point.
   initialTargetKey?: string;
+  // Hides the target selector and pins it to initialTargetKey -- used by the Top up and Withdraw
+  // quick actions, which are only ever meant to act on the client's savings account.
+  lockTarget?: boolean;
+  // Restricts which of Deposit/Withdraw are offered -- Top up only shows Deposit, Withdraw only
+  // shows Withdraw, and the generic Record payment keeps both (default).
+  allowedActions?: readonly ("DEPOSIT" | "WITHDRAWAL")[];
   onSuccess?: () => void;
 }) {
   const router = useRouter();
@@ -189,15 +197,15 @@ export function DepositWithdrawForm({
         <label>Payment method<select disabled={compatibleSettlementAccounts.length === 0} onChange={(event) => setSettlementAccountId(event.target.value)} value={settlementAccountId}><option value="" disabled>Select settlement account</option>{compatibleSettlementAccounts.map((account) => <option key={account.id} value={account.id}>{settlementLabel(account)}</option>)}</select></label>
       </div>
       <div className="form-row">
-        <label>Deposit target<select onChange={(event) => setTargetKey(event.target.value)} value={selectedTarget?.key ?? ""}>{targetOptions.map((option) => <option key={option.key} value={option.key}>{option.label}</option>)}</select></label>
+        {lockTarget ? <label>Account<input disabled readOnly value={selectedTarget?.label ?? ""} /></label> : <label>Deposit target<select onChange={(event) => setTargetKey(event.target.value)} value={selectedTarget?.key ?? ""}>{targetOptions.map((option) => <option key={option.key} value={option.key}>{option.label}</option>)}</select></label>}
         <label>Recorded by<input disabled readOnly value={currentUserName} /></label>
       </div>
       <label>Reason / note<input maxLength={200} onChange={(event) => setReason(event.target.value)} placeholder="Member savings top-up" value={reason} /></label>
       {selectedTarget ? <p className="field-help">{selectedTarget.hint}</p> : null}
       {compatibleSettlementAccounts.length === 0 && selectedTarget ? <aside className="configuration-note"><strong>Settlement setup required</strong><span>Add an active {selectedTarget.currencyCode} settlement account in Backoffice → Accounting mappings before recording this transaction.</span></aside> : null}
       <div className="account-card-actions">
-        <button className="invest-button" disabled={pending !== null || compatibleSettlementAccounts.length === 0 || !selectedTarget} onClick={() => transact("DEPOSIT")} type="button">{pending === "DEPOSIT" ? <LoaderCircle className="spin" size={15} /> : <Plus size={15} />} {selectedTarget?.kind === "loan" ? "Apply to loan" : "Deposit"}</button>
-        <button className="secondary-action" disabled={pending !== null || compatibleSettlementAccounts.length === 0 || selectedTarget?.kind !== "savings"} onClick={() => transact("WITHDRAWAL")} type="button">{pending === "WITHDRAWAL" ? <LoaderCircle className="spin" size={15} /> : <Minus size={15} />} Withdraw</button>
+        {allowedActions.includes("DEPOSIT") ? <button className="invest-button" disabled={pending !== null || compatibleSettlementAccounts.length === 0 || !selectedTarget} onClick={() => transact("DEPOSIT")} type="button">{pending === "DEPOSIT" ? <LoaderCircle className="spin" size={15} /> : <Plus size={15} />} {selectedTarget?.kind === "loan" ? "Apply to loan" : "Deposit"}</button> : null}
+        {allowedActions.includes("WITHDRAWAL") ? <button className="secondary-action" disabled={pending !== null || compatibleSettlementAccounts.length === 0 || selectedTarget?.kind !== "savings"} onClick={() => transact("WITHDRAWAL")} type="button">{pending === "WITHDRAWAL" ? <LoaderCircle className="spin" size={15} /> : <Minus size={15} />} Withdraw</button> : null}
       </div>
     </div>
   );

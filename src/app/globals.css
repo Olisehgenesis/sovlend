@@ -186,6 +186,64 @@ tbody tr:last-child td { border-bottom: 0; }.mono { font-family: var(--font-mono
 .invest-button { min-height: 42px; padding: 0 15px; display: flex; align-items: center; justify-content: center; gap: 8px; color: #0e6037; background: #e4f4e9; border: 1px solid #25814f; border-radius: 5px; font-weight: 750; }.invest-button:hover { color: #073d23; background: #cfebd8; border-color: #17643f; }.invest-button:disabled { color: #597567; background: #edf2ef; border-color: #afc0b5; cursor: not-allowed; }
 .invoice-panel { display: flex; flex-direction: column; align-items: center; }.invoice-panel .panel-heading { width: 100%; }.invoice-panel img { width: min(280px, calc(100% - 48px)); height: auto; margin: 22px; border: 8px solid white; }.invoice-panel code { width: calc(100% - 40px); padding: 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); background: #f3f6f3; font-size: 10px; }.invoice-panel > small { margin: 12px 0 20px; color: var(--muted); }
 .invoice-placeholder { display: flex; flex-direction: column; align-items: center; justify-content: center; color: var(--muted); text-align: center; }.invoice-placeholder strong { margin-top: 14px; color: var(--ink); }.invoice-placeholder p { margin: 6px 20px; font-size: 12px; }
+
+/*
+ * Animated "folder + pencil" action button. Same structure/motion as the reference
+ * continue-application button, re-themed onto SovLend's forest-green palette. Variants swap the
+ * accent (folder + background) via CSS custom properties so one component covers primary/gold/blue.
+ */
+.brand-action-button {
+  --color: #fff;
+  --background: var(--forest);
+  --background-hover: #1f5f43;
+  --background-left: #0f2f21;
+  --folder: var(--gold);
+  --folder-inner: #8f6a1b;
+  --paper: #ffffff;
+  --paper-lines: #b9c9c0;
+  --paper-behind: var(--mint);
+  --pencil-cap: #fff;
+  --pencil-top: var(--gold);
+  --pencil-middle: #fff;
+  --pencil-bottom: var(--forest);
+  --shadow: rgba(23, 33, 27, .22);
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+  border: none;
+  outline: none;
+  cursor: pointer;
+  border-radius: 5px;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 19px;
+  padding: 11px 18px 11px 54px;
+  transition: background 0.3s;
+  color: var(--color);
+  background: var(--bg, var(--background));
+}
+.brand-action-button--gold { --background: #8a611a; --background-hover: #9c6f1e; --background-left: #4d3607; --folder: var(--mint); --folder-inner: #a9c7b8; --pencil-top: var(--forest); --pencil-bottom: var(--gold); }
+.brand-action-button--blue { --background: var(--blue); --background-hover: #3c6d90; --background-left: #1c3549; --folder: var(--gold); --pencil-top: var(--gold); --pencil-bottom: var(--blue); }
+.brand-action-button:disabled { cursor: not-allowed; opacity: .55; }
+.brand-action-button > div { top: 0; left: 0; bottom: 0; width: 42px; position: absolute; overflow: hidden; border-radius: 5px 0 0 5px; background: var(--background-left); }
+.brand-action-button > div .folder { width: 18px; height: 21px; position: absolute; left: 12px; top: 10px; }
+.brand-action-button > div .folder .top { left: 0; top: 0; z-index: 2; position: absolute; transform: translateX(var(--fx, 0)); transition: transform 0.4s ease var(--fd, 0.3s); }
+.brand-action-button > div .folder .top svg { width: 18px; height: 21px; display: block; fill: var(--folder); transform-origin: 0 50%; transition: transform 0.3s ease var(--fds, 0.45s); transform: perspective(120px) rotateY(var(--fr, 0deg)); }
+.brand-action-button > div .folder:before, .brand-action-button > div .folder:after, .brand-action-button > div .folder .paper { content: ""; position: absolute; left: var(--l, 0); top: var(--t, 0); width: var(--w, 100%); height: var(--h, 100%); border-radius: 1px; background: var(--b, var(--folder-inner)); }
+.brand-action-button > div .folder:before { box-shadow: 0 1.5px 3px var(--shadow), 0 2.5px 5px var(--shadow); transform: translateX(var(--fx, 0)); transition: transform 0.4s ease var(--fd, 0.3s); }
+.brand-action-button > div .folder:after, .brand-action-button > div .folder .paper { --l: 1px; --t: 1px; --w: 16px; --h: 19px; --b: var(--paper-behind); }
+.brand-action-button > div .folder:after { transform: translate(var(--pbx, 0), var(--pby, 0)); transition: transform 0.4s ease var(--pbd, 0s); }
+.brand-action-button > div .folder .paper { z-index: 1; --b: var(--paper); }
+.brand-action-button > div .folder .paper:before, .brand-action-button > div .folder .paper:after { content: ""; width: var(--wp, 10px); height: 2px; border-radius: 1px; transform: scaleY(0.5); left: 3px; top: var(--tp, 3px); position: absolute; background: var(--paper-lines); box-shadow: 0 8px 0 0 var(--paper-lines); }
+.brand-action-button > div .folder .paper:after { --tp: 5px; --wp: 7px; }
+.brand-action-button > div .pencil { height: 2px; width: 3px; border-radius: 1px 1px 0 0; top: 6px; left: 105%; position: absolute; z-index: 3; transform-origin: 50% 15px; background: var(--pencil-cap); transform: translateX(var(--pex, 0)) rotate(35deg); transition: transform 0.4s ease var(--pbd, 0s); }
+.brand-action-button > div .pencil:before, .brand-action-button > div .pencil:after { content: ""; position: absolute; display: block; background: var(--b, linear-gradient(var(--pencil-top) 55%, var(--pencil-middle) 55.1%, var(--pencil-middle) 60%, var(--pencil-bottom) 60.1%)); width: var(--w, 4px); height: var(--h, 15px); border-radius: var(--br, 2px 2px 0 0); top: var(--t, 2px); left: var(--l, -1px); }
+.brand-action-button > div .pencil:before { clip-path: polygon(0 5%, 4px 5%, 4px 13px, 50% 15px, 0 13px); }
+.brand-action-button > div .pencil:after { --b: none; --w: 2px; --h: 5px; --br: 0 2px 1px 0; --t: 2px; --l: 2px; border-top: 1px solid var(--pencil-top); border-right: 1px solid var(--pencil-top); }
+.brand-action-button:not(:disabled):hover { --bg: var(--background-hover); --fx: -28px; --fr: -60deg; --fd: .15s; --fds: 0s; --pbx: 2px; --pby: -2px; --pbd: .15s; --pex: -18px; }
+
 .investment-history { min-height: 260px; }.compact-form { padding: 0; margin-top: 22px; }.compact-form textarea { padding: 10px; resize: vertical; color: var(--ink); background: white; border: 1px solid #cfd7d1; border-radius: 4px; font: 13px var(--font-body); }
 .settlement-pending, .awaiting-payment, .awaiting-invoice { color: #725510; background: #f5ebce; }
 
