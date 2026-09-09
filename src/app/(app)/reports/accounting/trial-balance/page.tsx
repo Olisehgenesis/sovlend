@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 
 import { Breadcrumbs } from "@/components/breadcrumbs";
 import { ReportPicker } from "@/components/report-picker";
+import { ReportZeroToggle } from "@/components/report-zero-toggle";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { AuthorizationService } from "@/modules/identity/application/authorization-service";
@@ -24,7 +25,6 @@ import {
   parseDateInput,
   resolveDatePreset,
   resolveOfficeFilter,
-  sideLabel,
   summarizeBalance,
   type ReportDatePreset,
   type TrialBalanceRow,
@@ -39,7 +39,7 @@ const DATE_PRESETS: { value: ReportDatePreset; label: string }[] = [
 export default async function TrialBalancePage({
   searchParams,
 }: {
-  searchParams: Promise<{ startDate?: string; endDate?: string; officeId?: string; preset?: string }>;
+  searchParams: Promise<{ startDate?: string; endDate?: string; officeId?: string; preset?: string; showZero?: string }>;
 }) {
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session) redirect("/sign-in");
@@ -68,12 +68,14 @@ export default async function TrialBalancePage({
         parseDateInput(params.endDate, defaults.endDate),
       );
   const officeId = resolveOfficeFilter(offices, params.officeId ?? null);
+  const showZero = params.showZero === "1";
   const report = await getTrialBalanceReport(prisma, scope, { startDate, endDate, officeId });
   const activeOfficeName = offices.find((office) => office.id === officeId)?.name ?? "All offices";
   const queryString = buildReportQueryString({
     startDate: formatDateInputValue(startDate),
     endDate: formatDateInputValue(endDate),
     officeId,
+    showZero: showZero ? "1" : undefined,
   });
   const apiHref = `/api/reports/accounting/trial-balance${queryString ? `?${queryString}` : ""}`;
   const exportHref = `${apiHref}${queryString ? "&" : "?"}format=csv`;
@@ -110,7 +112,7 @@ export default async function TrialBalancePage({
             {DATE_PRESETS.map((item) => (
               <Link
                 className={`pill-link ${preset === item.value ? "active" : ""}`}
-                href={`/reports/accounting/trial-balance?${buildReportQueryString({ preset: item.value, officeId })}`}
+                href={`/reports/accounting/trial-balance?${buildReportQueryString({ preset: item.value, officeId, showZero: showZero ? "1" : undefined })}`}
                 key={item.value}
               >
                 {item.label}
@@ -124,6 +126,7 @@ export default async function TrialBalancePage({
               href={`/reports/accounting/trial-balance?${buildReportQueryString({
                 startDate: formatDateInputValue(startDate),
                 endDate: formatDateInputValue(endDate),
+                showZero: showZero ? "1" : undefined,
               })}`}
             >
               All offices
@@ -135,6 +138,7 @@ export default async function TrialBalancePage({
                   startDate: formatDateInputValue(startDate),
                   endDate: formatDateInputValue(endDate),
                   officeId: office.id,
+                  showZero: showZero ? "1" : undefined,
                 })}`}
                 key={office.id}
               >
@@ -167,6 +171,7 @@ export default async function TrialBalancePage({
                 </select>
               </label>
             </div>
+            <ReportZeroToggle defaultChecked={showZero} label="Show zero-balance accounts" name="showZero" />
           </fieldset>
           <div className="form-actions">
             <button className="invest-button" type="submit">
@@ -198,33 +203,46 @@ export default async function TrialBalancePage({
           </div>
         ) : (
           <div className="statement-body">
+            <div className="statement-columns-heading">
+              <span className="statement-columns-heading-account">Account</span>
+              <span className="statement-columns-heading-amount">Debit</span>
+              <span className="statement-columns-heading-amount">Credit</span>
+            </div>
             {accountingAccountTypeSections.map((section) => {
-              const rows = report.rows.filter((row) => row.type === section.type);
-              if (rows.length === 0) return null;
-              const sectionTotal = rows.reduce(
+              const allRows = report.rows.filter((row) => row.type === section.type);
+              const rows = showZero ? allRows : allRows.filter((row) => row.balanceMinor !== 0n);
+              if (allRows.length === 0) return null;
+              const sectionTotal = allRows.reduce(
                 (sum, row) => sum + summarizeBalance(row.type, row.balanceMinor).absoluteMinor,
                 0n,
               );
 
               return (
-                <div className="statement-section" key={section.type}>
-                  <h3 className="statement-section-heading">{section.label}</h3>
-                  <div className="statement-rows">
-                    {rows.map((row) => (
-                      <StatementRow
-                        endDate={endDate}
-                        key={row.id}
-                        officeId={officeId}
-                        row={row}
-                        startDate={startDate}
-                      />
-                    ))}
-                  </div>
+                <details className="statement-section" key={section.type} open>
+                  <summary className="statement-section-heading">
+                    {section.label}
+                    <span className="statement-section-count">{rows.length.toLocaleString()}</span>
+                  </summary>
+                  {rows.length === 0 ? (
+                    <p className="statement-empty-note">All {section.label.toLowerCase()} accounts are zero-balance and hidden.</p>
+                  ) : (
+                    <div className="statement-rows">
+                      {rows.map((row) => (
+                        <StatementRow
+                          endDate={endDate}
+                          key={row.id}
+                          officeId={officeId}
+                          row={row}
+                          startDate={startDate}
+                        />
+                      ))}
+                    </div>
+                  )}
                   <div className="statement-subtotal">
                     <span>Total {section.label.toLowerCase()}</span>
                     <span className="mono">{formatMinor(sectionTotal, "UGX")}</span>
                   </div>
-                </div>
+                </details>
               );
             })}
 
@@ -273,15 +291,14 @@ function StatementRow({
     officeId,
     accountId: row.id,
   })}`;
+  const amountFormatted = balance.balanceSide === "ZERO" ? null : formatMinor(balance.absoluteMinor, "UGX");
 
   return (
     <Link className="statement-row statement-row-link" href={href}>
-      <span className="statement-row-account">
-        <strong>{row.code}</strong> {row.name}
-      </span>
-      <span className="mono">
-        {formatMinor(balance.absoluteMinor, "UGX")} {sideLabel(balance.balanceSide)}
-      </span>
+      <span className="statement-row-code mono">{row.code}</span>
+      <span className="statement-row-account">{row.name}</span>
+      <span className="mono statement-row-amount">{balance.balanceSide === "DEBIT" ? amountFormatted : null}</span>
+      <span className="mono statement-row-amount">{balance.balanceSide === "CREDIT" ? amountFormatted : null}</span>
     </Link>
   );
 }
