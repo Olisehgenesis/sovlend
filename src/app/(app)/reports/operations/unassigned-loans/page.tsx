@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 
 import { Breadcrumbs } from "@/components/breadcrumbs";
 import { ReportPicker } from "@/components/report-picker";
+import { DataTable } from "@/components/ui/data-table";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { permissions } from "@/modules/identity/domain/permissions";
@@ -74,62 +75,39 @@ export default async function UnassignedLoansPage() {
           </div>
           <CircleDollarSign size={19} />
         </div>
-        {report.rows.length === 0 ? (
-          <div className="empty-state">
-            <CircleDollarSign size={28} />
-            <strong>No unassigned active loans</strong>
-            <p>Every active or in-arrears loan in your scope already has an officer.</p>
-          </div>
-        ) : (
-          <div className="table-scroll">
-            <table className="clickable-rows">
-              <thead>
-                <tr>
-                  <th>Borrower</th>
-                  <th>Loan account</th>
-                  <th>Type</th>
-                  <th>Office</th>
-                  <th>Status</th>
-                  <th>Principal</th>
-                  <th>Disbursed</th>
-                </tr>
-              </thead>
-              <tbody>
-                {report.rows.map((row) => (
-                  <tr key={row.loanId}>
-                    <td>
-                      <strong>{row.borrowerName}</strong>
-                      <Link
-                        aria-label={`Open loan ${row.accountNumber}`}
-                        className="row-link"
-                        href={`/loans/${row.loanId}`}
-                      />
-                    </td>
-                    <td className="mono">{row.accountNumber}</td>
-                    <td>{row.borrowerType}</td>
-                    <td>{row.officeName}</td>
-                    <td>
-                      <span className={`status ${loanStatusTone(row.status)}`}>
-                        {formatLoanStatus(row.status)}
-                      </span>
-                    </td>
-                    <td>{formatMinor(row.principalMinor, row.currencyCode)}</td>
-                    <td>{row.disbursedOn ? formatReportDate(row.disbursedOn) : "—"}</td>
-                  </tr>
-                ))}
-              </tbody>
-              <tfoot>
-                {report.totals.map((row) => (
-                  <tr key={`total-${row.currencyCode}`}>
-                    <th colSpan={5}>Principal total</th>
-                    <th>{formatMinor(row.amountMinor, row.currencyCode)}</th>
-                    <th>{row.currencyCode}</th>
-                  </tr>
-                ))}
-              </tfoot>
-            </table>
-          </div>
-        )}
+        <DataTable
+          columns={[
+            { key: "borrower", header: "Borrower", render: (row) => <strong>{row.borrowerName}</strong> },
+            { key: "account", header: "Loan account", cellClassName: "mono", render: (row) => row.accountNumber },
+            { key: "type", header: "Type", render: (row) => row.borrowerType },
+            { key: "office", header: "Office", render: (row) => row.officeName },
+            {
+              key: "status",
+              header: "Status",
+              render: (row) => <span className={`status ${loanStatusTone(row.status)}`}>{formatLoanStatus(row.status)}</span>,
+            },
+            { key: "principal", header: "Principal", render: (row) => formatMinor(row.principalMinor, row.currencyCode) },
+            { key: "disbursed", header: "Disbursed", render: (row) => (row.disbursedOn ? formatReportDate(row.disbursedOn) : "—") },
+          ]}
+          emptyState={
+            <div className="empty-state">
+              <CircleDollarSign size={28} />
+              <strong>No unassigned active loans</strong>
+              <p>Every active or in-arrears loan in your scope already has an officer.</p>
+            </div>
+          }
+          footer={report.totals.map((row) => (
+            <tr key={`total-${row.currencyCode}`}>
+              <th colSpan={5}>Principal total</th>
+              <th>{formatMinor(row.amountMinor, row.currencyCode)}</th>
+              <th>{row.currencyCode}</th>
+            </tr>
+          ))}
+          getRowAriaLabel={(row) => `Open loan ${row.accountNumber}`}
+          getRowKey={(row) => row.loanId}
+          rowHref={(row) => `/loans/${row.loanId}`}
+          rows={report.rows}
+        />
       </section>
     </main>
   );

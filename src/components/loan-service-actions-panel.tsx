@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
 import { toast } from "sonner";
 
+import { Dialog, type DialogHandle } from "@/components/ui/dialog";
 import { formatMinor } from "@/modules/money/domain/format-minor";
 
 type ServiceRequest = Readonly<{
@@ -59,7 +60,7 @@ export function LoanServiceActionsPanel({
   currencyCode: string;
 }) {
   const router = useRouter();
-  const dialogRef = useRef<HTMLDialogElement>(null);
+  const dialogRef = useRef<DialogHandle>(null);
   const [actionType, setActionType] = useState("PREPAY");
   const [pendingCreate, setPendingCreate] = useState(false);
   const [deciding, setDeciding] = useState<{ requestId: string; decision: "APPROVE" | "REJECT" } | null>(null);
@@ -201,13 +202,7 @@ export function LoanServiceActionsPanel({
               Request servicing action
             </button>
           </div>
-          <dialog className="app-modal" onClose={resetRequestDialog} ref={dialogRef}>
-            <div className="app-modal-heading">
-              <h2>Request a servicing action</h2>
-              <button aria-label="Close" className="icon-action" onClick={closeRequestDialog} type="button">
-                <X size={16} />
-              </button>
-            </div>
+          <Dialog onClose={resetRequestDialog} ref={dialogRef} title="Request a servicing action">
             <form action={createRequest} className="entity-form compact-mapping" key={formVersion}>
               <fieldset>
                 <legend>Request a servicing action</legend>
@@ -291,7 +286,7 @@ export function LoanServiceActionsPanel({
                 </button>
               </div>
             </form>
-          </dialog>
+          </Dialog>
         </>
       ) : null}
       {pendingRequest ? (

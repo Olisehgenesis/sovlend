@@ -1,11 +1,12 @@
 "use client";
 
-import { CheckCircle2, LoaderCircle, Plus, XCircle } from "lucide-react";
-import Link from "next/link";
+import { CheckCircle2, LoaderCircle, XCircle } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
 
+import { AttachedItemForm } from "@/components/ui/attached-item-form";
+import { DataTable } from "@/components/ui/data-table";
 import { formatMinor } from "@/modules/money/domain/format-minor";
 
 type LoanCharge = Readonly<{
@@ -76,80 +77,69 @@ export function LoanChargesPanel({
 
   return (
     <>
-      {charges.length === 0 ? (
-        <div className="empty-state compact-empty">
-          <strong>No charges recorded</strong>
-          <p>Charges raised during approval or servicing will appear here. Use the form below to post a one-off charge.</p>
-        </div>
-      ) : (
-        <div className="table-scroll">
-          <table className="clickable-rows">
-            <thead>
-              <tr>
-                <th>Charge</th>
-                <th>Amount</th>
-                <th>Due</th>
-                <th>Status</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {charges.map((charge) => (
-                <tr key={charge.id}>
-                  <td>
-                    <strong>{charge.name}</strong>
-                    <Link className="row-link" href={`/loans/${loanId}/charges/${charge.id}`} aria-label={`Open charge ${charge.name}`} />
-                  </td>
-                  <td className="mono">{formatMinor(BigInt(charge.amountMinor), charge.currencyCode)}</td>
-                  <td>{charge.dueOnFormatted ?? "-"}</td>
-                  <td>
-                    <span className={`status ${charge.status === "PAID" ? "up-to-date" : charge.status === "WAIVED" ? "review" : "in-arrears"}`}>
-                      {charge.status}
-                    </span>
-                  </td>
-                  <td style={{ position: "relative", zIndex: 1 }}>
-                    {canManage && charge.status === "PENDING" ? (
-                      <div className="account-card-actions">
-                        <button className="icon-action" disabled={pendingId?.startsWith(`${charge.id}:`) ?? false} onClick={() => setStatus(charge.id, "PAID")} title="Mark paid" type="button">
-                          {pendingId === `${charge.id}:PAID` ? <LoaderCircle className="spin" size={14} /> : <CheckCircle2 size={14} />}
-                        </button>
-                        <button className="icon-action" disabled={pendingId?.startsWith(`${charge.id}:`) ?? false} onClick={() => setStatus(charge.id, "WAIVED")} title="Waive" type="button">
-                          {pendingId === `${charge.id}:WAIVED` ? <LoaderCircle className="spin" size={14} /> : <XCircle size={14} />}
-                        </button>
-                      </div>
-                    ) : null}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-      {canManage ? (
-        <form action={createCharge} className="entity-form compact-mapping">
-          <fieldset>
-            <legend>Add loan charge</legend>
-            <div className="form-row three">
-              <label>
-                Name
-                <input name="name" placeholder="Processing fee" required />
-              </label>
-              <label>
-                Amount (UGX)
-                <input min={1} name="amount" required step="0.01" type="number" />
-              </label>
-              <label>
-                Due date
-                <input name="dueOn" type="date" />
-              </label>
-            </div>
-          </fieldset>
-          <div className="form-actions">
-            <button className="invest-button" disabled={pendingCreate}>
-              {pendingCreate ? <LoaderCircle className="spin" size={16} /> : <Plus size={16} />} Add charge
-            </button>
+      <DataTable
+        columns={[
+          { key: "charge", header: "Charge", render: (charge) => <strong>{charge.name}</strong> },
+          {
+            key: "amount",
+            header: "Amount",
+            cellClassName: "mono",
+            render: (charge) => formatMinor(BigInt(charge.amountMinor), charge.currencyCode),
+          },
+          { key: "due", header: "Due", render: (charge) => charge.dueOnFormatted ?? "-" },
+          {
+            key: "status",
+            header: "Status",
+            render: (charge) => (
+              <span className={`status ${charge.status === "PAID" ? "up-to-date" : charge.status === "WAIVED" ? "review" : "in-arrears"}`}>
+                {charge.status}
+              </span>
+            ),
+          },
+          {
+            key: "actions",
+            header: "",
+            render: (charge) => (
+              <div style={{ position: "relative", zIndex: 1 }}>
+                {canManage && charge.status === "PENDING" ? (
+                  <div className="account-card-actions">
+                    <button className="icon-action" disabled={pendingId?.startsWith(`${charge.id}:`) ?? false} onClick={() => setStatus(charge.id, "PAID")} title="Mark paid" type="button">
+                      {pendingId === `${charge.id}:PAID` ? <LoaderCircle className="spin" size={14} /> : <CheckCircle2 size={14} />}
+                    </button>
+                    <button className="icon-action" disabled={pendingId?.startsWith(`${charge.id}:`) ?? false} onClick={() => setStatus(charge.id, "WAIVED")} title="Waive" type="button">
+                      {pendingId === `${charge.id}:WAIVED` ? <LoaderCircle className="spin" size={14} /> : <XCircle size={14} />}
+                    </button>
+                  </div>
+                ) : null}
+              </div>
+            ),
+          },
+        ]}
+        emptyState={
+          <div className="empty-state compact-empty">
+            <strong>No charges recorded</strong>
+            <p>Charges raised during approval or servicing will appear here. Use the form below to post a one-off charge.</p>
           </div>
-        </form>
+        }
+        getRowAriaLabel={(charge) => `Open charge ${charge.name}`}
+        getRowKey={(charge) => charge.id}
+        rowHref={(charge) => `/loans/${loanId}/charges/${charge.id}`}
+        rows={charges}
+      />
+      {canManage ? (
+        <AttachedItemForm
+          action={createCharge}
+          fieldRows={[
+            [
+              { type: "text", name: "name", label: "Name", placeholder: "Processing fee", required: true },
+              { type: "number", name: "amount", label: "Amount (UGX)", min: 1, step: "0.01", required: true },
+              { type: "date", name: "dueOn", label: "Due date" },
+            ],
+          ]}
+          legend="Add loan charge"
+          pending={pendingCreate}
+          submitLabel="Add charge"
+        />
       ) : null}
     </>
   );

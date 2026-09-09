@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 
 import { Breadcrumbs } from "@/components/breadcrumbs";
 import { ReportPicker } from "@/components/report-picker";
+import { DataTable } from "@/components/ui/data-table";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { permissions } from "@/modules/identity/domain/permissions";
@@ -114,57 +115,29 @@ export default async function ClientListingPage({
           </div>
           <Users size={19} />
         </div>
-        {report.rows.length === 0 ? (
-          <div className="empty-state">
-            <Users size={28} />
-            <strong>No clients match this office filter</strong>
-            <p>Clear the filter or choose another office.</p>
-          </div>
-        ) : (
-          <div className="table-scroll">
-            <table className="clickable-rows">
-              <thead>
-                <tr>
-                  <th>Client</th>
-                  <th>Account</th>
-                  <th>Mobile</th>
-                  <th>External ID</th>
-                  <th>Office</th>
-                  <th>Status</th>
-                  <th>KYC</th>
-                  <th>Joined</th>
-                </tr>
-              </thead>
-              <tbody>
-                {report.rows.map((row) => (
-                  <tr key={row.id}>
-                    <td>
-                      <strong>{row.fullName}</strong>
-                      <Link
-                        aria-label={`Open client ${row.accountNumber}`}
-                        className="row-link"
-                        href={`/clients/${row.accountNumber}`}
-                      />
-                    </td>
-                    <td className="mono">{row.accountNumber}</td>
-                    <td>{row.mobileNumber ?? "Not provided"}</td>
-                    <td>{row.externalId ?? "—"}</td>
-                    <td>{row.officeName}</td>
-                    <td>
-                      <span className={`status ${clientStatusTone(row.status)}`}>{row.status}</span>
-                    </td>
-                    <td>
-                      <span className={`status ${kycStatusTone(row.kycStatus)}`}>
-                        {row.kycStatus}
-                      </span>
-                    </td>
-                    <td>{formatReportDate(row.joinedOn)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+        <DataTable
+          columns={[
+            { key: "client", header: "Client", render: (row) => <strong>{row.fullName}</strong> },
+            { key: "account", header: "Account", cellClassName: "mono", render: (row) => row.accountNumber },
+            { key: "mobile", header: "Mobile", render: (row) => row.mobileNumber ?? "Not provided" },
+            { key: "externalId", header: "External ID", render: (row) => row.externalId ?? "—" },
+            { key: "office", header: "Office", render: (row) => row.officeName },
+            { key: "status", header: "Status", render: (row) => <span className={`status ${clientStatusTone(row.status)}`}>{row.status}</span> },
+            { key: "kyc", header: "KYC", render: (row) => <span className={`status ${kycStatusTone(row.kycStatus)}`}>{row.kycStatus}</span> },
+            { key: "joined", header: "Joined", render: (row) => formatReportDate(row.joinedOn) },
+          ]}
+          emptyState={
+            <div className="empty-state">
+              <Users size={28} />
+              <strong>No clients match this office filter</strong>
+              <p>Clear the filter or choose another office.</p>
+            </div>
+          }
+          getRowAriaLabel={(row) => `Open client ${row.accountNumber}`}
+          getRowKey={(row) => row.id}
+          rowHref={(row) => `/clients/${row.accountNumber}`}
+          rows={report.rows}
+        />
       </section>
     </main>
   );
