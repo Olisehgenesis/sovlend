@@ -1,6 +1,8 @@
 import type { PrismaClient } from "@prisma/client";
 import type { Queue } from "bullmq";
 
+import { installmentDueMinor, installmentPaidMinor } from "@/modules/lending/domain/loan-outstanding";
+
 import { standingOrderSweepJobId, type StandingOrderSweepJob } from "../domain/standing-order-sweep";
 
 /**
@@ -43,9 +45,7 @@ export async function enqueueStandingOrderSweeps(
     const savingsAccount = installment.loan.client?.savingsAccounts[0];
     if (!savingsAccount) continue;
 
-    const outstanding =
-      installment.principalDueMinor + installment.interestDueMinor + installment.feesDueMinor + installment.penaltiesDueMinor -
-      installment.principalPaidMinor - installment.interestPaidMinor - installment.feesPaidMinor - installment.penaltiesPaidMinor;
+    const outstanding = installmentDueMinor(installment) - installmentPaidMinor(installment);
     if (outstanding <= 0n) continue;
 
     const data: StandingOrderSweepJob = {

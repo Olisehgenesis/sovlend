@@ -37,7 +37,7 @@ export async function AppShell({ children }: { children: React.ReactNode }) {
     <div className="app-shell">
       <AppSidebar admin={admin} canManageProducts={products} officeName={user?.office?.name} reportSections={reportSections} workspaceName={user?.organization?.name} />
       <div className="app-main">
-        <AppHeader admin={admin} canManageProducts={products} officeName={user?.office?.name} reportSections={reportSections} workspaceName={user?.organization?.name} />
+        <AppHeader officeName={user?.office?.name} workspaceName={user?.organization?.name} />
         {children}
       </div>
     </div>

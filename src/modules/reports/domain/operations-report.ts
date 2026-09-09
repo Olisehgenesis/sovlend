@@ -11,6 +11,7 @@ import {
 import type { PermissionCode } from "@/modules/identity/domain/permissions";
 import { transactionTypeVariants } from "@/lib/loan-transaction-type-variants";
 import { rowsToCsv } from "@/modules/lending/domain/loan-export";
+import { installmentOutstandingMinor as totalInstallmentOutstandingMinor } from "@/modules/lending/domain/loan-outstanding";
 import { loadPortfolioLoans, type AgingBucketKey, type BranchPortfolioBucketKey, branchPortfolioBucket, branchPortfolioBucketLabels, branchPortfolioBucketOrder } from "@/modules/reports/domain/risk-report";
 
 const reportableLoanStatuses: LoanStatus[] = ["ACTIVE", "IN_ARREARS"];
@@ -24,14 +25,17 @@ type InstallmentAmounts = {
   interestDueMinor: bigint;
   feesDueMinor: bigint;
   penaltiesDueMinor: bigint;
+  monitoringFeeDueMinor?: bigint;
   principalPaidMinor: bigint;
   interestPaidMinor: bigint;
   feesPaidMinor: bigint;
   penaltiesPaidMinor: bigint;
+  monitoringFeePaidMinor?: bigint;
   principalWaivedMinor: bigint;
   interestWaivedMinor: bigint;
   feesWaivedMinor: bigint;
   penaltiesWaivedMinor: bigint;
+  monitoringFeeWaivedMinor?: bigint;
 };
 
 export type ReportOption = { id: string; name: string };
@@ -105,6 +109,7 @@ export type BranchPortfolioRow = {
   outstandingPrincipalMinor: bigint;
   outstandingInterestMinor: bigint;
   outstandingFeesMinor: bigint;
+  outstandingMonitoringFeeMinor: bigint;
   outstandingPenaltiesMinor: bigint;
   outstandingTotalMinor: bigint;
   savingsBalanceMinor: bigint;
@@ -120,6 +125,7 @@ export type BranchPortfolioTotal = {
   outstandingPrincipalMinor: bigint;
   outstandingInterestMinor: bigint;
   outstandingFeesMinor: bigint;
+  outstandingMonitoringFeeMinor: bigint;
   outstandingPenaltiesMinor: bigint;
   outstandingTotalMinor: bigint;
   savingsBalanceMinor: bigint;
@@ -178,8 +184,11 @@ export type ActiveLoanRow = {
   outstandingInterestMinor: bigint;
   overdueInterestMinor: bigint;
   feesRepaidMinor: bigint;
+  monitoringFeeRepaidMinor: bigint;
   outstandingFeesMinor: bigint;
+  outstandingMonitoringFeeMinor: bigint;
   overdueFeesMinor: bigint;
+  overdueMonitoringFeeMinor: bigint;
   penaltiesRepaidMinor: bigint;
   outstandingPenaltiesMinor: bigint;
   overduePenaltiesMinor: bigint;
@@ -311,6 +320,7 @@ export type OutstandingBalanceRow = {
   principalOutstandingMinor: bigint;
   interestOutstandingMinor: bigint;
   feesOutstandingMinor: bigint;
+  monitoringFeeOutstandingMinor: bigint;
   penaltiesOutstandingMinor: bigint;
   totalOutstandingMinor: bigint;
 };
@@ -321,6 +331,7 @@ export type OutstandingBalanceTotal = {
   principalOutstandingMinor: bigint;
   interestOutstandingMinor: bigint;
   feesOutstandingMinor: bigint;
+  monitoringFeeOutstandingMinor: bigint;
   penaltiesOutstandingMinor: bigint;
   totalOutstandingMinor: bigint;
 };
@@ -477,14 +488,17 @@ export async function loadCollectionByOfficerReport(
         interestDueMinor: true,
         feesDueMinor: true,
         penaltiesDueMinor: true,
+        monitoringFeeDueMinor: true,
         principalPaidMinor: true,
         interestPaidMinor: true,
         feesPaidMinor: true,
         penaltiesPaidMinor: true,
+        monitoringFeePaidMinor: true,
         principalWaivedMinor: true,
         interestWaivedMinor: true,
         feesWaivedMinor: true,
         penaltiesWaivedMinor: true,
+        monitoringFeeWaivedMinor: true,
         loan: {
           select: {
             loanOfficerId: true,
@@ -509,7 +523,7 @@ export async function loadCollectionByOfficerReport(
   }
 
   for (const installment of installments) {
-    const amountMinor = totalOutstandingMinor(installment);
+    const amountMinor = totalInstallmentOutstandingMinor(installment);
     if (amountMinor <= 0n) continue;
 
     const row = ensureCollectionRow(
@@ -662,6 +676,7 @@ export async function loadBranchPortfolioReport(
     outstandingPrincipalMinor: bigint;
     outstandingInterestMinor: bigint;
     outstandingFeesMinor: bigint;
+    outstandingMonitoringFeeMinor: bigint;
     outstandingPenaltiesMinor: bigint;
     outstandingTotalMinor: bigint;
     savingsBalanceMinor: bigint;
@@ -683,6 +698,7 @@ export async function loadBranchPortfolioReport(
       outstandingPrincipalMinor: 0n,
       outstandingInterestMinor: 0n,
       outstandingFeesMinor: 0n,
+      outstandingMonitoringFeeMinor: 0n,
       outstandingPenaltiesMinor: 0n,
       outstandingTotalMinor: 0n,
       savingsBalanceMinor: 0n,
@@ -699,6 +715,7 @@ export async function loadBranchPortfolioReport(
     row.outstandingPrincipalMinor += loan.outstandingPrincipalMinor;
     row.outstandingInterestMinor += loan.outstandingInterestMinor;
     row.outstandingFeesMinor += loan.outstandingFeesMinor;
+    row.outstandingMonitoringFeeMinor += loan.outstandingMonitoringFeeMinor;
     row.outstandingPenaltiesMinor += loan.outstandingPenaltiesMinor;
     row.outstandingTotalMinor += loan.outstandingTotalMinor;
 
@@ -728,6 +745,7 @@ export async function loadBranchPortfolioReport(
       outstandingPrincipalMinor: row.outstandingPrincipalMinor,
       outstandingInterestMinor: row.outstandingInterestMinor,
       outstandingFeesMinor: row.outstandingFeesMinor,
+      outstandingMonitoringFeeMinor: row.outstandingMonitoringFeeMinor,
       outstandingPenaltiesMinor: row.outstandingPenaltiesMinor,
       outstandingTotalMinor: row.outstandingTotalMinor,
       savingsBalanceMinor: row.savingsBalanceMinor,
@@ -766,6 +784,7 @@ export async function loadBranchPortfolioReport(
         outstandingPrincipalMinor: 0n,
         outstandingInterestMinor: 0n,
         outstandingFeesMinor: 0n,
+        outstandingMonitoringFeeMinor: 0n,
         outstandingPenaltiesMinor: 0n,
         outstandingTotalMinor: 0n,
         savingsBalanceMinor: 0n,
@@ -778,6 +797,7 @@ export async function loadBranchPortfolioReport(
     total.outstandingPrincipalMinor += row.outstandingPrincipalMinor;
     total.outstandingInterestMinor += row.outstandingInterestMinor;
     total.outstandingFeesMinor += row.outstandingFeesMinor;
+    total.outstandingMonitoringFeeMinor += row.outstandingMonitoringFeeMinor;
     total.outstandingPenaltiesMinor += row.outstandingPenaltiesMinor;
     total.outstandingTotalMinor += row.outstandingTotalMinor;
     total.savingsBalanceMinor += row.savingsBalanceMinor;
@@ -917,8 +937,11 @@ export async function loadActiveLoansReport(
       outstandingInterestMinor: loan.outstandingInterestMinor,
       overdueInterestMinor: loan.overdueInterestMinor,
       feesRepaidMinor: loan.feesRepaidMinor,
+      monitoringFeeRepaidMinor: loan.monitoringFeeRepaidMinor,
       outstandingFeesMinor: loan.outstandingFeesMinor,
+      outstandingMonitoringFeeMinor: loan.outstandingMonitoringFeeMinor,
       overdueFeesMinor: loan.overdueFeesMinor,
+      overdueMonitoringFeeMinor: loan.overdueMonitoringFeeMinor,
       penaltiesRepaidMinor: loan.penaltiesRepaidMinor,
       outstandingPenaltiesMinor: loan.outstandingPenaltiesMinor,
       overduePenaltiesMinor: loan.overduePenaltiesMinor,
@@ -1323,14 +1346,17 @@ export async function loadOutstandingBalancesReport(
           interestDueMinor: true,
           feesDueMinor: true,
           penaltiesDueMinor: true,
+          monitoringFeeDueMinor: true,
           principalPaidMinor: true,
           interestPaidMinor: true,
           feesPaidMinor: true,
           penaltiesPaidMinor: true,
+          monitoringFeePaidMinor: true,
           principalWaivedMinor: true,
           interestWaivedMinor: true,
           feesWaivedMinor: true,
           penaltiesWaivedMinor: true,
+          monitoringFeeWaivedMinor: true,
         },
       },
     },
@@ -1350,15 +1376,18 @@ export async function loadOutstandingBalancesReport(
         (sum, installment) => sum + feesOutstandingMinor(installment),
         0n,
       );
+      const monitoringFeeOutstanding = loan.installments.reduce(
+        (sum, installment) => sum + monitoringFeeOutstandingMinor(installment),
+        0n,
+      );
       const penaltiesOutstanding = loan.installments.reduce(
         (sum, installment) => sum + penaltiesOutstandingMinor(installment),
         0n,
       );
-      const totalOutstanding =
-        principalOutstanding +
-        interestOutstanding +
-        feesOutstanding +
-        penaltiesOutstanding;
+      const totalOutstanding = loan.installments.reduce(
+        (sum, installment) => sum + totalInstallmentOutstandingMinor(installment),
+        0n,
+      );
 
       return {
         loanId: loan.id,
@@ -1377,6 +1406,7 @@ export async function loadOutstandingBalancesReport(
         principalOutstandingMinor: principalOutstanding,
         interestOutstandingMinor: interestOutstanding,
         feesOutstandingMinor: feesOutstanding,
+        monitoringFeeOutstandingMinor: monitoringFeeOutstanding,
         penaltiesOutstandingMinor: penaltiesOutstanding,
         totalOutstandingMinor: totalOutstanding,
       };
@@ -1398,6 +1428,7 @@ export async function loadOutstandingBalancesReport(
         principalOutstandingMinor: 0n,
         interestOutstandingMinor: 0n,
         feesOutstandingMinor: 0n,
+        monitoringFeeOutstandingMinor: 0n,
         penaltiesOutstandingMinor: 0n,
         totalOutstandingMinor: 0n,
       };
@@ -1405,6 +1436,7 @@ export async function loadOutstandingBalancesReport(
     total.principalOutstandingMinor += row.principalOutstandingMinor;
     total.interestOutstandingMinor += row.interestOutstandingMinor;
     total.feesOutstandingMinor += row.feesOutstandingMinor;
+    total.monitoringFeeOutstandingMinor += row.monitoringFeeOutstandingMinor;
     total.penaltiesOutstandingMinor += row.penaltiesOutstandingMinor;
     total.totalOutstandingMinor += row.totalOutstandingMinor;
     totalsMap.set(row.currencyCode, total);
@@ -1525,6 +1557,7 @@ export function branchPortfolioReportCsv(report: BranchPortfolioReport) {
       "Principal Outstanding": row.outstandingPrincipalMinor.toString(),
       "Interest Outstanding": row.outstandingInterestMinor.toString(),
       "Fees Outstanding": row.outstandingFeesMinor.toString(),
+      "Monitoring Fee Outstanding": row.outstandingMonitoringFeeMinor.toString(),
       "Penalties Outstanding": row.outstandingPenaltiesMinor.toString(),
       "Total Outstanding": row.outstandingTotalMinor.toString(),
       "Savings Balance": row.savingsBalanceMinor.toString(),
@@ -1549,6 +1582,7 @@ export function branchPortfolioReportCsv(report: BranchPortfolioReport) {
       "Principal Outstanding",
       "Interest Outstanding",
       "Fees Outstanding",
+      "Monitoring Fee Outstanding",
       "Penalties Outstanding",
       "Total Outstanding",
       "Savings Balance",
@@ -1601,8 +1635,11 @@ export function activeLoansReportCsv(report: ActiveLoansReport) {
     "Interest Outstanding",
     "Interest Overdue",
     "Fees Repaid",
+    "Monitoring Fee Repaid",
     "Fees Outstanding",
+    "Monitoring Fee Outstanding",
     "Fees Overdue",
+    "Monitoring Fee Overdue",
     "Penalties Repaid",
     "Penalties Outstanding",
     "Penalties Overdue",
@@ -1631,8 +1668,11 @@ export function activeLoansReportCsv(report: ActiveLoansReport) {
       "Interest Outstanding": row.outstandingInterestMinor.toString(),
       "Interest Overdue": row.overdueInterestMinor.toString(),
       "Fees Repaid": row.feesRepaidMinor.toString(),
+      "Monitoring Fee Repaid": row.monitoringFeeRepaidMinor.toString(),
       "Fees Outstanding": row.outstandingFeesMinor.toString(),
+      "Monitoring Fee Outstanding": row.outstandingMonitoringFeeMinor.toString(),
       "Fees Overdue": row.overdueFeesMinor.toString(),
+      "Monitoring Fee Overdue": row.overdueMonitoringFeeMinor.toString(),
       "Penalties Repaid": row.penaltiesRepaidMinor.toString(),
       "Penalties Outstanding": row.outstandingPenaltiesMinor.toString(),
       "Penalties Overdue": row.overduePenaltiesMinor.toString(),
@@ -1683,6 +1723,7 @@ export function outstandingBalancesReportCsv(report: OutstandingBalancesReport) 
       "Principal Outstanding": row.principalOutstandingMinor.toString(),
       "Interest Outstanding": row.interestOutstandingMinor.toString(),
       "Fees Outstanding": row.feesOutstandingMinor.toString(),
+      "Monitoring Fee Outstanding": row.monitoringFeeOutstandingMinor.toString(),
       "Penalties Outstanding": row.penaltiesOutstandingMinor.toString(),
       "Total Outstanding": row.totalOutstandingMinor.toString(),
       "Disbursed Date": row.disbursedOn ? isoDate(row.disbursedOn) : "",
@@ -1696,6 +1737,7 @@ export function outstandingBalancesReportCsv(report: OutstandingBalancesReport) 
       "Principal Outstanding",
       "Interest Outstanding",
       "Fees Outstanding",
+      "Monitoring Fee Outstanding",
       "Penalties Outstanding",
       "Total Outstanding",
       "Disbursed Date",
@@ -1818,6 +1860,14 @@ function feesOutstandingMinor(installment: InstallmentAmounts) {
   );
 }
 
+function monitoringFeeOutstandingMinor(installment: InstallmentAmounts) {
+  return positiveOutstanding(
+    installment.monitoringFeeDueMinor ?? 0n,
+    installment.monitoringFeePaidMinor ?? 0n,
+    installment.monitoringFeeWaivedMinor ?? 0n,
+  );
+}
+
 function penaltiesOutstandingMinor(installment: InstallmentAmounts) {
   return positiveOutstanding(
     installment.penaltiesDueMinor,
@@ -1827,12 +1877,7 @@ function penaltiesOutstandingMinor(installment: InstallmentAmounts) {
 }
 
 function totalOutstandingMinor(installment: InstallmentAmounts) {
-  return (
-    principalOutstandingMinor(installment) +
-    interestOutstandingMinor(installment) +
-    feesOutstandingMinor(installment) +
-    penaltiesOutstandingMinor(installment)
-  );
+  return totalInstallmentOutstandingMinor(installment);
 }
 
 function positiveOutstanding(dueMinor: bigint, paidMinor: bigint, waivedMinor: bigint) {

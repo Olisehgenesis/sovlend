@@ -138,6 +138,32 @@ describe("buildLoanExportDatasets", () => {
     expect(datasets.loan_overdue_snapshot).toHaveLength(0);
   });
 
+  it("includes monitoring fees in total balances and exposes them separately on the loan schedule", () => {
+    const loan = makeLoan({
+      installments: [
+        {
+          id: "i1", installmentNumber: 1, dueOn: new Date("2026-01-15"),
+          principalDueMinor: 100_000n, interestDueMinor: 10_000n, feesDueMinor: 500n, penaltiesDueMinor: 0n, monitoringFeeDueMinor: 400n,
+          principalPaidMinor: 0n, interestPaidMinor: 0n, feesPaidMinor: 100n, penaltiesPaidMinor: 0n, monitoringFeePaidMinor: 50n,
+          principalWaivedMinor: 0n, interestWaivedMinor: 0n, feesWaivedMinor: 0n, penaltiesWaivedMinor: 0n, monitoringFeeWaivedMinor: 25n,
+        },
+      ],
+    });
+    const datasets = buildLoanExportDatasets([loan], new Date("2026-06-01"));
+    expect(datasets.loan_balances[0].totalOriginal).toBe("110900");
+    expect(datasets.loan_balances[0].totalPaid).toBe("150");
+    expect(datasets.loan_balances[0].totalWaived).toBe("25");
+    expect(datasets.loan_balances[0].totalOutstanding).toBe("110725");
+    expect(datasets.loan_schedule[0]).toMatchObject({
+      feesDueMinor: "500",
+      monitoringFeeDueMinor: "400",
+      feesPaidMinor: "100",
+      monitoringFeePaidMinor: "50",
+      monitoringFeeWaivedMinor: "25",
+      outstandingMinor: "110725",
+    });
+  });
+
   it("passes through transactions, allocations, documents, notes, collateral, journals, audit events, and reminders", () => {
     const loan = makeLoan({
       transactions: [{ id: "t1", transactionType: "DISBURSEMENT", businessDate: new Date("2026-01-01"), settlementCurrency: "UGX", settlementChannel: "Cash", settlementAccountName: "Main till", settlementAmountMinor: 1_000_000n, denominationAmountMinor: 1_000_000n, externalReference: null, idempotencyKey: "idem-1", reversedById: null, reversesId: null, createdAt: new Date("2026-01-01") }],

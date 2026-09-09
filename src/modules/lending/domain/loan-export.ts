@@ -8,7 +8,14 @@
 // loan_charges, loan_overdue_snapshot, loan_documents, loan_notes, loan_collateral,
 // loan_journals, loan_journal_lines, loan_audit_events, loan_reminders.
 
-import { isLoanSettledStatus } from "./loan-outstanding";
+import {
+  installmentDueMinor,
+  installmentOutstandingMinor as totalInstallmentOutstandingMinor,
+  installmentPaidMinor,
+  installmentWaivedMinor,
+  isLoanSettledStatus,
+  loanOutstandingMinor,
+} from "./loan-outstanding";
 
 export type ExportInstallment = Readonly<{
   id: string;
@@ -18,14 +25,17 @@ export type ExportInstallment = Readonly<{
   interestDueMinor: bigint;
   feesDueMinor: bigint;
   penaltiesDueMinor: bigint;
+  monitoringFeeDueMinor?: bigint;
   principalPaidMinor: bigint;
   interestPaidMinor: bigint;
   feesPaidMinor: bigint;
   penaltiesPaidMinor: bigint;
+  monitoringFeePaidMinor?: bigint;
   principalWaivedMinor: bigint;
   interestWaivedMinor: bigint;
   feesWaivedMinor: bigint;
   penaltiesWaivedMinor: bigint;
+  monitoringFeeWaivedMinor?: bigint;
 }>;
 
 export type ExportTransaction = Readonly<{
@@ -176,20 +186,7 @@ function isoDateTime(value: Date | null): string {
 }
 
 function installmentOutstanding(item: ExportInstallment): bigint {
-  return (
-    item.principalDueMinor +
-    item.interestDueMinor +
-    item.feesDueMinor +
-    item.penaltiesDueMinor -
-    item.principalPaidMinor -
-    item.interestPaidMinor -
-    item.feesPaidMinor -
-    item.penaltiesPaidMinor -
-    item.principalWaivedMinor -
-    item.interestWaivedMinor -
-    item.feesWaivedMinor -
-    item.penaltiesWaivedMinor
-  );
+  return totalInstallmentOutstandingMinor(item);
 }
 
 export type LoanExportDatasets = Readonly<{
@@ -271,6 +268,13 @@ export function buildLoanExportDatasets(records: readonly ExportLoanRecord[], as
         overdue: 0n,
       },
     );
+    // Keep the legacy per-component fee balance columns intact here: loan-level write-offs are not
+    // split between generic fees and monitoring fee, so only the aggregate totals can safely add
+    // monitoring fee without inventing a fake per-component write-off allocation.
+    const totalOriginal = loan.installments.reduce((sum, item) => sum + installmentDueMinor(item), 0n);
+    const totalPaid = loan.installments.reduce((sum, item) => sum + installmentPaidMinor(item), 0n);
+    const totalWaived = loan.installments.reduce((sum, item) => sum + installmentWaivedMinor(item), 0n);
+    const totalOutstanding = loanOutstandingMinor(loan.installments, loan);
     const components = [
       { key: "principal", due: totals.principalDue, paid: totals.principalPaid, waived: totals.principalWaived, writtenOff: loan.principalWrittenOffMinor },
       { key: "interest", due: totals.interestDue, paid: totals.interestPaid, waived: totals.interestWaived, writtenOff: loan.interestWrittenOffMinor },
@@ -278,9 +282,6 @@ export function buildLoanExportDatasets(records: readonly ExportLoanRecord[], as
       { key: "penalties", due: totals.penaltiesDue, paid: totals.penaltiesPaid, waived: totals.penaltiesWaived, writtenOff: loan.penaltiesWrittenOffMinor },
     ];
     const balanceRow: CsvRow = { loanId: loan.id, accountNumber: loan.accountNumber, asOfDate: isoDate(asOfDate) };
-    let totalOriginal = 0n;
-    let totalPaid = 0n;
-    let totalWaived = 0n;
     let totalWrittenOff = 0n;
     for (const component of components) {
       const outstanding = component.due - component.paid - component.waived - component.writtenOff;
@@ -289,17 +290,13 @@ export function buildLoanExportDatasets(records: readonly ExportLoanRecord[], as
       balanceRow[`${component.key}Waived`] = money(component.waived);
       balanceRow[`${component.key}WrittenOff`] = money(component.writtenOff);
       balanceRow[`${component.key}Outstanding`] = money(outstanding > 0n ? outstanding : 0n);
-      totalOriginal += component.due;
-      totalPaid += component.paid;
-      totalWaived += component.waived;
       totalWrittenOff += component.writtenOff;
     }
     balanceRow.totalOriginal = money(totalOriginal);
     balanceRow.totalPaid = money(totalPaid);
     balanceRow.totalWaived = money(totalWaived);
     balanceRow.totalWrittenOff = money(totalWrittenOff);
-    const totalOutstanding = totalOriginal - totalPaid - totalWaived - totalWrittenOff;
-    balanceRow.totalOutstanding = money(totalOutstanding > 0n ? totalOutstanding : 0n);
+    balanceRow.totalOutstanding = money(totalOutstanding);
     balanceRow.totalOverDue = money(totals.overdue);
     datasets.loan_balances.push(balanceRow);
 
@@ -313,14 +310,17 @@ export function buildLoanExportDatasets(records: readonly ExportLoanRecord[], as
         principalDueMinor: money(item.principalDueMinor),
         interestDueMinor: money(item.interestDueMinor),
         feesDueMinor: money(item.feesDueMinor),
+        monitoringFeeDueMinor: money(item.monitoringFeeDueMinor ?? 0n),
         penaltiesDueMinor: money(item.penaltiesDueMinor),
         principalPaidMinor: money(item.principalPaidMinor),
         interestPaidMinor: money(item.interestPaidMinor),
         feesPaidMinor: money(item.feesPaidMinor),
+        monitoringFeePaidMinor: money(item.monitoringFeePaidMinor ?? 0n),
         penaltiesPaidMinor: money(item.penaltiesPaidMinor),
         principalWaivedMinor: money(item.principalWaivedMinor),
         interestWaivedMinor: money(item.interestWaivedMinor),
         feesWaivedMinor: money(item.feesWaivedMinor),
+        monitoringFeeWaivedMinor: money(item.monitoringFeeWaivedMinor ?? 0n),
         penaltiesWaivedMinor: money(item.penaltiesWaivedMinor),
         outstandingMinor: money(outstanding),
       });
@@ -519,7 +519,7 @@ export const datasetColumns: Record<keyof LoanExportDatasets, readonly string[]>
     "penaltiesOriginal", "penaltiesPaid", "penaltiesWaived", "penaltiesWrittenOff", "penaltiesOutstanding",
     "totalOriginal", "totalPaid", "totalWaived", "totalWrittenOff", "totalOutstanding", "totalOverDue",
   ],
-  loan_schedule: ["loanId", "accountNumber", "installmentNumber", "dueOn", "principalDueMinor", "interestDueMinor", "feesDueMinor", "penaltiesDueMinor", "principalPaidMinor", "interestPaidMinor", "feesPaidMinor", "penaltiesPaidMinor", "principalWaivedMinor", "interestWaivedMinor", "feesWaivedMinor", "penaltiesWaivedMinor", "outstandingMinor"],
+  loan_schedule: ["loanId", "accountNumber", "installmentNumber", "dueOn", "principalDueMinor", "interestDueMinor", "feesDueMinor", "monitoringFeeDueMinor", "penaltiesDueMinor", "principalPaidMinor", "interestPaidMinor", "feesPaidMinor", "monitoringFeePaidMinor", "penaltiesPaidMinor", "principalWaivedMinor", "interestWaivedMinor", "feesWaivedMinor", "monitoringFeeWaivedMinor", "penaltiesWaivedMinor", "outstandingMinor"],
   loan_transactions: ["loanId", "accountNumber", "transactionId", "transactionType", "businessDate", "settlementCurrency", "settlementChannel", "settlementAccount", "settlementAmountMinor", "denominationAmountMinor", "externalReference", "idempotencyKey", "reversedById", "reversesId", "createdAt"],
   loan_transaction_allocations: ["loanId", "transactionId", "installmentId", "principalMinor", "interestMinor", "feesMinor", "penaltiesMinor"],
   loan_charges: ["loanId", "accountNumber", "chargeId", "name", "amountMinor", "currency", "status", "dueOn"],

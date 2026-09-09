@@ -22,4 +22,32 @@ describe("repayment allocation", () => {
     expect(result.interestMinor).toBe(2_000n);
     expect(result.feesMinor + result.penaltiesMinor + result.principalMinor).toBe(0n);
   });
+
+  it("allocates monitoring fee separately from generic fees and interest, even at equal rates", () => {
+    const withMonitoringFee: AllocatableInstallment = {
+      ...installment,
+      feesDueMinor: 0n,
+      monitoringFeeDueMinor: 500n,
+      monitoringFeePaidMinor: 0n,
+    };
+    const result = allocateRepayment([withMonitoringFee], 800n);
+    expect(result).toMatchObject({ penaltiesMinor: 300n, monitoringFeeMinor: 500n, feesMinor: 0n, interestMinor: 0n, principalMinor: 0n, overpaymentMinor: 0n });
+    expect(result.allocations[0]).toMatchObject({ monitoringFeeMinor: 500n, feesMinor: 0n });
+  });
+
+  it("defaults monitoringFeeMinor to 0 for historical installments that never set the field", () => {
+    const result = allocateRepayment([installment], 3_000n);
+    expect(result.monitoringFeeMinor).toBe(0n);
+    expect(result.allocations[0]).toMatchObject({ monitoringFeeMinor: 0n });
+  });
+
+  it("carries an installment's penaltyAssessedOn flag into the allocation when present", () => {
+    const penaltyAssessedOn = new Date("2026-09-04T00:00:00.000Z");
+    const result = allocateRepayment([{ ...installment, penaltyAssessedOn }], 300n);
+    expect(result.allocations[0]).toMatchObject({
+      installmentId: "one",
+      penaltiesMinor: 300n,
+      penaltyAssessedOn,
+    });
+  });
 });

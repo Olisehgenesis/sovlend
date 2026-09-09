@@ -1,3 +1,5 @@
+import { installmentDueMinor, installmentPaidMinor } from "./loan-outstanding";
+
 export type PayoffInstallment = Readonly<{
   id: string;
   dueOn: Date;
@@ -10,6 +12,8 @@ export type PayoffInstallment = Readonly<{
   interestPaidMinor: bigint;
   feesPaidMinor: bigint;
   penaltiesPaidMinor: bigint;
+  monitoringFeeDueMinor?: bigint;
+  monitoringFeePaidMinor?: bigint;
 }>;
 
 export type PayoffInstallmentSettlement = Readonly<{
@@ -18,6 +22,7 @@ export type PayoffInstallmentSettlement = Readonly<{
   interestCollectedMinor: bigint;
   interestWaivedMinor: bigint;
   feesMinor: bigint;
+  monitoringFeeMinor: bigint;
   penaltiesCollectedMinor: bigint;
   penaltiesWaivedMinor: bigint;
 }>;
@@ -29,6 +34,7 @@ export type PayoffQuote = Readonly<{
   interestAccruedMinor: bigint;
   interestWaivedMinor: bigint;
   feesOutstandingMinor: bigint;
+  monitoringFeeOutstandingMinor: bigint;
   penaltiesCollectedMinor: bigint;
   penaltiesWaivedMinor: bigint;
   totalPayoffMinor: bigint;
@@ -56,6 +62,7 @@ export function calculateLoanPayoff(
   let interestAccruedMinor = 0n;
   let interestWaivedMinor = 0n;
   let feesOutstandingMinor = 0n;
+  let monitoringFeeOutstandingMinor = 0n;
   let penaltiesCollectedMinor = 0n;
   let penaltiesWaivedMinor = 0n;
 
@@ -66,17 +73,25 @@ export function calculateLoanPayoff(
     const isDue = installment.dueOn <= options.asOfDate;
     const interestCollected = isDue ? interestOutstanding : 0n;
     const interestWaived = isDue ? 0n : interestOutstanding;
-    const feesMinor = installment.feesDueMinor - installment.feesPaidMinor;
+    const monitoringFeeMinor = (installment.monitoringFeeDueMinor ?? 0n) - (installment.monitoringFeePaidMinor ?? 0n);
+    const feesMinor =
+      installmentDueMinor(installment) -
+      installmentPaidMinor(installment) -
+      principalMinor -
+      interestOutstanding -
+      monitoringFeeMinor -
+      (installment.penaltiesDueMinor - installment.penaltiesPaidMinor);
     const penaltiesOutstanding = installment.penaltiesDueMinor - installment.penaltiesPaidMinor;
     const penaltiesCollected = waivePenalties ? 0n : penaltiesOutstanding;
     const penaltiesWaived = waivePenalties ? penaltiesOutstanding : 0n;
 
-    if (principalMinor <= 0n && interestOutstanding <= 0n && feesMinor <= 0n && penaltiesOutstanding <= 0n) continue;
+    if (principalMinor <= 0n && interestOutstanding <= 0n && feesMinor <= 0n && monitoringFeeMinor <= 0n && penaltiesOutstanding <= 0n) continue;
 
     principalOutstandingMinor += max0(principalMinor);
     interestAccruedMinor += max0(interestCollected);
     interestWaivedMinor += max0(interestWaived);
     feesOutstandingMinor += max0(feesMinor);
+    monitoringFeeOutstandingMinor += max0(monitoringFeeMinor);
     penaltiesCollectedMinor += max0(penaltiesCollected);
     penaltiesWaivedMinor += max0(penaltiesWaived);
 
@@ -86,12 +101,18 @@ export function calculateLoanPayoff(
       interestCollectedMinor: max0(interestCollected),
       interestWaivedMinor: max0(interestWaived),
       feesMinor: max0(feesMinor),
+      monitoringFeeMinor: max0(monitoringFeeMinor),
       penaltiesCollectedMinor: max0(penaltiesCollected),
       penaltiesWaivedMinor: max0(penaltiesWaived),
     });
   }
 
-  const totalPayoffMinor = principalOutstandingMinor + interestAccruedMinor + feesOutstandingMinor + penaltiesCollectedMinor;
+  const totalPayoffMinor =
+    principalOutstandingMinor +
+    interestAccruedMinor +
+    feesOutstandingMinor +
+    monitoringFeeOutstandingMinor +
+    penaltiesCollectedMinor;
 
   return {
     asOfDate: options.asOfDate,
@@ -100,6 +121,7 @@ export function calculateLoanPayoff(
     interestAccruedMinor,
     interestWaivedMinor,
     feesOutstandingMinor,
+    monitoringFeeOutstandingMinor,
     penaltiesCollectedMinor,
     penaltiesWaivedMinor,
     totalPayoffMinor,

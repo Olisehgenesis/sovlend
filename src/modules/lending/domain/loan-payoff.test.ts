@@ -40,4 +40,15 @@ describe("calculateLoanPayoff", () => {
     expect(quote.totalPayoffMinor).toBe(0n);
     expect(quote.settlements).toHaveLength(0);
   });
+
+  it("keeps monitoring fees separate from generic fees while still including them in total payoff", () => {
+    const quote = calculateLoanPayoff(
+      [{ ...past, monitoringFeeDueMinor: 300n, monitoringFeePaidMinor: 100n }],
+      { asOfDate: new Date("2026-09-02") },
+    );
+    expect(quote.feesOutstandingMinor).toBe(200n);
+    expect(quote.monitoringFeeOutstandingMinor).toBe(200n);
+    expect(quote.totalPayoffMinor).toBe(11_500n);
+    expect(quote.settlements[0]).toMatchObject({ feesMinor: 200n, monitoringFeeMinor: 200n });
+  });
 });

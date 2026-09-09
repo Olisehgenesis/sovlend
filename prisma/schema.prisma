@@ -168,30 +168,31 @@ enum MigrationRunStatus {
 }
 
 model Organization {
-  id                 String                       @id @default(uuid()) @db.Uuid
-  name               String
-  baseCurrency       String                       @default("UGX")
-  nextClientSequence Int                          @default(1)
-  nextGroupSequence  Int                          @default(1)
-  offices            Office[]
-  users              User[]
-  clients            Client[]
-  loanProducts       LoanProduct[]
-  savingsProducts    SavingsProduct[]
-  chargeDefinitions  ChargeDefinition[]
-  ownershipPools     OwnershipPool[]
-  permissionGroups   PermissionGroup[]
-  investorAccesses   InvestorOrganizationAccess[]
-  investorInvites    InvestorInvite[]
-  investorRequests   InvestorAccessRequest[]
-  investments        InvestmentCommitment[]
-  funds              Fund[]
-  settlementAccounts SettlementAccount[]
-  accountingDefaults LoanAccountingDefaults?
-  groups             Group[]
-  loanExportJobs     LoanExportJob[]
-  createdAt          DateTime                     @default(now())
-  updatedAt          DateTime                     @updatedAt
+  id                        String                       @id @default(uuid()) @db.Uuid
+  name                      String
+  baseCurrency              String                       @default("UGX")
+  nextClientSequence        Int                          @default(1)
+  nextGroupSequence         Int                          @default(1)
+  offices                   Office[]
+  users                     User[]
+  clients                   Client[]
+  loanProducts              LoanProduct[]
+  savingsProducts           SavingsProduct[]
+  chargeDefinitions         ChargeDefinition[]
+  ownershipPools            OwnershipPool[]
+  permissionGroups          PermissionGroup[]
+  investorAccesses          InvestorOrganizationAccess[]
+  investorInvites           InvestorInvite[]
+  investorRequests          InvestorAccessRequest[]
+  investments               InvestmentCommitment[]
+  funds                     Fund[]
+  settlementAccounts        SettlementAccount[]
+  accountingDefaults        LoanAccountingDefaults?
+  savingsAccountingDefaults SavingsAccountingDefaults?
+  groups                    Group[]
+  loanExportJobs            LoanExportJob[]
+  createdAt                 DateTime                     @default(now())
+  updatedAt                 DateTime                     @updatedAt
 }
 
 model Office {
@@ -558,6 +559,12 @@ model LoanProduct {
   repaymentFrequency         String
   amortizationMethod         String
   interestMethod             String
+  // Forward-looking penalty accrual rule, assessed by assess-loan-penalties.ts (see
+  // src/modules/lending/domain/penalty-assessment.ts for the authoritative shape/parser):
+  // { graceDays: number, calculationType: "FLAT" | "PERCENT_OF_OVERDUE", amountMinor?: string,
+  //   percentageBps?: number }. Null/absent disables assessment for this product. Historical
+  // installments imported before this feature shipped are never retroactively assessed -- see
+  // penalty-assessment.ts's bounded assessment window for why that is structurally impossible.
   lateFeeRule                Json?
   version                    Int                           @default(1)
   active                     Boolean                       @default(true)
@@ -573,19 +580,20 @@ model LoanProduct {
 }
 
 model SavingsProduct {
-  id                     String           @id @default(uuid()) @db.Uuid
-  organizationId         String           @db.Uuid
+  id                     String                           @id @default(uuid()) @db.Uuid
+  organizationId         String                           @db.Uuid
   name                   String
   shortName              String
   description            String?
-  currencyCode           String           @default("UGX")
-  nominalAnnualRateBps   Int              @default(0)
-  minOpeningBalanceMinor BigInt           @default(0)
-  active                 Boolean          @default(true)
-  organization           Organization     @relation(fields: [organizationId], references: [id])
+  currencyCode           String                           @default("UGX")
+  nominalAnnualRateBps   Int                              @default(0)
+  minOpeningBalanceMinor BigInt                           @default(0)
+  active                 Boolean                          @default(true)
+  organization           Organization                     @relation(fields: [organizationId], references: [id])
   savingsAccounts        SavingsAccount[]
-  createdAt              DateTime         @default(now())
-  updatedAt              DateTime         @updatedAt
+  accountingMapping      SavingsProductAccountingMapping?
+  createdAt              DateTime                         @default(now())
+  updatedAt              DateTime                         @updatedAt
 
   @@unique([organizationId, shortName])
   @@index([organizationId, active])
@@ -832,26 +840,41 @@ model Loan {
 }
 
 model LoanInstallment {
-  id                     String                      @id @default(uuid()) @db.Uuid
-  loanId                 String                      @db.Uuid
-  installmentNumber      Int
-  dueOn                  DateTime                    @db.Date
-  principalDueMinor      BigInt
-  interestDueMinor       BigInt
-  feesDueMinor           BigInt                      @default(0)
-  penaltiesDueMinor      BigInt                      @default(0)
-  principalPaidMinor     BigInt                      @default(0)
-  interestPaidMinor      BigInt                      @default(0)
-  feesPaidMinor          BigInt                      @default(0)
-  penaltiesPaidMinor     BigInt                      @default(0)
-  principalWaivedMinor   BigInt                      @default(0)
-  interestWaivedMinor    BigInt                      @default(0)
-  feesWaivedMinor        BigInt                      @default(0)
-  penaltiesWaivedMinor   BigInt                      @default(0)
-  loan                   Loan                        @relation(fields: [loanId], references: [id])
-  reminders              Reminder[]
-  transactionAllocations LoanTransactionAllocation[]
-  createdAt              DateTime                    @default(now())
+  id                       String                      @id @default(uuid()) @db.Uuid
+  loanId                   String                      @db.Uuid
+  installmentNumber        Int
+  dueOn                    DateTime                    @db.Date
+  principalDueMinor        BigInt
+  interestDueMinor         BigInt
+  feesDueMinor             BigInt                      @default(0)
+  penaltiesDueMinor        BigInt                      @default(0)
+  // Monitoring fee is tracked separately from feesDueMinor/feesPaidMinor going forward (see
+  // repayment-schedule.ts / repayment-allocation.ts) so it never shares an income account or
+  // schedule line with interest or generic fees, even when their rates coincide. Always 0 on
+  // installments generated before this field existed -- their feesDueMinor historically included
+  // the monitoring-fee amount and is left untouched.
+  monitoringFeeDueMinor    BigInt                      @default(0)
+  principalPaidMinor       BigInt                      @default(0)
+  interestPaidMinor        BigInt                      @default(0)
+  feesPaidMinor            BigInt                      @default(0)
+  penaltiesPaidMinor       BigInt                      @default(0)
+  monitoringFeePaidMinor   BigInt                      @default(0)
+  principalWaivedMinor     BigInt                      @default(0)
+  interestWaivedMinor      BigInt                      @default(0)
+  feesWaivedMinor          BigInt                      @default(0)
+  penaltiesWaivedMinor     BigInt                      @default(0)
+  monitoringFeeWaivedMinor BigInt                      @default(0)
+  // Set the first (and, in the current one-time-only assessment model, only) time
+  // assess-loan-penalties.ts posts an accrual journal for this installment. Null forever for
+  // installments this job has not assessed -- including all historical installments, since the
+  // job's bounded assessment window structurally cannot reach into the past. Used to route this
+  // installment's penalty collection to the penalty receivable account (not penalty income again)
+  // at repayment time, so accrual-assessed penalty income is never double-counted.
+  penaltyAssessedOn        DateTime?                   @db.Date
+  loan                     Loan                        @relation(fields: [loanId], references: [id])
+  reminders                Reminder[]
+  transactionAllocations   LoanTransactionAllocation[]
+  createdAt                DateTime                    @default(now())
 
   @@unique([loanId, installmentNumber])
   @@index([dueOn])
@@ -889,16 +912,20 @@ model LoanTransaction {
 }
 
 model LoanTransactionAllocation {
-  id             String          @id @default(uuid()) @db.Uuid
-  transactionId  String          @db.Uuid
-  installmentId  String          @db.Uuid
-  principalMinor BigInt          @default(0)
-  interestMinor  BigInt          @default(0)
-  feesMinor      BigInt          @default(0)
-  penaltiesMinor BigInt          @default(0)
-  transaction    LoanTransaction @relation(fields: [transactionId], references: [id])
-  installment    LoanInstallment @relation(fields: [installmentId], references: [id])
-  createdAt      DateTime        @default(now())
+  id                 String          @id @default(uuid()) @db.Uuid
+  transactionId      String          @db.Uuid
+  installmentId      String          @db.Uuid
+  principalMinor     BigInt          @default(0)
+  interestMinor      BigInt          @default(0)
+  feesMinor          BigInt          @default(0)
+  penaltiesMinor     BigInt          @default(0)
+  // Separate from feesMinor going forward so the repayment allocation audit trail matches the
+  // installment's own monitoringFeeDueMinor/monitoringFeePaidMinor split (see Problem 2). Always
+  // 0 on historical allocation rows, which recorded monitoring fee collections under feesMinor.
+  monitoringFeeMinor BigInt          @default(0)
+  transaction        LoanTransaction @relation(fields: [transactionId], references: [id])
+  installment        LoanInstallment @relation(fields: [installmentId], references: [id])
+  createdAt          DateTime        @default(now())
 
   @@unique([transactionId, installmentId])
   @@index([installmentId])
@@ -1062,36 +1089,42 @@ model OwnershipPool {
 }
 
 model LedgerAccount {
-  id                         String                         @id @default(uuid()) @db.Uuid
-  code                       String
-  name                       String
-  type                       AccountType
-  currencyCode               String                         @db.VarChar(10)
-  ownershipPoolId            String?                        @db.Uuid
-  active                     Boolean                        @default(true)
-  externalId                 String?
-  usage                      String                         @default("DETAIL")
-  description                String?
-  manualEntriesAllowed       Boolean                        @default(false)
-  currency                   Currency                       @relation(fields: [currencyCode], references: [code])
-  ownershipPool              OwnershipPool?                 @relation(fields: [ownershipPoolId], references: [id])
-  lines                      JournalLine[]
-  principalMappings          LoanProductAccountingMapping[] @relation("PrincipalReceivable")
-  interestReceivableMappings LoanProductAccountingMapping[] @relation("InterestReceivable")
-  interestIncomeMappings     LoanProductAccountingMapping[] @relation("InterestIncome")
-  feeIncomeMappings          LoanProductAccountingMapping[] @relation("FeeIncome")
-  penaltyIncomeMappings      LoanProductAccountingMapping[] @relation("PenaltyIncome")
-  writeOffMappings           LoanProductAccountingMapping[] @relation("WriteOffExpense")
-  overpaymentMappings        LoanProductAccountingMapping[] @relation("OverpaymentLiability")
-  funds                      Fund[]
-  settlementAccounts         SettlementAccount[]
-  defaultPrincipalFor        LoanAccountingDefaults[]       @relation("DefaultPrincipalReceivable")
-  defaultInterestFor         LoanAccountingDefaults[]       @relation("DefaultInterestIncome")
-  defaultFeeFor              LoanAccountingDefaults[]       @relation("DefaultFeeIncome")
-  defaultPenaltyFor          LoanAccountingDefaults[]       @relation("DefaultPenaltyIncome")
-  defaultWriteOffFor         LoanAccountingDefaults[]       @relation("DefaultWriteOffExpense")
-  defaultOverpaymentFor      LoanAccountingDefaults[]       @relation("DefaultOverpaymentLiability")
-  createdAt                  DateTime                       @default(now())
+  id                          String                            @id @default(uuid()) @db.Uuid
+  code                        String
+  name                        String
+  type                        AccountType
+  currencyCode                String                            @db.VarChar(10)
+  ownershipPoolId             String?                           @db.Uuid
+  active                      Boolean                           @default(true)
+  externalId                  String?
+  usage                       String                            @default("DETAIL")
+  description                 String?
+  manualEntriesAllowed        Boolean                           @default(false)
+  currency                    Currency                          @relation(fields: [currencyCode], references: [code])
+  ownershipPool               OwnershipPool?                    @relation(fields: [ownershipPoolId], references: [id])
+  lines                       JournalLine[]
+  principalMappings           LoanProductAccountingMapping[]    @relation("PrincipalReceivable")
+  interestReceivableMappings  LoanProductAccountingMapping[]    @relation("InterestReceivable")
+  interestIncomeMappings      LoanProductAccountingMapping[]    @relation("InterestIncome")
+  feeIncomeMappings           LoanProductAccountingMapping[]    @relation("FeeIncome")
+  monitoringFeeIncomeMappings LoanProductAccountingMapping[]    @relation("MonitoringFeeIncome")
+  processingFeeIncomeMappings LoanProductAccountingMapping[]    @relation("ProcessingFeeIncome")
+  admissionFeeIncomeMappings  LoanProductAccountingMapping[]    @relation("AdmissionFeeIncome")
+  penaltyIncomeMappings       LoanProductAccountingMapping[]    @relation("PenaltyIncome")
+  penaltyReceivableMappings   LoanProductAccountingMapping[]    @relation("PenaltyReceivable")
+  writeOffMappings            LoanProductAccountingMapping[]    @relation("WriteOffExpense")
+  overpaymentMappings         LoanProductAccountingMapping[]    @relation("OverpaymentLiability")
+  funds                       Fund[]
+  settlementAccounts          SettlementAccount[]
+  defaultPrincipalFor         LoanAccountingDefaults[]          @relation("DefaultPrincipalReceivable")
+  defaultInterestFor          LoanAccountingDefaults[]          @relation("DefaultInterestIncome")
+  defaultFeeFor               LoanAccountingDefaults[]          @relation("DefaultFeeIncome")
+  defaultPenaltyFor           LoanAccountingDefaults[]          @relation("DefaultPenaltyIncome")
+  defaultWriteOffFor          LoanAccountingDefaults[]          @relation("DefaultWriteOffExpense")
+  defaultOverpaymentFor       LoanAccountingDefaults[]          @relation("DefaultOverpaymentLiability")
+  savingsLiabilityMappings    SavingsProductAccountingMapping[] @relation("SavingsLiability")
+  defaultSavingsLiabilityFor  SavingsAccountingDefaults[]       @relation("DefaultSavingsLiability")
+  createdAt                   DateTime                          @default(now())
 
   @@unique([code, currencyCode, ownershipPoolId])
   @@index([type, currencyCode])
@@ -1104,7 +1137,20 @@ model LoanProductAccountingMapping {
   interestReceivableAccountId   String?        @db.Uuid
   interestIncomeAccountId       String         @db.Uuid
   feeIncomeAccountId            String?        @db.Uuid
+  // Dedicated income accounts so monitoring fee, one-off processing fee, and inception admission
+  // fee are never combined with each other, with interest, or with the generic feeIncomeAccountId
+  // -- even when their configured rates coincide (e.g. a 2.5% monitoring fee alongside 2.5%
+  // interest). Each falls back to feeIncomeAccountId when unset, preserving today's behavior for
+  // organizations that haven't configured the dedicated accounts yet.
+  monitoringFeeIncomeAccountId  String?        @db.Uuid
+  processingFeeIncomeAccountId  String?        @db.Uuid
+  admissionFeeIncomeAccountId   String?        @db.Uuid
   penaltyIncomeAccountId        String?        @db.Uuid
+  // Accrual-side receivable debited when assess-loan-penalties.ts posts a penalty before it is
+  // collected. Required (alongside penaltyIncomeAccountId) for the assessment job to post for
+  // this product; see LoanInstallment.penaltyAssessedOn for how collection later avoids
+  // double-recognizing that same income at repayment time.
+  penaltyReceivableAccountId    String?        @db.Uuid
   writeOffExpenseAccountId      String?        @db.Uuid
   overpaymentLiabilityAccountId String?        @db.Uuid
   product                       LoanProduct    @relation(fields: [productId], references: [id], onDelete: Cascade)
@@ -1112,7 +1158,11 @@ model LoanProductAccountingMapping {
   interestReceivableAccount     LedgerAccount? @relation("InterestReceivable", fields: [interestReceivableAccountId], references: [id])
   interestIncomeAccount         LedgerAccount  @relation("InterestIncome", fields: [interestIncomeAccountId], references: [id])
   feeIncomeAccount              LedgerAccount? @relation("FeeIncome", fields: [feeIncomeAccountId], references: [id])
+  monitoringFeeIncomeAccount    LedgerAccount? @relation("MonitoringFeeIncome", fields: [monitoringFeeIncomeAccountId], references: [id])
+  processingFeeIncomeAccount    LedgerAccount? @relation("ProcessingFeeIncome", fields: [processingFeeIncomeAccountId], references: [id])
+  admissionFeeIncomeAccount     LedgerAccount? @relation("AdmissionFeeIncome", fields: [admissionFeeIncomeAccountId], references: [id])
   penaltyIncomeAccount          LedgerAccount? @relation("PenaltyIncome", fields: [penaltyIncomeAccountId], references: [id])
+  penaltyReceivableAccount      LedgerAccount? @relation("PenaltyReceivable", fields: [penaltyReceivableAccountId], references: [id])
   writeOffExpenseAccount        LedgerAccount? @relation("WriteOffExpense", fields: [writeOffExpenseAccountId], references: [id])
   overpaymentLiabilityAccount   LedgerAccount? @relation("OverpaymentLiability", fields: [overpaymentLiabilityAccountId], references: [id])
   createdAt                     DateTime       @default(now())
@@ -1138,6 +1188,34 @@ model LoanAccountingDefaults {
   overpaymentLiabilityAccount   LedgerAccount? @relation("DefaultOverpaymentLiability", fields: [overpaymentLiabilityAccountId], references: [id])
   createdAt                     DateTime       @default(now())
   updatedAt                     DateTime       @updatedAt
+}
+
+// Per-product override for the liability account credited/debited by a savings deposit/
+// withdrawal (see post-savings-transaction.ts). Mirrors LoanProductAccountingMapping's role for
+// loans. Falls back to SavingsAccountingDefaults, then to the legacy hardcoded chart-of-accounts
+// lookup in savings-ledger.ts, so unconfigured organizations keep today's behavior.
+model SavingsProductAccountingMapping {
+  id                        String         @id @default(uuid()) @db.Uuid
+  productId                 String         @unique @db.Uuid
+  savingsLiabilityAccountId String         @db.Uuid
+  product                   SavingsProduct @relation(fields: [productId], references: [id], onDelete: Cascade)
+  savingsLiabilityAccount   LedgerAccount  @relation("SavingsLiability", fields: [savingsLiabilityAccountId], references: [id])
+  createdAt                 DateTime       @default(now())
+  updatedAt                 DateTime       @updatedAt
+}
+
+// Organization-wide fallback "Client Savings Liability" account, credited on deposit and debited
+// on withdrawal when a savings product has no dedicated SavingsProductAccountingMapping. Mirrors
+// LoanAccountingDefaults's role for loans. Configurable via the backoffice accounting settings
+// page rather than hardcoded, per the accounting audit's requirement.
+model SavingsAccountingDefaults {
+  id                        String         @id @default(uuid()) @db.Uuid
+  organizationId            String         @unique @db.Uuid
+  savingsLiabilityAccountId String?        @db.Uuid
+  organization              Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  savingsLiabilityAccount   LedgerAccount? @relation("DefaultSavingsLiability", fields: [savingsLiabilityAccountId], references: [id])
+  createdAt                 DateTime       @default(now())
+  updatedAt                 DateTime       @updatedAt
 }
 
 model SettlementAccount {

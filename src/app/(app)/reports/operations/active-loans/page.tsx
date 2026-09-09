@@ -217,8 +217,11 @@ export default async function ActiveLoansPage({
                   <th>Interest Outstanding</th>
                   <th>Interest Overdue</th>
                   <th>Fees Repaid</th>
+                  <th>Monitoring Fee Repaid</th>
                   <th>Fees Outstanding</th>
+                  <th>Monitoring Fee Outstanding</th>
                   <th>Fees Overdue</th>
+                  <th>Monitoring Fee Overdue</th>
                   <th>Penalties Repaid</th>
                   <th>Penalties Outstanding</th>
                   <th>Penalties Overdue</th>
@@ -252,8 +255,11 @@ export default async function ActiveLoansPage({
                     <td>{formatMinor(row.outstandingInterestMinor, row.currencyCode)}</td>
                     <td>{formatMinor(row.overdueInterestMinor, row.currencyCode)}</td>
                     <td>{formatMinor(row.feesRepaidMinor, row.currencyCode)}</td>
+                    <td>{formatMinor(row.monitoringFeeRepaidMinor, row.currencyCode)}</td>
                     <td>{formatMinor(row.outstandingFeesMinor, row.currencyCode)}</td>
+                    <td>{formatMinor(row.outstandingMonitoringFeeMinor, row.currencyCode)}</td>
                     <td>{formatMinor(row.overdueFeesMinor, row.currencyCode)}</td>
+                    <td>{formatMinor(row.overdueMonitoringFeeMinor, row.currencyCode)}</td>
                     <td>{formatMinor(row.penaltiesRepaidMinor, row.currencyCode)}</td>
                     <td>{formatMinor(row.outstandingPenaltiesMinor, row.currencyCode)}</td>
                     <td>{formatMinor(row.overduePenaltiesMinor, row.currencyCode)}</td>
@@ -269,7 +275,7 @@ export default async function ActiveLoansPage({
                     <th>{formatMinor(row.principalMinor, row.currencyCode)}</th>
                     <th colSpan={4}>{row.currencyCode}</th>
                     <th>{formatMinor(row.outstandingPrincipalMinor, row.currencyCode)}</th>
-                    <th colSpan={10} />
+                    <th colSpan={13} />
                     <th>{formatMinor(row.outstandingTotalMinor, row.currencyCode)}</th>
                     <th />
                   </tr>

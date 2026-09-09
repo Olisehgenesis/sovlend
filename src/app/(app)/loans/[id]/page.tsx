@@ -20,7 +20,9 @@ import { getUserDataScope } from "@/modules/identity/application/data-scope";
 import { permissions } from "@/modules/identity/domain/permissions";
 import { formatMinor } from "@/modules/money/domain/format-minor";
 import {
+  installmentDueMinor,
   installmentOutstandingMinor,
+  installmentPaidMinor,
   installmentWaivedMinor,
   loanOutstandingMinor,
   loanWrittenOffMinor,
@@ -125,17 +127,9 @@ export default async function LoanPage({
   const totals = loan.installments.reduce(
     (sum, item) => ({
       due:
-        sum.due +
-        item.principalDueMinor +
-        item.interestDueMinor +
-        item.feesDueMinor +
-        item.penaltiesDueMinor,
+        sum.due + installmentDueMinor(item),
       paid:
-        sum.paid +
-        item.principalPaidMinor +
-        item.interestPaidMinor +
-        item.feesPaidMinor +
-        item.penaltiesPaidMinor,
+        sum.paid + installmentPaidMinor(item),
       waived: sum.waived + installmentWaivedMinor(item),
     }),
     { due: 0n, paid: 0n, waived: 0n },
@@ -173,6 +167,50 @@ export default async function LoanPage({
         orderBy: [{ isDefault: "desc" }, { createdAt: "asc" }],
       })
     : [];
+  // Surfaces this client's other accounts from the loan detail page, mirroring how
+  // savings-accounts/[accountNumber]/page.tsx links back to its owning client/group.
+  const otherLoans = loan.clientId
+    ? await prisma.loan.findMany({
+        where: { clientId: loan.clientId, id: { not: loan.id } },
+        select: {
+          id: true,
+          accountNumber: true,
+          status: true,
+          principalMinor: true,
+          denominationCurrency: true,
+          product: { select: { name: true } },
+        },
+        orderBy: { createdAt: "desc" },
+      })
+    : [];
+  const clientSavingsAccounts = loan.clientId
+    ? await prisma.savingsAccount.findMany({
+        where: { clientId: loan.clientId },
+        select: {
+          id: true,
+          accountNumber: true,
+          status: true,
+          currencyCode: true,
+          product: { select: { name: true } },
+        },
+        orderBy: { createdAt: "desc" },
+      })
+    : [];
+  const owner = loan.client
+    ? {
+        kind: "client" as const,
+        name: `${loan.client.firstName} ${loan.client.lastName}`,
+        accountNumber: loan.client.accountNumber,
+        href: `/clients/${loan.client.accountNumber}`,
+      }
+    : loan.group
+      ? {
+          kind: "group" as const,
+          name: loan.group.name,
+          accountNumber: loan.group.accountNumber,
+          href: `/groups/${loan.group.accountNumber}`,
+        }
+      : null;
   const hasPendingDisbursement =
     loan.status === "ACTIVE" &&
     Boolean(loan.disbursedOn) &&
@@ -192,14 +230,26 @@ export default async function LoanPage({
   return (
     <main className="directory-page">
       <Breadcrumbs
-        items={[{ label: "Loans", href: "/loans" }, { label: loan.accountNumber }]}
+        items={[
+          { label: "Loans", href: "/loans" },
+          ...(owner ? [{ label: owner.name, href: owner.href }] : []),
+          { label: loan.accountNumber },
+        ]}
       />
       <header className="directory-header">
         <div>
           <p className="eyebrow">Loan account</p>
           <h1>{loan.accountNumber}</h1>
           <p>
-            {loan.client ? `${loan.client.firstName} ${loan.client.lastName}` : `Group: ${loan.group?.name ?? "Unknown"}`} · {loan.product.name}
+            {owner ? (
+              <Link className="green-link" href={owner.href}>
+                {owner.name}
+              </Link>
+            ) : (
+              "Unknown"
+            )}{" "}
+            {owner?.kind === "group" ? <span className="status review">Group</span> : null}
+            {" "}· {loan.product.name}
           </p>
         </div>
         <div className="header-actions">
@@ -290,9 +340,13 @@ export default async function LoanPage({
             <div>
               <dt>Borrower</dt>
               <dd>
-                {loan.client
-                  ? `${loan.client.firstName} ${loan.client.lastName} · ${loan.client.accountNumber}`
-                  : `Group: ${loan.group?.name ?? "Unknown"} · ${loan.group?.accountNumber ?? "—"}`}
+                {owner ? (
+                  <Link className="green-link" href={owner.href}>
+                    {owner.name} · {owner.accountNumber}
+                  </Link>
+                ) : (
+                  "Unknown"
+                )}
               </dd>
             </div>
             <div>
@@ -420,6 +474,103 @@ export default async function LoanPage({
               <dd>{loan.createdAt.toLocaleDateString()}</dd>
             </div>
           </dl>
+        </section>
+      ) : null}
+      {activeTab === "details" && owner?.kind === "client" ? (
+        <section className="panel">
+          <div className="panel-heading">
+            <div>
+              <h2>Client accounts</h2>
+              <p>Other loans and savings accounts held by {owner.name}</p>
+            </div>
+            <Link className="secondary-action" href={owner.href}>
+              View client profile
+            </Link>
+          </div>
+          <div className="review-grid">
+            <div>
+              <h3>Other loans</h3>
+              {otherLoans.length === 0 ? (
+                <div className="empty-state compact-empty">
+                  <strong>No other loans</strong>
+                  <p>This is the only loan on record for this client.</p>
+                </div>
+              ) : (
+                <div className="table-scroll">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Account</th>
+                        <th>Product</th>
+                        <th>Principal</th>
+                        <th>Status</th>
+                        <th></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {otherLoans.map((other) => (
+                        <tr key={other.id}>
+                          <td className="mono">{other.accountNumber}</td>
+                          <td>{other.product.name}</td>
+                          <td>{formatMinor(other.principalMinor, other.denominationCurrency)}</td>
+                          <td>
+                            <span className={`status ${other.status === "ACTIVE" ? "up-to-date" : other.status === "IN_ARREARS" ? "in-arrears" : "review"}`}>
+                              {other.status.replaceAll("_", " ")}
+                            </span>
+                          </td>
+                          <td>
+                            <Link className="green-link" href={`/loans/${other.id}`}>
+                              View
+                            </Link>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+            <div>
+              <h3>Savings accounts</h3>
+              {clientSavingsAccounts.length === 0 ? (
+                <div className="empty-state compact-empty">
+                  <strong>No savings accounts</strong>
+                  <p>This client has no savings accounts on record.</p>
+                </div>
+              ) : (
+                <div className="table-scroll">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Account</th>
+                        <th>Product</th>
+                        <th>Status</th>
+                        <th></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {clientSavingsAccounts.map((account) => (
+                        <tr key={account.id}>
+                          <td className="mono">{account.accountNumber}</td>
+                          <td>{account.product?.name ?? "\u2014"}</td>
+                          <td>
+                            <span className={`status ${account.status === "ACTIVE" ? "up-to-date" : "review"}`}>
+                              {account.status.replaceAll("_", " ")}
+                            </span>
+                          </td>
+                          <td>
+                            <Link className="green-link" href={`/savings-accounts/${account.accountNumber}`}>
+                              View
+                            </Link>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </div>
         </section>
       ) : null}
       {activeTab === "charges" ? (
@@ -672,6 +823,7 @@ export default async function LoanPage({
                     <th>Principal</th>
                     <th>Interest</th>
                     <th>Fees</th>
+                    <th>Monitoring fee</th>
                     <th>Penalties</th>
                     <th>Paid</th>
                     <th>Outstanding</th>
@@ -679,11 +831,7 @@ export default async function LoanPage({
                 </thead>
                 <tbody>
                   {loan.installments.map((item) => {
-                    const paid =
-                      item.principalPaidMinor +
-                      item.interestPaidMinor +
-                      item.feesPaidMinor +
-                      item.penaltiesPaidMinor;
+                    const paid = installmentPaidMinor(item);
                     const rowOutstanding = installmentOutstandingMinor(item);
                     return (
                       <tr key={item.id}>
@@ -704,6 +852,12 @@ export default async function LoanPage({
                         <td>
                           {formatMinor(
                             item.feesDueMinor,
+                            loan.denominationCurrency,
+                          )}
+                        </td>
+                        <td>
+                          {formatMinor(
+                            item.monitoringFeeDueMinor ?? 0n,
                             loan.denominationCurrency,
                           )}
                         </td>

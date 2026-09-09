@@ -19,8 +19,10 @@ export type StandingOrderSweepResult =
  * cover (capped at the installment's outstanding amount) and posts it as a loan repayment via the
  * same postRepayment() every teller-recorded repayment uses -- same double-entry ledger, same
  * idempotency, same allocation/arrears logic. Only after that succeeds does it mirror a
- * SavingsTransaction withdrawal so the client-facing savings balance reflects the sweep, and send
- * a confirmation SMS. If postRepayment fails, nothing else runs and the whole job can be safely
+ * SavingsTransaction withdrawal so the client-facing savings balance reflects the sweep (with its
+ * own journal posting suppressed -- see comment below -- since postRepayment's journal already
+ * covers the liability-side leg via the sweep's dedicated settlement account), and send a
+ * confirmation SMS. If postRepayment fails, nothing else runs and the whole job can be safely
  * retried by BullMQ -- the ledger is only ever touched by the one atomic, idempotent call.
  */
 export async function executeStandingOrderSweep(
@@ -51,10 +53,17 @@ export async function executeStandingOrderSweep(
     idempotencyKey: dedupKey,
   });
 
-  // Mirrors the repayment as a savings withdrawal so the client's displayed balance matches. If
-  // this insert somehow fails after postRepayment succeeded, the ledger stays correct and the
-  // client-facing balance is briefly stale until BullMQ retries this same job (postRepayment is
-  // idempotent on repaymentTransaction, so the retry safely reaches this line again).
+  // Mirrors the repayment as a savings withdrawal so the client's displayed balance matches. This
+  // intentionally does NOT post its own ledger journal (postJournal: false): the settlement
+  // account used here ("Client Savings Sweep") is deliberately mapped to the Client Savings
+  // Liability ledger account itself (see standing-order-sweep-constants.ts /
+  // ensure-standing-order-automation.ts), so postRepayment's own journal above already DEBITs the
+  // savings liability account for the full sweep amount as its settlement leg. Posting a second
+  // journal here for the withdrawal would double-count that liability reduction and make the
+  // sweep's combined double-entry unbalanced. If this insert somehow fails after postRepayment
+  // succeeded, the ledger stays correct and the client-facing balance is briefly stale until
+  // BullMQ retries this same job (postRepayment is idempotent on repaymentTransaction, so the
+  // retry safely reaches this line again).
   await postSavingsTransaction(prisma, {
     savingsAccountId: savingsAccount.id,
     actorUserId: systemUser.id,
@@ -64,6 +73,7 @@ export async function executeStandingOrderSweep(
     reason: "Standing order sweep",
     externalReference: `Standing order sweep for loan ${job.accountNumber}`,
     idempotencyKey: `${dedupKey}:savings-mirror`,
+    postJournal: false,
   });
 
   const amountText = formatMinor(sweepAmountMinor, job.currencyCode);

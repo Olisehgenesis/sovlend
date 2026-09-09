@@ -1,5 +1,7 @@
 import type { PrismaClient } from "@prisma/client";
 
+import { installmentDueMinor, installmentPaidMinor } from "../domain/loan-outstanding";
+
 // A client's wallet is two sub-accounts: savings (asset the client holds) and loans
 // (asset the company holds, liability for the client). Net balance = savings - loans owed.
 // Disbursing a loan credits the loan sub-account (increases what the client owes) without
@@ -28,13 +30,10 @@ export async function getClientWalletSummary(prisma: PrismaClient, clientId: str
   );
 
   const loanOutstandingMinor = loans.reduce((sum, loan) => {
-    const loanDue = loan.installments.reduce((accSum, installment) => {
-      const principal = installment.principalDueMinor - installment.principalPaidMinor;
-      const interest = installment.interestDueMinor - installment.interestPaidMinor;
-      const fees = installment.feesDueMinor - installment.feesPaidMinor;
-      const penalties = installment.penaltiesDueMinor - installment.penaltiesPaidMinor;
-      return accSum + principal + interest + fees + penalties;
-    }, 0n);
+    const loanDue = loan.installments.reduce(
+      (accSum, installment) => accSum + installmentDueMinor(installment) - installmentPaidMinor(installment),
+      0n,
+    );
     return sum + loanDue;
   }, 0n);
 

@@ -28,6 +28,20 @@ describe("installmentDueMinor / installmentPaidMinor / installmentWaivedMinor", 
     expect(installmentPaidMinor({ ...baseInstallment, principalPaidMinor: 50_000n, interestPaidMinor: 5_000n })).toBe(55_000n);
   });
 
+  it("adds optional monitoring fee fields without changing historical callers that omit them", () => {
+    expect(installmentDueMinor(baseInstallment)).toBe(110_000n);
+    expect(installmentPaidMinor(baseInstallment)).toBe(0n);
+    expect(
+      installmentDueMinor({ ...baseInstallment, monitoringFeeDueMinor: 2_500n }),
+    ).toBe(112_500n);
+    expect(
+      installmentPaidMinor({ ...baseInstallment, monitoringFeePaidMinor: 750n }),
+    ).toBe(750n);
+    expect(
+      installmentWaivedMinor({ ...baseInstallment, monitoringFeeWaivedMinor: 250n }),
+    ).toBe(250n);
+  });
+
   it("defaults waived fields to zero when absent", () => {
     expect(installmentWaivedMinor(baseInstallment)).toBe(0n);
     expect(installmentWaivedMinor({ ...baseInstallment, principalWaivedMinor: 20_000n, interestWaivedMinor: 2_000n })).toBe(22_000n);

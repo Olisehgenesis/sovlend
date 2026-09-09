@@ -18,6 +18,10 @@ export type ScheduledInstallment = Readonly<{
   principalDueMinor: bigint;
   interestDueMinor: bigint;
   feesDueMinor: bigint;
+  // Populated instead of feesDueMinor going forward (see Problem 2 in the accounting audit) so
+  // monitoring fee is tracked, allocated, and posted through its own dedicated ledger income
+  // account, never merged with generic fees or interest even when their rates coincide.
+  monitoringFeeDueMinor: bigint;
 }>;
 
 export function generateRepaymentSchedule(terms: ScheduleTerms): ScheduledInstallment[] {
@@ -87,19 +91,29 @@ function addMonitoringFees(
   periodicRate: Decimal,
   method: "FLAT" | "DECLINING_BALANCE",
 ) {
-  if (periodicRate.isZero()) return installments.map((installment) => ({ ...installment, feesDueMinor: 0n }));
+  if (periodicRate.isZero()) {
+    return installments.map((installment) => ({
+      ...installment,
+      feesDueMinor: 0n,
+      monitoringFeeDueMinor: 0n,
+    }));
+  }
   if (method === "FLAT") {
     const count = installments.length;
     const totalFees = decimalToMinor(new Decimal(principal.toString()).mul(periodicRate).mul(count));
     const feesBase = totalFees / BigInt(count);
     const feesRemainder = totalFees - feesBase * BigInt(count);
-    return installments.map((installment, index) => ({ ...installment, feesDueMinor: feesBase + (index === count - 1 ? feesRemainder : 0n) }));
+    return installments.map((installment, index) => ({
+      ...installment,
+      feesDueMinor: 0n,
+      monitoringFeeDueMinor: feesBase + (index === count - 1 ? feesRemainder : 0n),
+    }));
   }
   let balance = principal;
   return installments.map((installment) => {
-    const feesDueMinor = decimalToMinor(new Decimal(balance.toString()).mul(periodicRate));
+    const monitoringFeeDueMinor = decimalToMinor(new Decimal(balance.toString()).mul(periodicRate));
     balance -= installment.principalDueMinor;
-    return { ...installment, feesDueMinor };
+    return { ...installment, feesDueMinor: 0n, monitoringFeeDueMinor };
   });
 }
 

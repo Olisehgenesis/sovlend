@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 
 import { Breadcrumbs } from "@/components/breadcrumbs";
 import { ReportPicker } from "@/components/report-picker";
+import { DataTable } from "@/components/ui/data-table";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { AuthorizationService } from "@/modules/identity/application/authorization-service";
@@ -70,55 +71,58 @@ export default async function GuarantorExposureReportPage() {
           </div>
           <ShieldAlert size={19} />
         </div>
-        {report.rows.length === 0 ? (
-          <div className="empty-state">
-            <ShieldAlert size={28} />
-            <strong>No repeat guarantors found</strong>
-            <p>No guarantor identity pattern in your current scope appears on more than one loan.</p>
-          </div>
-        ) : (
-          <div className="table-scroll">
-            <table>
-              <thead>
-                <tr>
-                  <th>Guarantor</th>
-                  <th>Phone</th>
-                  <th>Loans backed</th>
-                  <th>Arrears concentration</th>
-                  <th>Total exposure</th>
-                  <th>Backed loans</th>
-                </tr>
-              </thead>
-              <tbody>
-                {report.rows.map((row) => (
-                  <tr key={row.key}>
-                    <td>
-                      <strong>{row.displayName}</strong>
-                      <small>{row.loanCount} distinct loans</small>
-                    </td>
-                    <td className="mono">{row.phone}</td>
-                    <td>{row.loanCount}</td>
-                    <td>
-                      <span className={`status ${row.concentrationRisk ? "in-arrears" : row.arrearsLoanCount > 0 ? "review" : "up-to-date"}`}>
-                        {row.concentrationRisk ? `${row.arrearsLoanCount} arrears loans` : row.arrearsLoanCount === 0 ? "No arrears overlap" : `${row.arrearsLoanCount} in arrears`}
-                      </span>
-                    </td>
-                    <td>{formatMinor(row.totalOutstandingMinor, row.currencyCode)}</td>
-                    <td>
-                      <div style={{ display: "grid", gap: 4 }}>
-                        {row.loans.map((loan) => (
-                          <small key={loan.id}>
-                            <strong>{loan.accountNumber}</strong> · {loan.borrowerName} · {loan.status.replaceAll("_", " ")} · {formatMinor(loan.outstandingPrincipalMinor, loan.currencyCode)}
-                          </small>
-                        ))}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+        <DataTable
+          columns={[
+            {
+              key: "guarantor",
+              header: "Guarantor",
+              render: (row) => (
+                <>
+                  <strong>{row.displayName}</strong>
+                  <small>{row.loanCount} distinct loans</small>
+                </>
+              ),
+            },
+            { key: "phone", header: "Phone", cellClassName: "mono", render: (row) => row.phone },
+            { key: "loanCount", header: "Loans backed", render: (row) => row.loanCount },
+            {
+              key: "concentration",
+              header: "Arrears concentration",
+              render: (row) => (
+                <span className={`status ${row.concentrationRisk ? "in-arrears" : row.arrearsLoanCount > 0 ? "review" : "up-to-date"}`}>
+                  {row.concentrationRisk ? `${row.arrearsLoanCount} arrears loans` : row.arrearsLoanCount === 0 ? "No arrears overlap" : `${row.arrearsLoanCount} in arrears`}
+                </span>
+              ),
+            },
+            {
+              key: "exposure",
+              header: "Total exposure",
+              render: (row) => formatMinor(row.totalOutstandingMinor, row.currencyCode),
+            },
+            {
+              key: "backedLoans",
+              header: "Backed loans",
+              render: (row) => (
+                <div style={{ display: "grid", gap: 4 }}>
+                  {row.loans.map((loan) => (
+                    <small key={loan.id}>
+                      <strong>{loan.accountNumber}</strong> · {loan.borrowerName} · {loan.status.replaceAll("_", " ")} · {formatMinor(loan.outstandingPrincipalMinor, loan.currencyCode)}
+                    </small>
+                  ))}
+                </div>
+              ),
+            },
+          ]}
+          emptyState={
+            <div className="empty-state">
+              <ShieldAlert size={28} />
+              <strong>No repeat guarantors found</strong>
+              <p>No guarantor identity pattern in your current scope appears on more than one loan.</p>
+            </div>
+          }
+          getRowKey={(row) => row.key}
+          rows={report.rows}
+        />
       </section>
     </main>
   );

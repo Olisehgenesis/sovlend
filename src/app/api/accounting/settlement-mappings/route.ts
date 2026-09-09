@@ -1,9 +1,8 @@
-import { headers } from "next/headers";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
-import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { requireSuperAdminForAccountingApi } from "../_auth";
 
 const schema = z.object({
   id: z.string().uuid().optional(),
@@ -18,11 +17,16 @@ const schema = z.object({
 });
 
 export async function POST(request: Request) {
-  const session = await auth.api.getSession({ headers: await headers() });
-  if (!session || session.user.role !== "admin") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  const input = schema.parse(await request.json());
-  const user = await prisma.user.findUnique({ where: { id: session.user.id }, select: { organizationId: true } });
-  if (user?.organizationId !== input.organizationId) return NextResponse.json({ error: "Organization mismatch" }, { status: 403 });
+  const authResult = await requireSuperAdminForAccountingApi();
+  if ("error" in authResult) return authResult.error;
+
+  const parsed = schema.safeParse(await request.json());
+  if (!parsed.success) {
+    return NextResponse.json({ error: parsed.error.issues[0]?.message ?? "Invalid settlement mapping" }, { status: 400 });
+  }
+
+  const input = parsed.data;
+  if (authResult.organizationId !== input.organizationId) return NextResponse.json({ error: "Organization mismatch" }, { status: 403 });
   const ledgerAccount = await prisma.ledgerAccount.findFirst({ where: { id: input.ledgerAccountId, currencyCode: input.currencyCode, active: true, usage: "DETAIL", type: "ASSET" } });
   if (!ledgerAccount) return NextResponse.json({ error: "Settlement mapping requires an active detail asset account in the same currency" }, { status: 400 });
   const values = {

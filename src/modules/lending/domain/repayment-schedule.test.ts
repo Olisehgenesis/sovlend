@@ -22,16 +22,19 @@ describe("repayment schedule", () => {
 
   it("adds flat monitoring fees without changing principal or interest math", () => {
     const schedule = generateRepaymentSchedule({ principalMinor: 120_000n, annualRateBps: 1200, monitoringFeeAnnualRateBps: 600, repaymentCount: 12, repaymentFrequency: "1 Months", interestMethod: "Flat", disbursedOn: new Date("2026-01-01T00:00:00Z") });
-    expect(schedule.every((item) => item.feesDueMinor === 600n)).toBe(true);
-    expect(schedule.reduce((sum, item) => sum + item.feesDueMinor, 0n)).toBe(7_200n);
+    expect(schedule.every((item) => item.monitoringFeeDueMinor === 600n)).toBe(true);
+    expect(schedule.reduce((sum, item) => sum + item.monitoringFeeDueMinor, 0n)).toBe(7_200n);
     expect(schedule.reduce((sum, item) => sum + item.principalDueMinor, 0n)).toBe(120_000n);
+    // Monitoring fee is tracked in its own dedicated column, never merged back into feesDueMinor.
+    expect(schedule.every((item) => item.feesDueMinor === 0n)).toBe(true);
   });
 
   it("adds declining-balance monitoring fees from the outstanding balance", () => {
     const schedule = generateRepaymentSchedule({ principalMinor: 100_000n, annualRateBps: 0, monitoringFeeAnnualRateBps: 1200, repaymentCount: 4, repaymentFrequency: "1 Months", interestMethod: "Declining Balance", disbursedOn: new Date("2026-01-01T00:00:00Z") });
-    expect(schedule.map((item) => item.feesDueMinor)).toEqual([1_000n, 750n, 500n, 250n]);
+    expect(schedule.map((item) => item.monitoringFeeDueMinor)).toEqual([1_000n, 750n, 500n, 250n]);
     expect(schedule.reduce((sum, item) => sum + item.principalDueMinor, 0n)).toBe(100_000n);
     expect(schedule.every((item) => item.interestDueMinor === 0n)).toBe(true);
+    expect(schedule.every((item) => item.feesDueMinor === 0n)).toBe(true);
   });
 
   it("rejects unsupported frequencies", () => {

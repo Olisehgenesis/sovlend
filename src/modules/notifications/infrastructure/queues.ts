@@ -24,6 +24,11 @@ export async function registerSchedules(): Promise<void> {
     { name: "classify-loan-arrears", data: {} },
   );
   await maintenanceQueue.upsertJobScheduler(
+    "daily-loan-penalty-assessment",
+    { pattern: "30 0 * * *" },
+    { name: "assess-loan-penalties", data: {} },
+  );
+  await maintenanceQueue.upsertJobScheduler(
     "standing-order-sweep-scan",
     { pattern: "0 6 * * *" },
     { name: "scan-standing-order-sweeps", data: {} },

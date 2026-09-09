@@ -60,6 +60,27 @@ Modules share small primitives such as money and identifiers. Domain code must n
 7. Wallet location and economic ownership are separate. Investor capital, client savings liabilities, and company treasury remain distinct even when assets share custody.
 8. Loans are initially denominated in UGX. BTC, USDC, cash, bank and mobile money are settlement channels.
 
+## Ledger Reconciliation Monitoring
+
+`src/scripts/reconcile-ledger.ts` (`pnpm run reconcile:ledger`) is a **read-only** diagnostic
+script that checks the Financial Invariants above hold in practice. It only ever calls
+`prisma.<model>.findMany`/`count` -- never a write -- so it is safe to run repeatedly against a
+local/dev database, or wire into CI/a scheduled job later (it exits non-zero if a genuine
+invariant is violated).
+
+It checks: (1) global debit=credit balance across all `Journal`/`JournalLine` rows; (2) every
+individual journal balances on its own; (3) ledger account balances vs. the business-level figures
+they should represent (savings liability vs. `SavingsTransaction` totals, loan principal
+receivable vs. installment-derived outstanding); (4) savings accounts with transaction history but
+no linked journal activity (the current known gap -- see Financial Invariants #2/#7, not yet true
+for savings); (5) standing-order sweep repayments have both a savings-withdrawal leg and a
+balanced, matching loan-repayment journal.
+
+Point `DATABASE_URL` (via `.env`/`.env.local`, loaded automatically) at a local/dev database only
+-- never production. Output is a PASS/FAIL/INFO section per check plus a summary table; checks
+tied to known, already-tracked gaps are marked informational and don't affect the exit code until
+those gaps are closed.
+
 ## BullMQ and Notifications
 
 BullMQ runs outside HTTP request processes and handles repayment reminders, overdue notices, transactional outbox publication, market and FX price refreshes, mobile-money reconciliation, webhook retries, statements, report generation, and operational health notifications.

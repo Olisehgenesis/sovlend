@@ -2,6 +2,10 @@ import { createHash, randomUUID } from "node:crypto";
 
 import type { Prisma, PrismaClient } from "@prisma/client";
 
+import { assertBalancedJournal } from "@/modules/ledger/domain/journal";
+
+import { resolveSavingsLiabilityAccountId } from "./savings-ledger";
+
 export type PostSavingsTransactionCommand = Readonly<{
   savingsAccountId: string;
   actorUserId: string | null;
@@ -11,6 +15,16 @@ export type PostSavingsTransactionCommand = Readonly<{
   reason?: string;
   externalReference?: string;
   idempotencyKey: string;
+  businessDate?: Date;
+  // Set false when the caller already posts the equivalent ledger entry itself and this call is
+  // purely a client-facing balance mirror -- e.g. disburse-loan.ts crediting a savings account
+  // (its own journal already credits the savings liability account for the net proceeds) or
+  // execute-standing-order-sweep.ts's withdrawal mirror (postRepayment's journal already debits
+  // the liability account via the sweep's dedicated settlement account). Posting a second journal
+  // in those cases would double-count the liability movement. Defaults to true, matching the
+  // teller/API-recorded deposit and withdrawal flows this fixes (see Problem 1 in the accounting
+  // audit: these previously never posted a journal at all).
+  postJournal?: boolean;
 }>;
 
 type Tx = Prisma.TransactionClient;
@@ -42,10 +56,12 @@ export async function recordSavingsTransactionInTransaction(transaction: Tx, com
       accountNumber: true,
       clientId: true,
       groupId: true,
+      productId: true,
       currencyCode: true,
       status: true,
-      client: { select: { organizationId: true } },
-      group: { select: { organizationId: true } },
+      client: { select: { organizationId: true, officeId: true } },
+      group: { select: { organizationId: true, officeId: true } },
+      product: { select: { shortName: true } },
       transactions: { select: { amountMinor: true } },
     },
   });
@@ -58,6 +74,7 @@ export async function recordSavingsTransactionInTransaction(transaction: Tx, com
 
   const organizationId = current.client?.organizationId ?? current.group?.organizationId;
   if (!organizationId) throw new Error("Savings account owner is not linked to an organization");
+  const officeId = current.client?.officeId ?? current.group?.officeId;
 
   const settlement = command.settlementAccountId
     ? await transaction.settlementAccount.findFirst({
@@ -67,7 +84,7 @@ export async function recordSavingsTransactionInTransaction(transaction: Tx, com
           currencyCode: current.currencyCode,
           active: true,
         },
-        select: { id: true, name: true },
+        select: { id: true, name: true, ledgerAccountId: true },
       })
     : null;
   if (command.settlementAccountId && !settlement) {
@@ -94,6 +111,46 @@ export async function recordSavingsTransactionInTransaction(transaction: Tx, com
     },
   });
 
+  const shouldPostJournal = command.postJournal !== false && Boolean(settlement);
+  if (shouldPostJournal) {
+    if (!officeId) {
+      throw new Error("Savings account owner has no office; cannot post a ledger journal");
+    }
+    const savingsLiabilityAccountId = await resolveSavingsLiabilityAccountId(transaction, {
+      organizationId,
+      savingsProductId: current.productId,
+      savingsProductShortName: current.product?.shortName ?? null,
+    });
+
+    const journalLines =
+      command.transactionType === "DEPOSIT"
+        ? [
+            { accountId: settlement!.ledgerAccountId, direction: "DEBIT" as const, amountMinor: command.amountMinor, memo: settlement!.name },
+            { accountId: savingsLiabilityAccountId, direction: "CREDIT" as const, amountMinor: command.amountMinor, memo: current.accountNumber },
+          ]
+        : [
+            { accountId: savingsLiabilityAccountId, direction: "DEBIT" as const, amountMinor: command.amountMinor, memo: current.accountNumber },
+            { accountId: settlement!.ledgerAccountId, direction: "CREDIT" as const, amountMinor: command.amountMinor, memo: settlement!.name },
+          ];
+    assertBalancedJournal(journalLines.map((line) => ({ ...line, currencyCode: current.currencyCode })));
+
+    const businessDate = command.businessDate ?? new Date();
+    const journal = await transaction.journal.create({
+      data: {
+        officeId,
+        businessDate,
+        referenceType: "SAVINGS_TRANSACTION",
+        referenceId: record.id,
+        narration: `${command.transactionType === "DEPOSIT" ? "Deposit" : "Withdrawal"} ${current.accountNumber}`,
+        idempotencyKey: `journal:${command.idempotencyKey}`,
+      },
+    });
+    await transaction.journalLine.createMany({
+      data: journalLines.map((line) => ({ journalId: journal.id, ...line })),
+    });
+    await transaction.journal.update({ where: { id: journal.id }, data: { status: "POSTED", postedAt: new Date() } });
+  }
+
   const correlationId = randomUUID();
   const metadata = {
     savingsAccountId: current.id,
@@ -108,6 +165,7 @@ export async function recordSavingsTransactionInTransaction(transaction: Tx, com
     settlementAccount: settlement?.name ?? null,
     reason: command.reason ?? null,
     externalReference: command.externalReference ?? null,
+    journalPosted: shouldPostJournal,
   };
   const action = "savings.transaction.recorded";
   const eventHash = createHash("sha256")
