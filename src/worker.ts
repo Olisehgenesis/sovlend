@@ -4,6 +4,7 @@ import { Worker } from "bullmq";
 import { enqueueRepaymentReminders } from "@/modules/notifications/application/reminder-scanner";
 import { enqueueStandingOrderSweeps } from "@/modules/notifications/application/standing-order-sweep-scanner";
 import { assessLoanPenalties } from "@/modules/lending/application/assess-loan-penalties";
+import { assessLoanInterestAccruals } from "@/modules/lending/application/assess-loan-interest-accruals";
 import { classifyLoanArrears } from "@/modules/lending/application/classify-arrears";
 import { executeStandingOrderSweep } from "@/modules/lending/application/execute-standing-order-sweep";
 import { processLoanExportJob } from "@/modules/lending/application/export-loans";
@@ -42,6 +43,9 @@ const maintenanceWorker = new Worker(
     }
     if (job.name === "assess-loan-penalties") {
       return assessLoanPenalties(prisma);
+    }
+    if (job.name === "assess-loan-interest-accruals") {
+      return assessLoanInterestAccruals(prisma);
     }
     if (job.name === "scan-standing-order-sweeps") {
       return { queued: await enqueueStandingOrderSweeps(prisma, standingOrderSweepQueue) };

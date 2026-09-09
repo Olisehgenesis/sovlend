@@ -885,6 +885,15 @@ model LoanInstallment {
   // installment's penalty collection to the penalty receivable account (not penalty income again)
   // at repayment time, so accrual-assessed penalty income is never double-counted.
   penaltyAssessedOn        DateTime?                   @db.Date
+  // Set the first (and, in the current one-time-only accrual model, only) time
+  // assess-loan-interest-accruals.ts posts an accrual journal recognizing this installment's
+  // interest as earned income before it has been collected in cash. Null forever for
+  // installments this job has not accrued -- including all historical installments, since the
+  // job's bounded assessment window structurally cannot reach into the past. Used to route this
+  // installment's interest collection to the interest receivable account (not interest income
+  // again) at repayment time, so accrual-recognized interest income is never double-counted --
+  // mirrors penaltyAssessedOn exactly, one field per accrual-eligible revenue line.
+  interestAccruedOn        DateTime?                   @db.Date
   loan                     Loan                        @relation(fields: [loanId], references: [id])
   reminders                Reminder[]
   transactionAllocations   LoanTransactionAllocation[]

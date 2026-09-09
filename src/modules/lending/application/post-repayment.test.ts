@@ -14,6 +14,7 @@ import { postRepayment } from "./post-repayment";
 
 type MockOptions = Readonly<{
   penaltyAssessedOn?: Date | null;
+  interestAccruedOn?: Date | null;
   installment?: Partial<{
     principalDueMinor: bigint;
     interestDueMinor: bigint;
@@ -68,6 +69,7 @@ function buildPrismaMock(options: MockOptions = {}) {
     penaltiesWaivedMinor: 0n,
     monitoringFeeWaivedMinor: 0n,
     penaltyAssessedOn: options.penaltyAssessedOn ?? null,
+    interestAccruedOn: options.interestAccruedOn ?? null,
   };
 
   const savingsAccounts = (options.activeSavingsAccounts ?? []).map((account, index) => ({
@@ -104,6 +106,7 @@ function buildPrismaMock(options: MockOptions = {}) {
           accountingMapping: {
             principalReceivableAccountId: "ledger-principal",
             interestIncomeAccountId: "ledger-interest-income",
+            interestReceivableAccountId: "ledger-interest-receivable",
             feeIncomeAccountId: "ledger-fee-income",
             monitoringFeeIncomeAccountId: "ledger-monitoring-income",
             penaltyIncomeAccountId: "ledger-penalty-income",
@@ -284,6 +287,78 @@ describe("postRepayment", () => {
         direction: "CREDIT",
         amountMinor: 300n,
         memo: "Penalties",
+      },
+    ]);
+    expectBalanced(captures.journalLines);
+  });
+
+  it("credits accrued interest to the receivable account instead of interest income", async () => {
+    const { prisma, captures } = buildPrismaMock({
+      interestAccruedOn: new Date("2026-09-04T00:00:00.000Z"),
+      installment: { penaltiesDueMinor: 0n, interestDueMinor: 2_000n },
+    });
+
+    await postRepayment(prisma, {
+      loanId: "loan-1",
+      actorUserId: "operator-1",
+      amountMinor: 2_000n,
+      settlementAccountId: "settlement-1",
+      businessDate: new Date("2026-09-09T00:00:00.000Z"),
+      idempotencyKey: "repayment-interest-accrued",
+    });
+
+    expect(captures.journalLines).toEqual([
+      {
+        journalId: "journal-1",
+        accountId: "ledger-cash",
+        direction: "DEBIT",
+        amountMinor: 2_000n,
+        memo: "Main till",
+      },
+      {
+        journalId: "journal-1",
+        accountId: "ledger-interest-receivable",
+        direction: "CREDIT",
+        amountMinor: 2_000n,
+        memo: "Interest",
+      },
+    ]);
+    expect(
+      (captures.journalLines as Array<{ accountId: string }>).some(
+        (line) => line.accountId === "ledger-interest-income",
+      ),
+    ).toBe(false);
+    expectBalanced(captures.journalLines);
+  });
+
+  it("keeps unaccrued or historical interest on the interest income account", async () => {
+    const { prisma, captures } = buildPrismaMock({
+      installment: { penaltiesDueMinor: 0n, interestDueMinor: 2_000n },
+    });
+
+    await postRepayment(prisma, {
+      loanId: "loan-1",
+      actorUserId: "operator-1",
+      amountMinor: 2_000n,
+      settlementAccountId: "settlement-1",
+      businessDate: new Date("2026-09-09T00:00:00.000Z"),
+      idempotencyKey: "repayment-interest-unaccrued",
+    });
+
+    expect(captures.journalLines).toEqual([
+      {
+        journalId: "journal-1",
+        accountId: "ledger-cash",
+        direction: "DEBIT",
+        amountMinor: 2_000n,
+        memo: "Main till",
+      },
+      {
+        journalId: "journal-1",
+        accountId: "ledger-interest-income",
+        direction: "CREDIT",
+        amountMinor: 2_000n,
+        memo: "Interest",
       },
     ]);
     expectBalanced(captures.journalLines);

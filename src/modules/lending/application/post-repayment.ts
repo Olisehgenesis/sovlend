@@ -111,7 +111,14 @@ export async function applyRepaymentInTransaction(transaction: Tx, params: Apply
   if (!mapping) throw new Error("Loan product accounting mapping is required before repayment");
   await assertPeriodOpen(transaction, { officeId: current.officeId, businessDate: params.businessDate });
   const allocation = allocateRepayment(current.installments, params.amountMinor);
-  if (allocation.interestMinor > 0n && !mapping.interestIncomeAccountId) throw new Error("Interest income account is not configured");
+  // Interest collected on an installment that assess-loan-interest-accruals.ts already recognized
+  // as earned income routes to the interest receivable account instead of crediting income again
+  // (mirrors assessedPenaltyMinor/unassessedPenaltyMinor below exactly -- see interestAccruedOn's
+  // doc comment on LoanInstallment).
+  const assessedInterestMinor = allocation.allocations.reduce((sum, item) => sum + (item.interestAccruedOn ? item.interestMinor : 0n), 0n);
+  const unassessedInterestMinor = allocation.interestMinor - assessedInterestMinor;
+  if (unassessedInterestMinor > 0n && !mapping.interestIncomeAccountId) throw new Error("Interest income account is not configured");
+  if (assessedInterestMinor > 0n && !mapping.interestReceivableAccountId) throw new Error("Interest receivable account is not configured");
   if (allocation.feesMinor > 0n && !mapping.feeIncomeAccountId) throw new Error("Fee income account is not configured");
   // Monitoring fee posts to its own dedicated income account (see Problem 2 in the accounting
   // audit) so it never shares a ledger line with interest or generic fees even when their rates
@@ -183,6 +190,13 @@ export async function applyRepaymentInTransaction(transaction: Tx, params: Apply
       },
     });
   }
+  const interestCredits =
+    assessedInterestMinor > 0n
+      ? [
+          { accountId: mapping.interestReceivableAccountId, amount: assessedInterestMinor, memo: "Interest" },
+          { accountId: mapping.interestIncomeAccountId, amount: unassessedInterestMinor, memo: "Interest" },
+        ]
+      : [{ accountId: mapping.interestIncomeAccountId, amount: allocation.interestMinor, memo: "Interest" }];
   const penaltyCredits =
     assessedPenaltyMinor > 0n
       ? [
@@ -202,7 +216,7 @@ export async function applyRepaymentInTransaction(transaction: Tx, params: Apply
   });
   const credits = [
     { accountId: mapping.principalReceivableAccountId, amount: allocation.principalMinor, memo: "Principal" },
-    { accountId: mapping.interestIncomeAccountId, amount: allocation.interestMinor, memo: "Interest" },
+    ...interestCredits,
     { accountId: mapping.feeIncomeAccountId, amount: allocation.feesMinor, memo: "Fees" },
     { accountId: monitoringFeeIncomeAccountId, amount: allocation.monitoringFeeMinor, memo: "Monitoring fee" },
     ...penaltyCredits,
