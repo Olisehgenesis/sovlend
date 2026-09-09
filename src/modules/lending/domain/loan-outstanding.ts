@@ -22,6 +22,15 @@ export type InstallmentAmounts = {
   interestWaivedMinor?: bigint;
   feesWaivedMinor?: bigint;
   penaltiesWaivedMinor?: bigint;
+  // Monitoring fee is tracked in its own due/paid/waived columns going forward (see Problem 2 in
+  // the accounting audit) so it can be posted to, and reported against, a distinct ledger income
+  // account even when its rate coincides with the interest rate. Optional and defaulted to 0 so
+  // every existing caller -- and every historical installment, which never populates these and
+  // instead carries its monitoring fee inside feesDueMinor/feesPaidMinor -- keeps behaving
+  // exactly as it does today.
+  monitoringFeeDueMinor?: bigint;
+  monitoringFeePaidMinor?: bigint;
+  monitoringFeeWaivedMinor?: bigint;
 };
 
 export type LoanWriteOffAmounts = {
@@ -36,11 +45,23 @@ function clamp(amount: bigint): bigint {
 }
 
 export function installmentDueMinor(installment: InstallmentAmounts): bigint {
-  return installment.principalDueMinor + installment.interestDueMinor + installment.feesDueMinor + installment.penaltiesDueMinor;
+  return (
+    installment.principalDueMinor +
+    installment.interestDueMinor +
+    installment.feesDueMinor +
+    installment.penaltiesDueMinor +
+    (installment.monitoringFeeDueMinor ?? 0n)
+  );
 }
 
 export function installmentPaidMinor(installment: InstallmentAmounts): bigint {
-  return installment.principalPaidMinor + installment.interestPaidMinor + installment.feesPaidMinor + installment.penaltiesPaidMinor;
+  return (
+    installment.principalPaidMinor +
+    installment.interestPaidMinor +
+    installment.feesPaidMinor +
+    installment.penaltiesPaidMinor +
+    (installment.monitoringFeePaidMinor ?? 0n)
+  );
 }
 
 export function installmentWaivedMinor(installment: InstallmentAmounts): bigint {
@@ -48,7 +69,8 @@ export function installmentWaivedMinor(installment: InstallmentAmounts): bigint 
     (installment.principalWaivedMinor ?? 0n) +
     (installment.interestWaivedMinor ?? 0n) +
     (installment.feesWaivedMinor ?? 0n) +
-    (installment.penaltiesWaivedMinor ?? 0n)
+    (installment.penaltiesWaivedMinor ?? 0n) +
+    (installment.monitoringFeeWaivedMinor ?? 0n)
   );
 }
 

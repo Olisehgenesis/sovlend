@@ -10,6 +10,11 @@ export type AllocatableInstallment = Readonly<{
   interestPaidMinor: bigint;
   feesPaidMinor: bigint;
   penaltiesPaidMinor: bigint;
+  // Optional/defaulted to 0 so historical installments (which carry their monitoring fee inside
+  // feesDueMinor/feesPaidMinor) allocate exactly as before -- only installments generated after
+  // the Problem 2 fix populate these.
+  monitoringFeeDueMinor?: bigint;
+  monitoringFeePaidMinor?: bigint;
 }>;
 
 export type InstallmentAllocation = Readonly<{
@@ -18,6 +23,7 @@ export type InstallmentAllocation = Readonly<{
   interestMinor: bigint;
   feesMinor: bigint;
   penaltiesMinor: bigint;
+  monitoringFeeMinor: bigint;
 }>;
 
 export function allocateRepayment(installments: readonly AllocatableInstallment[], paymentMinor: bigint) {
@@ -27,12 +33,13 @@ export function allocateRepayment(installments: readonly AllocatableInstallment[
   const allocations: InstallmentAllocation[] = [];
 
   for (const installment of sorted) {
-    const allocation = { installmentId: installment.id, principalMinor: 0n, interestMinor: 0n, feesMinor: 0n, penaltiesMinor: 0n };
+    const allocation = { installmentId: installment.id, principalMinor: 0n, interestMinor: 0n, feesMinor: 0n, penaltiesMinor: 0n, monitoringFeeMinor: 0n };
     allocation.penaltiesMinor = take(installment.penaltiesDueMinor - installment.penaltiesPaidMinor, remaining); remaining -= allocation.penaltiesMinor;
     allocation.feesMinor = take(installment.feesDueMinor - installment.feesPaidMinor, remaining); remaining -= allocation.feesMinor;
+    allocation.monitoringFeeMinor = take((installment.monitoringFeeDueMinor ?? 0n) - (installment.monitoringFeePaidMinor ?? 0n), remaining); remaining -= allocation.monitoringFeeMinor;
     allocation.interestMinor = take(installment.interestDueMinor - installment.interestPaidMinor, remaining); remaining -= allocation.interestMinor;
     allocation.principalMinor = take(installment.principalDueMinor - installment.principalPaidMinor, remaining); remaining -= allocation.principalMinor;
-    if (allocation.principalMinor + allocation.interestMinor + allocation.feesMinor + allocation.penaltiesMinor > 0n) allocations.push(allocation);
+    if (allocation.principalMinor + allocation.interestMinor + allocation.feesMinor + allocation.penaltiesMinor + allocation.monitoringFeeMinor > 0n) allocations.push(allocation);
     if (remaining === 0n) break;
   }
 
@@ -42,6 +49,7 @@ export function allocateRepayment(installments: readonly AllocatableInstallment[
     interestMinor: allocations.reduce((sum, item) => sum + item.interestMinor, 0n),
     feesMinor: allocations.reduce((sum, item) => sum + item.feesMinor, 0n),
     penaltiesMinor: allocations.reduce((sum, item) => sum + item.penaltiesMinor, 0n),
+    monitoringFeeMinor: allocations.reduce((sum, item) => sum + item.monitoringFeeMinor, 0n),
     overpaymentMinor: remaining,
   };
 }

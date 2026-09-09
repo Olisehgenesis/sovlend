@@ -45,7 +45,7 @@ async function resolveSavingsDestination(
       id: true,
       accountNumber: true,
       isDefault: true,
-      product: { select: { shortName: true } },
+      product: { select: { id: true, shortName: true } },
     },
     orderBy: [{ isDefault: "desc" }, { createdAt: "asc" }],
   });
@@ -174,9 +174,50 @@ export async function disburseLoan(
       if (netProceedsMinor < 0n) {
         throw new Error("Disbursement fees exceed the approved principal");
       }
-      if (feesMinor > 0n && !productMapping.feeIncomeAccountId) {
-        throw new Error("Fee income account is not configured for this loan product");
+
+      // Separates disbursement-time charges into distinct income accounts by charge name (see
+      // Problem 2 in the accounting audit: admission fee, processing fee, and generic fees must
+      // never share one income line). Each falls back to the legacy feeIncomeAccountId when its
+      // dedicated mapping isn't configured, so organizations that haven't set up the new fields
+      // keep exactly today's single merged "Disbursement fees" line and error message.
+      const feeBuckets = new Map<string, { amountMinor: bigint; labels: Set<string> }>();
+      for (const charge of immediateCharges) {
+        const nameLower = charge.name.toLowerCase();
+        const { accountId, label, missingLabel } = nameLower.includes("admission")
+          ? {
+              accountId: productMapping.admissionFeeIncomeAccountId ?? productMapping.feeIncomeAccountId,
+              label: "Admission fee",
+              missingLabel: "Admission fee income account",
+            }
+          : nameLower.includes("processing")
+            ? {
+                accountId: productMapping.processingFeeIncomeAccountId ?? productMapping.feeIncomeAccountId,
+                label: "Processing fee",
+                missingLabel: "Processing fee income account",
+              }
+            : {
+                accountId: productMapping.feeIncomeAccountId,
+                label: "Disbursement fees",
+                missingLabel: "Fee income account",
+              };
+        if (!accountId) {
+          throw new Error(`${missingLabel} is not configured for this loan product`);
+        }
+        const bucket = feeBuckets.get(accountId);
+        if (bucket) {
+          bucket.amountMinor += charge.amountMinor;
+          bucket.labels.add(label);
+        } else {
+          feeBuckets.set(accountId, { amountMinor: charge.amountMinor, labels: new Set([label]) });
+        }
       }
+      const feeJournalLines = [...feeBuckets.entries()].map(([accountId, bucket]) => ({
+        accountId,
+        currencyCode: loan.denominationCurrency,
+        direction: "CREDIT" as const,
+        amountMinor: bucket.amountMinor,
+        memo: bucket.labels.size === 1 ? [...bucket.labels][0] : "Disbursement fees",
+      }));
 
       const savingsDestination =
         command.destination.type === "SAVINGS_ACCOUNT"
@@ -189,7 +230,11 @@ export async function disburseLoan(
       const savingsLiabilityAccountId = savingsDestination
         ? await resolveSavingsLiabilityAccountId(
             transaction,
-            savingsDestination.product?.shortName ?? null,
+            {
+              organizationId: loan.office.organizationId,
+              savingsProductId: savingsDestination.product?.id ?? null,
+              savingsProductShortName: savingsDestination.product?.shortName ?? null,
+            },
           )
         : null;
 
@@ -244,17 +289,7 @@ export async function disburseLoan(
           amountMinor: loan.principalMinor,
           memo: loan.accountNumber,
         },
-        ...(feesMinor > 0n
-          ? [
-              {
-                accountId: productMapping.feeIncomeAccountId!,
-                currencyCode: loan.denominationCurrency,
-                direction: "CREDIT" as const,
-                amountMinor: feesMinor,
-                memo: "Disbursement fees",
-              },
-            ]
-          : []),
+        ...feeJournalLines,
         ...(netProceedsMinor > 0n
           ? [
               {

@@ -27,8 +27,10 @@ import { disburseLoan } from "./disburse-loan";
 
 type MockOptions = Readonly<{
   feeIncomeAccountId?: string | null;
+  admissionFeeIncomeAccountId?: string | null;
+  processingFeeIncomeAccountId?: string | null;
   principalMinor?: bigint;
-  charges?: Array<{ id: string; amountMinor: bigint }>;
+  charges?: Array<{ id: string; amountMinor: bigint; name?: string }>;
   destination?: "SETTLEMENT_ACCOUNT" | "SAVINGS_ACCOUNT";
   savingsAccounts?: Array<{
     id: string;
@@ -90,6 +92,8 @@ function buildPrismaMock(options: MockOptions = {}) {
           options.feeIncomeAccountId === undefined
             ? "ledger-fee-income"
             : options.feeIncomeAccountId,
+        admissionFeeIncomeAccountId: options.admissionFeeIncomeAccountId ?? null,
+        processingFeeIncomeAccountId: options.processingFeeIncomeAccountId ?? null,
       },
     },
     office: {
@@ -103,7 +107,7 @@ function buildPrismaMock(options: MockOptions = {}) {
     },
     charge: {
       findMany: vi.fn(async () =>
-        charges.map((charge) => ({ ...charge, name: `Charge ${charge.id}` })),
+        charges.map((charge) => ({ ...charge, name: charge.name ?? `Charge ${charge.id}` })),
       ),
       updateMany: vi.fn(async (args) => {
         captures.chargeUpdateArgs = args;
@@ -116,7 +120,7 @@ function buildPrismaMock(options: MockOptions = {}) {
           id: account.id,
           accountNumber: account.accountNumber,
           isDefault: account.isDefault,
-          product: { shortName: account.productShortName ?? null },
+          product: { id: `${account.id}-product`, shortName: account.productShortName ?? null },
         })),
       ),
       findUniqueOrThrow: vi.fn(async ({ where }: { where: { id: string } }) => {
@@ -141,6 +145,12 @@ function buildPrismaMock(options: MockOptions = {}) {
         if (where.code === "20004") return { id: "ledger-savings-liability-fallback" };
         return null;
       }),
+    },
+    savingsProductAccountingMapping: {
+      findUnique: vi.fn(async () => null),
+    },
+    savingsAccountingDefaults: {
+      findUnique: vi.fn(async () => null),
     },
     loanInstallment: {
       createMany: vi.fn(async ({ data }: { data: unknown[] }) => ({ count: data.length })),
@@ -392,5 +402,60 @@ describe("disburseLoan", () => {
         idempotencyKey: "8e04245f-a4ca-44ef-a36f-2ff4d93da0dc",
       }),
     ).rejects.toThrow("Fee income account is not configured for this loan product");
+  });
+
+  it("splits admission and processing fees into their own income accounts, keeping the journal balanced", async () => {
+    const { prisma, captures } = buildPrismaMock({
+      admissionFeeIncomeAccountId: "ledger-admission-income",
+      processingFeeIncomeAccountId: "ledger-processing-income",
+      charges: [
+        { id: "charge-1", amountMinor: 40_000n, name: "Admission fee" },
+        { id: "charge-2", amountMinor: 25_000n, name: "Loan processing fee" },
+        { id: "charge-3", amountMinor: 10_000n, name: "Legal fee" },
+      ],
+    });
+
+    await disburseLoan(prisma, {
+      loanId: "loan-1",
+      actorUserId: "operator-1",
+      destination: { type: "SETTLEMENT_ACCOUNT", settlementAccountId: "settlement-1" },
+      businessDate: new Date("2026-09-08T00:00:00.000Z"),
+      idempotencyKey: "b2b7e5f0-6b8e-4f8f-9f1a-6a2c3f7a9d11",
+    });
+
+    expect(captures.journalLines).toEqual([
+      { journalId: "journal-1", accountId: "ledger-principal", direction: "DEBIT", amountMinor: 1_000_000n, memo: "LN-0001" },
+      { journalId: "journal-1", accountId: "ledger-admission-income", direction: "CREDIT", amountMinor: 40_000n, memo: "Admission fee" },
+      { journalId: "journal-1", accountId: "ledger-processing-income", direction: "CREDIT", amountMinor: 25_000n, memo: "Processing fee" },
+      { journalId: "journal-1", accountId: "ledger-fee-income", direction: "CREDIT", amountMinor: 10_000n, memo: "Disbursement fees" },
+      { journalId: "journal-1", accountId: "ledger-cash", direction: "CREDIT", amountMinor: 925_000n, memo: "Main till" },
+    ]);
+    expectBalanced(captures.journalLines as unknown[]);
+  });
+
+  it("falls back admission/processing fees to the legacy shared fee income account when dedicated mappings are absent", async () => {
+    const { prisma, captures } = buildPrismaMock({
+      charges: [
+        { id: "charge-1", amountMinor: 40_000n, name: "Admission fee" },
+        { id: "charge-2", amountMinor: 25_000n, name: "Loan processing fee" },
+      ],
+    });
+
+    await disburseLoan(prisma, {
+      loanId: "loan-1",
+      actorUserId: "operator-1",
+      destination: { type: "SETTLEMENT_ACCOUNT", settlementAccountId: "settlement-1" },
+      businessDate: new Date("2026-09-08T00:00:00.000Z"),
+      idempotencyKey: "3ad0d3f9-5c8e-4c1a-9e33-1f9d6b2a7e44",
+    });
+
+    // Both charges fall back to the same legacy feeIncomeAccountId and merge into a single line,
+    // identical to today's behavior when the new mapping fields are not configured.
+    expect(captures.journalLines).toEqual([
+      { journalId: "journal-1", accountId: "ledger-principal", direction: "DEBIT", amountMinor: 1_000_000n, memo: "LN-0001" },
+      { journalId: "journal-1", accountId: "ledger-fee-income", direction: "CREDIT", amountMinor: 65_000n, memo: "Disbursement fees" },
+      { journalId: "journal-1", accountId: "ledger-cash", direction: "CREDIT", amountMinor: 935_000n, memo: "Main till" },
+    ]);
+    expectBalanced(captures.journalLines as unknown[]);
   });
 });
