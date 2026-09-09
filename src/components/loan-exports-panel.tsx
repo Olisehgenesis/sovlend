@@ -5,6 +5,8 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
+import { BrandActionButton } from "@/components/ui/brand-action-button";
+
 type ExportJob = Readonly<{
   id: string;
   scopeType: string;
@@ -178,9 +180,9 @@ export function LoanExportsPanel({
             ) : null}
           </fieldset>
           <div className="form-actions">
-            <button className="invest-button" disabled={submitting} type="submit">
-              {submitting ? <LoaderCircle className="spin" size={16} /> : null} Request export
-            </button>
+            <BrandActionButton disabled={submitting} icon={submitting ? <LoaderCircle className="spin" size={16} /> : undefined} type="submit">
+              Request export
+            </BrandActionButton>
           </div>
         </form>
       </section>

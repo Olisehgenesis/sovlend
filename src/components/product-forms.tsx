@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
 
+import { BrandActionButton } from "@/components/ui/brand-action-button";
+
 type LoanProductDraft = Readonly<{
   id: string;
   name: string;
@@ -105,7 +107,7 @@ export function CreateLoanProductForm() {
         <label>Amortization method<input defaultValue="Equal installments" name="amortizationMethod" required /></label>
       </div>
     </fieldset>
-    <div className="form-actions"><button className="invest-button" disabled={pending}>{pending ? <LoaderCircle className="spin" size={16} /> : <Plus size={16} />} Create loan product</button></div>
+    <div className="form-actions"><BrandActionButton disabled={pending} icon={pending ? <LoaderCircle className="spin" size={16} /> : <Plus size={16} />} type="submit">Create loan product</BrandActionButton></div>
   </form>;
 }
 
@@ -167,7 +169,7 @@ export function EditLoanProductForm({ product }: { product: LoanProductDraft }) 
         <label>Amortization method<input defaultValue={product.amortizationMethod} name="amortizationMethod" required /></label>
       </div>
     </fieldset>
-    <div className="form-actions"><button className="invest-button" disabled={pending}>{pending ? <LoaderCircle className="spin" size={18} /> : <Save size={18} />} Save changes</button></div>
+    <div className="form-actions"><BrandActionButton disabled={pending} icon={pending ? <LoaderCircle className="spin" size={18} /> : <Save size={18} />} type="submit">Save changes</BrandActionButton></div>
   </form>;
 }
 
@@ -197,7 +199,7 @@ export function CreateSavingsProductForm() {
 
   return <form action={submit} className="entity-form compact-mapping">
     <fieldset><legend>New savings product</legend><div className="form-row three"><label>Name<input name="name" placeholder="Regular savings" required /></label><label>Short name<input maxLength={20} name="shortName" placeholder="RS" required /></label><label>Annual rate %<input min={0} name="nominalAnnualRate" step="0.01" type="number" /></label></div><div className="form-row"><label>Description<input name="description" /></label><label>Minimum opening balance (UGX)<input min={0} name="minOpeningBalance" step="0.01" type="number" /></label></div></fieldset>
-    <div className="form-actions"><button className="invest-button" disabled={pending}>{pending ? <LoaderCircle className="spin" size={16} /> : <Plus size={16} />} Create product</button></div>
+    <div className="form-actions"><BrandActionButton disabled={pending} icon={pending ? <LoaderCircle className="spin" size={16} /> : <Plus size={16} />} type="submit">Create product</BrandActionButton></div>
   </form>;
 }
 
@@ -243,7 +245,7 @@ export function EditSavingsProductForm({ product }: { product: SavingsProductDra
         <label>Minimum opening balance<input defaultValue={product.minOpeningBalance} inputMode="decimal" min={0} name="minOpeningBalance" step="0.01" type="number" /></label>
       </div>
     </fieldset>
-    <div className="form-actions"><button className="invest-button" disabled={pending}>{pending ? <LoaderCircle className="spin" size={18} /> : <Save size={18} />} Save changes</button></div>
+    <div className="form-actions"><BrandActionButton disabled={pending} icon={pending ? <LoaderCircle className="spin" size={18} /> : <Save size={18} />} type="submit">Save changes</BrandActionButton></div>
   </form>;
 }
 
@@ -275,7 +277,7 @@ export function CreateChargeDefinitionForm() {
 
   return <form action={submit} className="entity-form compact-mapping">
     <fieldset><legend>New charge definition</legend><div className="form-row three"><label>Name<input name="name" placeholder="Processing fee" required /></label><label>Applies to<select name="appliesTo">{appliesToOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label><label>Calculation<select name="calculationType" onChange={(event) => setCalculationType(event.target.value as "FLAT" | "PERCENTAGE")} value={calculationType}><option value="FLAT">Flat amount</option><option value="PERCENTAGE">Percentage</option></select></label></div><div className="form-row"><label>{calculationType === "FLAT" ? "Amount (UGX)" : "Percentage %"}{calculationType === "FLAT" ? <input min={0} name="amount" step="0.01" type="number" /> : <input max={100} min={0} name="percentage" step="0.01" type="number" />}</label><label className="check-row"><input name="penalty" type="checkbox" /> This is a penalty</label></div></fieldset>
-    <div className="form-actions"><button className="invest-button" disabled={pending}>{pending ? <LoaderCircle className="spin" size={16} /> : <Plus size={16} />} Create charge</button></div>
+    <div className="form-actions"><BrandActionButton disabled={pending} icon={pending ? <LoaderCircle className="spin" size={16} /> : <Plus size={16} />} type="submit">Create charge</BrandActionButton></div>
   </form>;
 }
 
@@ -323,6 +325,6 @@ export function EditChargeDefinitionForm({ charge }: { charge: ChargeDefinitionD
         <label className="check-row"><input defaultChecked={charge.penalty} name="penalty" type="checkbox" /> This is a penalty</label>
       </div>
     </fieldset>
-    <div className="form-actions"><button className="invest-button" disabled={pending}>{pending ? <LoaderCircle className="spin" size={18} /> : <Save size={18} />} Save changes</button></div>
+    <div className="form-actions"><BrandActionButton disabled={pending} icon={pending ? <LoaderCircle className="spin" size={18} /> : <Save size={18} />} type="submit">Save changes</BrandActionButton></div>
   </form>;
 }

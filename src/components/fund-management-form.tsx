@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
 
+import { BrandActionButton } from "@/components/ui/brand-action-button";
+
 type LedgerAccountOption = Readonly<{ id: string; label: string }>;
 type FundRecord = Readonly<{
   id: string;
@@ -136,9 +138,9 @@ export function FundManagementForm({
                   <input defaultChecked={fund.isActive} name="isActive" type="checkbox" /> Active fund
                 </label>
                 <div className="form-actions">
-                  <button className="invest-button" disabled={savingFundId === fund.id} type="submit">
-                    {savingFundId === fund.id ? <LoaderCircle className="spin" size={17} /> : <Save size={17} />} Save changes
-                  </button>
+                  <BrandActionButton disabled={savingFundId === fund.id} icon={savingFundId === fund.id ? <LoaderCircle className="spin" size={17} /> : <Save size={17} />} type="submit">
+                    Save changes
+                  </BrandActionButton>
                 </div>
               </form>
             </details>
@@ -175,9 +177,9 @@ export function FundManagementForm({
           </label>
         </fieldset>
         <div className="form-actions">
-          <button className="invest-button" disabled={creating} type="submit">
-            {creating ? <LoaderCircle className="spin" size={17} /> : <Save size={17} />} Add fund
-          </button>
+          <BrandActionButton disabled={creating} icon={creating ? <LoaderCircle className="spin" size={17} /> : <Save size={17} />} type="submit">
+            Add fund
+          </BrandActionButton>
         </div>
       </form>
     </div>
