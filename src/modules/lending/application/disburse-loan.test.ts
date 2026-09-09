@@ -31,7 +31,7 @@ type MockOptions = Readonly<{
   processingFeeIncomeAccountId?: string | null;
   principalMinor?: bigint;
   charges?: Array<{ id: string; amountMinor: bigint; name?: string }>;
-  destination?: "SETTLEMENT_ACCOUNT" | "SAVINGS_ACCOUNT";
+  groupLoan?: boolean;
   savingsAccounts?: Array<{
     id: string;
     accountNumber: string;
@@ -67,7 +67,8 @@ function buildPrismaMock(options: MockOptions = {}) {
 
   const loan = {
     id: "loan-1",
-    clientId: "client-1",
+    clientId: options.groupLoan ? null : "client-1",
+    groupId: options.groupLoan ? "group-1" : null,
     officeId: "office-1",
     accountNumber: "LN-0001",
     status: "APPROVED",
@@ -129,12 +130,12 @@ function buildPrismaMock(options: MockOptions = {}) {
         return {
           id: account.id,
           accountNumber: account.accountNumber,
-          clientId: "client-1",
-          groupId: null,
+          clientId: options.groupLoan ? null : "client-1",
+          groupId: options.groupLoan ? "group-1" : null,
           currencyCode: "UGX",
           status: "ACTIVE",
-          client: { organizationId: "org-1" },
-          group: null,
+          client: options.groupLoan ? null : { organizationId: "org-1" },
+          group: options.groupLoan ? { organizationId: "org-1" } : null,
           transactions: [{ amountMinor: account.openingBalanceMinor ?? 0n }],
         };
       }),
@@ -195,9 +196,7 @@ function buildPrismaMock(options: MockOptions = {}) {
     loan: { findUnique: vi.fn(async () => loan) },
     user: { findUnique: vi.fn(async () => ({ systemRole: "LOAN_OFFICER" })) },
     settlementAccount: {
-      findFirst: vi.fn(async () =>
-        options.destination === "SAVINGS_ACCOUNT" ? null : settlementAccount,
-      ),
+      findFirst: vi.fn(async () => settlementAccount),
     },
     savingsAccount: {
       findMany: transaction.savingsAccount.findMany,
@@ -228,23 +227,28 @@ describe("disburseLoan", () => {
     vi.clearAllMocks();
   });
 
-  it("keeps the zero-fee settlement disbursement journal identical to the legacy 2-line shape", async () => {
+  it("credits the client's savings account with net proceeds and keeps the loan journal balanced", async () => {
     const { prisma, captures } = buildPrismaMock({ charges: [] });
 
     await disburseLoan(prisma, {
       loanId: "loan-1",
       actorUserId: "operator-1",
-      destination: { type: "SETTLEMENT_ACCOUNT", settlementAccountId: "settlement-1" },
       businessDate: new Date("2026-09-08T00:00:00.000Z"),
       externalReference: "RCPT-1",
       idempotencyKey: "82e8d8fb-0e46-4164-a2ff-6a6d01ab17f0",
     });
 
     expect(captures.loanTransactionData).toMatchObject({
-      settlementChannel: "Main till",
-      settlementAccountId: "settlement-1",
+      settlementChannel: "Savings SV-0001",
+      settlementAccountId: undefined,
       settlementAmountMinor: 1_000_000n,
       denominationAmountMinor: 1_000_000n,
+    });
+    expect(captures.savingsTransactionData).toMatchObject({
+      savingsAccountId: "savings-1",
+      transactionType: "DEPOSIT",
+      amountMinor: 1_000_000n,
+      reason: "Loan disbursement",
     });
     expect(captures.journalLines).toEqual([
       {
@@ -256,18 +260,17 @@ describe("disburseLoan", () => {
       },
       {
         journalId: "journal-1",
-        accountId: "ledger-cash",
+        accountId: "ledger-savings-liability",
         direction: "CREDIT",
         amountMinor: 1_000_000n,
-        memo: "Main till",
+        memo: "SV-0001",
       },
     ]);
-    expect(captures.savingsTransactionData).toBeNull();
     expect(captures.chargeUpdateArgs).toBeNull();
     expectBalanced(captures.journalLines as unknown[]);
   });
 
-  it("nets pending due-at-disbursement charges against a settlement payout and keeps the journal balanced", async () => {
+  it("nets pending due-at-disbursement charges against the savings credit and keeps the journal balanced", async () => {
     const { prisma, captures } = buildPrismaMock({
       charges: [
         { id: "charge-1", amountMinor: 125_000n },
@@ -278,7 +281,6 @@ describe("disburseLoan", () => {
     await disburseLoan(prisma, {
       loanId: "loan-1",
       actorUserId: "operator-1",
-      destination: { type: "SETTLEMENT_ACCOUNT", settlementAccountId: "settlement-1" },
       businessDate: new Date("2026-09-08T00:00:00.000Z"),
       idempotencyKey: "5d41de41-0830-4acd-947e-f2de79f45c59",
     });
@@ -304,10 +306,10 @@ describe("disburseLoan", () => {
       },
       {
         journalId: "journal-1",
-        accountId: "ledger-cash",
+        accountId: "ledger-savings-liability",
         direction: "CREDIT",
         amountMinor: 850_000n,
-        memo: "Main till",
+        memo: "SV-0001",
       },
     ]);
     expect(captures.chargeUpdateArgs).toMatchObject({
@@ -317,32 +319,57 @@ describe("disburseLoan", () => {
     expectBalanced(captures.journalLines as unknown[]);
   });
 
-  it("credits the client's savings account with net proceeds and keeps the loan journal balanced", async () => {
-    const { prisma, captures } = buildPrismaMock({
-      charges: [{ id: "charge-1", amountMinor: 200_000n }],
-      destination: "SAVINGS_ACCOUNT",
-    });
+  it("records the payment method as informational metadata only, never as the journal credit target", async () => {
+    const { prisma, captures } = buildPrismaMock({ charges: [] });
 
     await disburseLoan(prisma, {
       loanId: "loan-1",
       actorUserId: "operator-1",
-      destination: { type: "SAVINGS_ACCOUNT", savingsAccountId: "savings-1" },
+      paymentMethodSettlementAccountId: "settlement-1",
       businessDate: new Date("2026-09-08T00:00:00.000Z"),
-      idempotencyKey: "55c1b66c-1f48-472d-a17d-c0838f7cbadf",
+      idempotencyKey: "9b9d0f0a-7b46-4a1d-9f5a-1a9a2c9d7e01",
     });
 
     expect(captures.loanTransactionData).toMatchObject({
-      settlementChannel: "Savings SV-0001",
-      settlementAccountId: undefined,
-      settlementAmountMinor: 800_000n,
-      denominationAmountMinor: 1_000_000n,
+      settlementChannel: "Main till",
+      settlementAccountId: "settlement-1",
+      settlementAmountMinor: 1_000_000n,
     });
+    // Even with a payment method recorded, the journal still credits the savings
+    // liability account — never the settlement account's own ledger account.
+    expect(captures.journalLines).toEqual([
+      {
+        journalId: "journal-1",
+        accountId: "ledger-principal",
+        direction: "DEBIT",
+        amountMinor: 1_000_000n,
+        memo: "LN-0001",
+      },
+      {
+        journalId: "journal-1",
+        accountId: "ledger-savings-liability",
+        direction: "CREDIT",
+        amountMinor: 1_000_000n,
+        memo: "SV-0001",
+      },
+    ]);
+    expectBalanced(captures.journalLines as unknown[]);
+  });
+
+  it("credits the group's savings account for group loans", async () => {
+    const { prisma, captures } = buildPrismaMock({ groupLoan: true, charges: [] });
+
+    await disburseLoan(prisma, {
+      loanId: "loan-1",
+      actorUserId: "operator-1",
+      businessDate: new Date("2026-09-08T00:00:00.000Z"),
+      idempotencyKey: "0f3f9f2f-3f0f-4a2f-9f0f-1f2f3f4f5f6f",
+    });
+
     expect(captures.savingsTransactionData).toMatchObject({
       savingsAccountId: "savings-1",
       transactionType: "DEPOSIT",
-      amountMinor: 800_000n,
-      reason: "Loan disbursement",
-      idempotencyKey: "loan-disbursement:loan-tx-1:savings-credit",
+      amountMinor: 1_000_000n,
     });
     expect(captures.journalLines).toEqual([
       {
@@ -354,16 +381,9 @@ describe("disburseLoan", () => {
       },
       {
         journalId: "journal-1",
-        accountId: "ledger-fee-income",
-        direction: "CREDIT",
-        amountMinor: 200_000n,
-        memo: "Disbursement fees",
-      },
-      {
-        journalId: "journal-1",
         accountId: "ledger-savings-liability",
         direction: "CREDIT",
-        amountMinor: 800_000n,
+        amountMinor: 1_000_000n,
         memo: "SV-0001",
       },
     ]);
@@ -380,7 +400,6 @@ describe("disburseLoan", () => {
       disburseLoan(prisma, {
         loanId: "loan-1",
         actorUserId: "operator-1",
-        destination: { type: "SETTLEMENT_ACCOUNT", settlementAccountId: "settlement-1" },
         businessDate: new Date("2026-09-08T00:00:00.000Z"),
         idempotencyKey: "7256e9dd-84d4-4749-91f3-a26fa9260915",
       }),
@@ -397,11 +416,23 @@ describe("disburseLoan", () => {
       disburseLoan(prisma, {
         loanId: "loan-1",
         actorUserId: "operator-1",
-        destination: { type: "SETTLEMENT_ACCOUNT", settlementAccountId: "settlement-1" },
         businessDate: new Date("2026-09-08T00:00:00.000Z"),
         idempotencyKey: "8e04245f-a4ca-44ef-a36f-2ff4d93da0dc",
       }),
     ).rejects.toThrow("Fee income account is not configured for this loan product");
+  });
+
+  it("rejects disbursement when there is no active savings account to credit", async () => {
+    const { prisma } = buildPrismaMock({ savingsAccounts: [] });
+
+    await expect(
+      disburseLoan(prisma, {
+        loanId: "loan-1",
+        actorUserId: "operator-1",
+        businessDate: new Date("2026-09-08T00:00:00.000Z"),
+        idempotencyKey: "1a2b3c4d-5e6f-4a1b-8c9d-0e1f2a3b4c5d",
+      }),
+    ).rejects.toThrow("Client has no active savings account available for loan disbursement");
   });
 
   it("splits admission and processing fees into their own income accounts, keeping the journal balanced", async () => {
@@ -418,7 +449,6 @@ describe("disburseLoan", () => {
     await disburseLoan(prisma, {
       loanId: "loan-1",
       actorUserId: "operator-1",
-      destination: { type: "SETTLEMENT_ACCOUNT", settlementAccountId: "settlement-1" },
       businessDate: new Date("2026-09-08T00:00:00.000Z"),
       idempotencyKey: "b2b7e5f0-6b8e-4f8f-9f1a-6a2c3f7a9d11",
     });
@@ -428,7 +458,7 @@ describe("disburseLoan", () => {
       { journalId: "journal-1", accountId: "ledger-admission-income", direction: "CREDIT", amountMinor: 40_000n, memo: "Admission fee" },
       { journalId: "journal-1", accountId: "ledger-processing-income", direction: "CREDIT", amountMinor: 25_000n, memo: "Processing fee" },
       { journalId: "journal-1", accountId: "ledger-fee-income", direction: "CREDIT", amountMinor: 10_000n, memo: "Disbursement fees" },
-      { journalId: "journal-1", accountId: "ledger-cash", direction: "CREDIT", amountMinor: 925_000n, memo: "Main till" },
+      { journalId: "journal-1", accountId: "ledger-savings-liability", direction: "CREDIT", amountMinor: 925_000n, memo: "SV-0001" },
     ]);
     expectBalanced(captures.journalLines as unknown[]);
   });
@@ -444,7 +474,6 @@ describe("disburseLoan", () => {
     await disburseLoan(prisma, {
       loanId: "loan-1",
       actorUserId: "operator-1",
-      destination: { type: "SETTLEMENT_ACCOUNT", settlementAccountId: "settlement-1" },
       businessDate: new Date("2026-09-08T00:00:00.000Z"),
       idempotencyKey: "3ad0d3f9-5c8e-4c1a-9e33-1f9d6b2a7e44",
     });
@@ -454,7 +483,7 @@ describe("disburseLoan", () => {
     expect(captures.journalLines).toEqual([
       { journalId: "journal-1", accountId: "ledger-principal", direction: "DEBIT", amountMinor: 1_000_000n, memo: "LN-0001" },
       { journalId: "journal-1", accountId: "ledger-fee-income", direction: "CREDIT", amountMinor: 65_000n, memo: "Disbursement fees" },
-      { journalId: "journal-1", accountId: "ledger-cash", direction: "CREDIT", amountMinor: 935_000n, memo: "Main till" },
+      { journalId: "journal-1", accountId: "ledger-savings-liability", direction: "CREDIT", amountMinor: 935_000n, memo: "SV-0001" },
     ]);
     expectBalanced(captures.journalLines as unknown[]);
   });

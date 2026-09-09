@@ -23,21 +23,37 @@ const termsSchema = z.object({
   interestMethod: z.string(),
 });
 
-export type LoanDisbursementDestination =
-  | { type: "SETTLEMENT_ACCOUNT"; settlementAccountId: string }
-  | { type: "SAVINGS_ACCOUNT"; savingsAccountId?: string };
+export type LoanDisbursementCommand = {
+  loanId: string;
+  actorUserId: string;
+  // Which of the client's/group's savings accounts receives the net proceeds. Optional when
+  // there is exactly one active account (or a designated default) to credit.
+  savingsAccountId?: string;
+  // Optional, informational only: which cash/bank/mobile-money channel the operator recorded as
+  // "how" this payout was released (e.g. for reporting). Disbursement always credits the
+  // borrower's savings account net of fees — this never feeds a ledger entry of its own.
+  paymentMethodSettlementAccountId?: string;
+  businessDate: Date;
+  externalReference?: string;
+  idempotencyKey: string;
+};
 
 async function resolveSavingsDestination(
   prisma: Pick<PrismaClient, "savingsAccount">,
-  input: { clientId: string | null; currencyCode: string; requestedSavingsAccountId?: string },
+  input: {
+    clientId: string | null;
+    groupId: string | null;
+    currencyCode: string;
+    requestedSavingsAccountId?: string;
+  },
 ) {
-  if (!input.clientId) {
-    throw new Error("Only client loans can be credited to a savings account");
+  if (!input.clientId && !input.groupId) {
+    throw new Error("Only client or group loans can be credited to a savings account");
   }
 
   const accounts = await prisma.savingsAccount.findMany({
     where: {
-      clientId: input.clientId,
+      ...(input.clientId ? { clientId: input.clientId } : { groupId: input.groupId }),
       status: "ACTIVE",
       currencyCode: input.currencyCode,
     },
@@ -51,7 +67,11 @@ async function resolveSavingsDestination(
   });
 
   if (accounts.length === 0) {
-    throw new Error("Client has no active savings account available for loan disbursement");
+    throw new Error(
+      input.clientId
+        ? "Client has no active savings account available for loan disbursement"
+        : "Group has no active savings account available for loan disbursement",
+    );
   }
 
   if (input.requestedSavingsAccountId) {
@@ -70,14 +90,7 @@ async function resolveSavingsDestination(
 
 export async function disburseLoan(
   prisma: PrismaClient,
-  command: {
-    loanId: string;
-    actorUserId: string;
-    destination: LoanDisbursementDestination;
-    businessDate: Date;
-    externalReference?: string;
-    idempotencyKey: string;
-  },
+  command: LoanDisbursementCommand,
 ) {
   const existing = await prisma.loanTransaction.findUnique({
     where: { idempotencyKey: command.idempotencyKey },
@@ -115,19 +128,20 @@ export async function disburseLoan(
     throw new Error("Loan product accounting mapping is required before disbursement");
   }
 
-  const settlementAccount =
-    command.destination.type === "SETTLEMENT_ACCOUNT"
-      ? await prisma.settlementAccount.findFirst({
-          where: {
-            id: command.destination.settlementAccountId,
-            organizationId: loan.office.organizationId,
-            currencyCode: loan.denominationCurrency,
-            active: true,
-          },
-        })
-      : null;
-  if (command.destination.type === "SETTLEMENT_ACCOUNT" && !settlementAccount) {
-    throw new Error("Selected settlement account is not available");
+  // Optional, informational only (see LoanDisbursementCommand) — never used as a journal
+  // destination. Validated when provided so bad/stale ids don't silently get recorded.
+  const paymentMethodAccount = command.paymentMethodSettlementAccountId
+    ? await prisma.settlementAccount.findFirst({
+        where: {
+          id: command.paymentMethodSettlementAccountId,
+          organizationId: loan.office.organizationId,
+          currencyCode: loan.denominationCurrency,
+          active: true,
+        },
+      })
+    : null;
+  if (command.paymentMethodSettlementAccountId && !paymentMethodAccount) {
+    throw new Error("Selected payment method is not available");
   }
 
   const terms = termsSchema.parse(loan.termsSnapshot);
@@ -219,24 +233,19 @@ export async function disburseLoan(
         memo: bucket.labels.size === 1 ? [...bucket.labels][0] : "Disbursement fees",
       }));
 
-      const savingsDestination =
-        command.destination.type === "SAVINGS_ACCOUNT"
-          ? await resolveSavingsDestination(transaction, {
-              clientId: loan.clientId,
-              currencyCode: loan.denominationCurrency,
-              requestedSavingsAccountId: command.destination.savingsAccountId,
-            })
-          : null;
-      const savingsLiabilityAccountId = savingsDestination
-        ? await resolveSavingsLiabilityAccountId(
-            transaction,
-            {
-              organizationId: loan.office.organizationId,
-              savingsProductId: savingsDestination.product?.id ?? null,
-              savingsProductShortName: savingsDestination.product?.shortName ?? null,
-            },
-          )
-        : null;
+      // Disbursement always credits the borrower's savings account, net of any due-at-
+      // disbursement charges — there is no "pay out via settlement account" path anymore.
+      const savingsDestination = await resolveSavingsDestination(transaction, {
+        clientId: loan.clientId,
+        groupId: loan.groupId,
+        currencyCode: loan.denominationCurrency,
+        requestedSavingsAccountId: command.savingsAccountId,
+      });
+      const savingsLiabilityAccountId = await resolveSavingsLiabilityAccountId(transaction, {
+        organizationId: loan.office.organizationId,
+        savingsProductId: savingsDestination.product?.id ?? null,
+        savingsProductShortName: savingsDestination.product?.shortName ?? null,
+      });
 
       await transaction.loanInstallment.createMany({
         data: schedule.map((item) => ({ loanId: loan.id, ...item })),
@@ -248,8 +257,8 @@ export async function disburseLoan(
           transactionType: "DISBURSEMENT",
           businessDate: command.businessDate,
           settlementCurrency: loan.denominationCurrency,
-          settlementChannel: settlementAccount?.name ?? `Savings ${savingsDestination!.accountNumber}`,
-          settlementAccountId: settlementAccount?.id,
+          settlementChannel: paymentMethodAccount?.name ?? `Savings ${savingsDestination.accountNumber}`,
+          settlementAccountId: paymentMethodAccount?.id,
           settlementAmountMinor: netProceedsMinor,
           denominationAmountMinor: loan.principalMinor,
           externalReference: command.externalReference,
@@ -258,7 +267,7 @@ export async function disburseLoan(
         },
       });
 
-      if (savingsDestination && netProceedsMinor > 0n) {
+      if (netProceedsMinor > 0n) {
         await recordSavingsTransactionInTransaction(transaction, {
           savingsAccountId: savingsDestination.id,
           actorUserId: command.actorUserId,
@@ -293,12 +302,11 @@ export async function disburseLoan(
         ...(netProceedsMinor > 0n
           ? [
               {
-                accountId:
-                  settlementAccount?.ledgerAccountId ?? savingsLiabilityAccountId!,
+                accountId: savingsLiabilityAccountId,
                 currencyCode: loan.denominationCurrency,
                 direction: "CREDIT" as const,
                 amountMinor: netProceedsMinor,
-                memo: settlementAccount?.name ?? savingsDestination!.accountNumber,
+                memo: savingsDestination.accountNumber,
               },
             ]
           : []),
@@ -330,11 +338,10 @@ export async function disburseLoan(
       const metadata = {
         loanId: loan.id,
         transactionId: transactionRecord.id,
-        destinationType: command.destination.type,
-        settlementAccountId: settlementAccount?.id ?? null,
-        settlementAccount: settlementAccount?.name ?? null,
-        savingsAccountId: savingsDestination?.id ?? null,
-        savingsAccountNumber: savingsDestination?.accountNumber ?? null,
+        paymentMethodAccountId: paymentMethodAccount?.id ?? null,
+        paymentMethodAccount: paymentMethodAccount?.name ?? null,
+        savingsAccountId: savingsDestination.id,
+        savingsAccountNumber: savingsDestination.accountNumber,
         principalMinor: loan.principalMinor.toString(),
         feesMinor: feesMinor.toString(),
         netProceedsMinor: netProceedsMinor.toString(),

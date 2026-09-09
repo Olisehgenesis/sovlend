@@ -2,7 +2,6 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 
 import { AppHeader } from "./app-header";
-import { AppSidebar } from "./app-sidebar";
 import { auth } from "@/lib/auth";
 import { canManageProducts } from "@/lib/can-manage-products";
 import { prisma } from "@/lib/prisma";
@@ -35,11 +34,8 @@ export async function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="app-shell">
-      <AppSidebar admin={admin} canManageProducts={products} officeName={user?.office?.name} reportSections={reportSections} workspaceName={user?.organization?.name} />
-      <div className="app-main">
-        <AppHeader officeName={user?.office?.name} workspaceName={user?.organization?.name} />
-        {children}
-      </div>
+      <AppHeader admin={admin} canManageProducts={products} officeName={user?.office?.name} reportSections={reportSections} workspaceName={user?.organization?.name} />
+      <div className="app-main">{children}</div>
     </div>
   );
 }
