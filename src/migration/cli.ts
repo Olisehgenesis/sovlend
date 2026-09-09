@@ -1,4 +1,5 @@
 import { backfillLegacyLoanAllocations } from "./backfill-legacy-loan-allocations";
+import { backfillLegacyTransactionAttribution } from "./backfill-legacy-transaction-attribution";
 import { rebuildManifest, verifyArchive } from "./archive";
 import { extractLegacy } from "./extract";
 import { extractLegacyLoanHistory } from "./extract-loans";
@@ -87,7 +88,13 @@ async function main() {
     if (result.skippedLoans.length > 0) console.log(`${result.skippedLoans.length} loans skipped:\n${result.skippedLoans.join("\n")}`);
     return;
   }
-  throw new Error("Usage: migration:extract | migration:extract-loans | migration:verify <archive-directory> | migration:manifest <archive-directory> | migration:import <archive-directory> | migration:import-archive-loans <archive-directory> [--sync-existing-loans] | migration:import-all-clients | migration:backfill-legacy-loan-allocations [--apply]");
+  if (command === "backfill-legacy-transaction-attribution") {
+    await backfillLegacyTransactionAttribution(prisma, {
+      apply: process.argv.includes("--apply"),
+    });
+    return;
+  }
+  throw new Error("Usage: migration:extract | migration:extract-loans | migration:verify <archive-directory> | migration:manifest <archive-directory> | migration:import <archive-directory> | migration:import-archive-loans <archive-directory> [--sync-existing-loans] | migration:import-all-clients | migration:backfill-legacy-loan-allocations [--apply] | migration:backfill-legacy-transaction-attribution [--apply]");
 }
 
 void main().catch((error) => { console.error(error instanceof Error ? error.message : error); process.exitCode = 1; });

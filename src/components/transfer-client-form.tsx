@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
 
+import { BrandActionButton } from "@/components/ui/brand-action-button";
+
 export function TransferClientForm({ clientId, accountNumber, currentOfficeId, offices }: { clientId: string; accountNumber: string; currentOfficeId: string; offices: Array<{ id: string; name: string }> }) {
   const router = useRouter();
   const [pending, setPending] = useState(false);
@@ -26,6 +28,6 @@ export function TransferClientForm({ clientId, accountNumber, currentOfficeId, o
 
   return <form action={transfer} className="entity-form">
     <fieldset><legend>Destination office</legend><label>Office<select defaultValue={currentOfficeId} name="officeId" required>{offices.map((office) => <option key={office.id} value={office.id}>{office.name}</option>)}</select></label><p className="muted-text">Transferring a client clears their assigned loan officer.</p></fieldset>
-    <div className="form-actions"><button className="invest-button" disabled={pending}>{pending ? <LoaderCircle className="spin" size={18} /> : <ArrowRightLeft size={18} />} Transfer client</button></div>
+    <div className="form-actions"><BrandActionButton disabled={pending} icon={pending ? <LoaderCircle className="spin" size={18} /> : <ArrowRightLeft size={18} />} type="submit">Transfer client</BrandActionButton></div>
   </form>;
 }

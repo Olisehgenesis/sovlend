@@ -3,6 +3,8 @@
 import { LoaderCircle, Plus } from "lucide-react";
 import type { ReactNode } from "react";
 
+import { BrandActionButton } from "@/components/ui/brand-action-button";
+
 /**
  * Shared "add item" form chrome for the loan-detail attached-items panels (charges,
  * collateral, and similar future item types) — `<fieldset>`/`<legend>`/`form-row` grid/
@@ -58,9 +60,9 @@ export function AttachedItemForm({
         ))}
       </fieldset>
       <div className="form-actions">
-        <button className="invest-button" disabled={pending}>
-          {pending ? <LoaderCircle className="spin" size={16} /> : <Plus size={16} />} {submitLabel}
-        </button>
+        <BrandActionButton disabled={pending} icon={pending ? <LoaderCircle className="spin" size={16} /> : <Plus size={16} />} type="submit">
+          {submitLabel}
+        </BrandActionButton>
       </div>
     </form>
   );

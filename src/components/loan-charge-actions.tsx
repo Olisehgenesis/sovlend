@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
 
+import { BrandActionButton } from "@/components/ui/brand-action-button";
+
 // Pay/waive actions for a single charge, shared between the loan charge detail page and any
 // other place a lone charge needs the same confirm-then-PATCH flow (see LoanChargesPanel for the
 // list-row equivalent — kept separate since the list already owns its own bulk state).
@@ -39,9 +41,9 @@ export function LoanChargeActions({ loanId, chargeId, status }: { loanId: string
 
   return (
     <div className="header-actions">
-      <button className="invest-button" disabled={pending !== null} onClick={() => setStatus("PAID")} type="button">
-        {pending === "PAID" ? <LoaderCircle className="spin" size={16} /> : <CheckCircle2 size={16} />} Pay charge
-      </button>
+      <BrandActionButton disabled={pending !== null} icon={pending === "PAID" ? <LoaderCircle className="spin" size={16} /> : <CheckCircle2 size={16} />} onClick={() => setStatus("PAID")} type="button">
+        Pay charge
+      </BrandActionButton>
       <button className="secondary-action" disabled={pending !== null} onClick={() => setStatus("WAIVED")} type="button">
         {pending === "WAIVED" ? <LoaderCircle className="spin" size={16} /> : <XCircle size={16} />} Waive charge
       </button>

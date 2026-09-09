@@ -4,8 +4,8 @@ import type { Prisma, PrismaClient } from "@prisma/client";
 import { AuthorizationService } from "@/modules/identity/application/authorization-service";
 import { permissions } from "@/modules/identity/domain/permissions";
 import { assertBalancedJournal } from "@/modules/ledger/domain/journal";
+import { recordSavingsTransactionInTransaction } from "@/modules/savings/application/record-savings-transaction";
 import { resolveSavingsLiabilityAccountId } from "@/modules/savings/application/savings-ledger";
-import { recordSavingsTransactionInTransaction } from "@/modules/savings/application/post-savings-transaction";
 import { allocateRepayment } from "../domain/repayment-allocation";
 import { installmentDueMinor, installmentPaidMinor } from "../domain/loan-outstanding";
 
@@ -23,7 +23,7 @@ type RepaymentDebitSource = Readonly<{
   settlementAccountId?: string;
 }>;
 
-type ApplyRepaymentParams = Readonly<{
+export type ApplyRepaymentParams = Readonly<{
   loanId: string;
   amountMinor: bigint;
   businessDate: Date;
@@ -31,7 +31,63 @@ type ApplyRepaymentParams = Readonly<{
   idempotencyKey: string;
   actorUserId: string | null;
   source: RepaymentDebitSource;
+  preferredOverpaymentSavingsAccountId?: string;
 }>;
+
+type OverpaymentSweepSavingsAccount = Readonly<{
+  id: string;
+  accountNumber: string;
+  productId: string | null;
+  isDefault: boolean;
+  product: { shortName: string } | null;
+}>;
+
+export function buildLoanOverpaymentSavingsIdempotencyKey(loanTransactionId: string) {
+  return `loan-overpayment:${loanTransactionId}:savings-credit`;
+}
+
+function buildLoanOverpaymentSweepReason(loanAccountNumber: string) {
+  return `Loan overpayment sweep - ${loanAccountNumber}`;
+}
+
+async function resolveOverpaymentSweepSavingsAccount(
+  transaction: Tx,
+  input: Readonly<{
+    clientId: string | null;
+    groupId: string | null;
+    currencyCode: string;
+    preferredSavingsAccountId?: string;
+  }>,
+): Promise<OverpaymentSweepSavingsAccount | null> {
+  if (!input.clientId && !input.groupId) return null;
+
+  const accounts = await transaction.savingsAccount.findMany({
+    where: {
+      ...(input.clientId ? { clientId: input.clientId } : { groupId: input.groupId }),
+      status: "ACTIVE",
+      currencyCode: input.currencyCode,
+    },
+    select: {
+      id: true,
+      accountNumber: true,
+      productId: true,
+      isDefault: true,
+      product: { select: { shortName: true } },
+    },
+    // Tie-break rule for sweeping excess into savings:
+    //   1. an explicitly related/funding account when the caller provides one,
+    //   2. otherwise the client's designated default account,
+    //   3. otherwise the oldest active account.
+    orderBy: [{ isDefault: "desc" }, { createdAt: "asc" }],
+  });
+
+  if (accounts.length === 0) return null;
+  if (input.preferredSavingsAccountId) {
+    const preferred = accounts.find((account) => account.id === input.preferredSavingsAccountId);
+    if (preferred) return preferred;
+  }
+  return accounts[0] ?? null;
+}
 
 /**
  * Core repayment posting logic shared by postRepayment() (funded by a settlement/cash account)
@@ -41,7 +97,7 @@ type ApplyRepaymentParams = Readonly<{
  * events. Callers are responsible for their own idempotency short-circuit before/after this runs
  * inside their own $transaction, and for any authorization checks.
  */
-async function applyRepaymentInTransaction(transaction: Tx, params: ApplyRepaymentParams) {
+export async function applyRepaymentInTransaction(transaction: Tx, params: ApplyRepaymentParams) {
   const current = await transaction.loan.findUniqueOrThrow({
     where: { id: params.loanId },
     include: {
@@ -65,7 +121,27 @@ async function applyRepaymentInTransaction(transaction: Tx, params: ApplyRepayme
   const unassessedPenaltyMinor = allocation.penaltiesMinor - assessedPenaltyMinor;
   if (unassessedPenaltyMinor > 0n && !mapping.penaltyIncomeAccountId) throw new Error("Penalty income account is not configured");
   if (assessedPenaltyMinor > 0n && !mapping.penaltyReceivableAccountId) throw new Error("Penalty receivable account is not configured");
-  if (allocation.overpaymentMinor > 0n && !mapping.overpaymentLiabilityAccountId) throw new Error("Overpayment liability account is not configured");
+  const overpaymentSweepAccount =
+   allocation.overpaymentMinor > 0n
+     ? await resolveOverpaymentSweepSavingsAccount(transaction, {
+         clientId: current.clientId,
+         groupId: current.groupId,
+         currencyCode: current.denominationCurrency,
+         preferredSavingsAccountId: params.preferredOverpaymentSavingsAccountId,
+       })
+     : null;
+  const overpaymentSweepLiabilityAccountId = overpaymentSweepAccount
+   ? await resolveSavingsLiabilityAccountId(transaction, {
+       organizationId: current.office.organizationId,
+       savingsProductId: overpaymentSweepAccount.productId,
+       savingsProductShortName: overpaymentSweepAccount.product?.shortName ?? null,
+     })
+   : null;
+  const sweptOverpaymentMinor = overpaymentSweepAccount ? allocation.overpaymentMinor : 0n;
+  const retainedOverpaymentMinor = allocation.overpaymentMinor - sweptOverpaymentMinor;
+  if (retainedOverpaymentMinor > 0n && !mapping.overpaymentLiabilityAccountId) {
+   throw new Error("Overpayment liability account is not configured");
+  }
 
   const transactionRecord = await transaction.loanTransaction.create({
     data: {
@@ -128,7 +204,12 @@ async function applyRepaymentInTransaction(transaction: Tx, params: ApplyRepayme
     { accountId: mapping.feeIncomeAccountId, amount: allocation.feesMinor, memo: "Fees" },
     { accountId: monitoringFeeIncomeAccountId, amount: allocation.monitoringFeeMinor, memo: "Monitoring fee" },
     ...penaltyCredits,
-    { accountId: mapping.overpaymentLiabilityAccountId, amount: allocation.overpaymentMinor, memo: "Overpayment" },
+    {
+      accountId: overpaymentSweepLiabilityAccountId,
+      amount: sweptOverpaymentMinor,
+      memo: overpaymentSweepAccount?.accountNumber ?? "Overpayment sweep",
+    },
+    { accountId: mapping.overpaymentLiabilityAccountId, amount: retainedOverpaymentMinor, memo: "Overpayment" },
   ].filter((line): line is { accountId: string; amount: bigint; memo: string } => Boolean(line.accountId) && line.amount > 0n);
   const journalLines = [
     { journalId: journal.id, accountId: params.source.ledgerAccountId, direction: "DEBIT" as const, amountMinor: params.amountMinor, memo: params.source.channelName },
@@ -137,6 +218,25 @@ async function applyRepaymentInTransaction(transaction: Tx, params: ApplyRepayme
   assertBalancedJournal(journalLines.map((line) => ({ ...line, currencyCode: current.denominationCurrency })));
   await transaction.journalLine.createMany({ data: journalLines });
   await transaction.journal.update({ where: { id: journal.id }, data: { status: "POSTED", postedAt: new Date() } });
+  if (sweptOverpaymentMinor > 0n && overpaymentSweepAccount) {
+    const sweepReason = buildLoanOverpaymentSweepReason(current.accountNumber);
+    await recordSavingsTransactionInTransaction(transaction, {
+      savingsAccountId: overpaymentSweepAccount.id,
+      actorUserId: params.actorUserId,
+      transactionType: "DEPOSIT",
+      amountMinor: sweptOverpaymentMinor,
+      settlementAccountId: params.source.settlementAccountId,
+      reason: sweepReason,
+      externalReference: params.externalReference ?? sweepReason,
+      idempotencyKey: buildLoanOverpaymentSavingsIdempotencyKey(transactionRecord.id),
+      businessDate: params.businessDate,
+      postJournal: false,
+    });
+  } else if (retainedOverpaymentMinor > 0n) {
+    console.warn(
+      `[post-repayment] Loan ${current.accountNumber} retained ${retainedOverpaymentMinor.toString()} in overpayment liability because no active savings account was available for the owner.`,
+    );
+  }
   const totalOutstanding = current.installments.reduce((sum, installment) => sum + installmentDueMinor(installment) - installmentPaidMinor(installment), 0n);
   const remainingAfter = totalOutstanding - (params.amountMinor - allocation.overpaymentMinor);
   const allocatedByInstallment = new Map(allocation.allocations.map((item) => [item.installmentId, item]));
@@ -144,7 +244,7 @@ async function applyRepaymentInTransaction(transaction: Tx, params: ApplyRepayme
     const item = allocatedByInstallment.get(installment.id);
     return sum + installmentDueMinor(installment) - installmentPaidMinor(installment) - (item?.principalMinor ?? 0n) - (item?.interestMinor ?? 0n) - (item?.feesMinor ?? 0n) - (item?.penaltiesMinor ?? 0n) - (item?.monitoringFeeMinor ?? 0n);
   }, 0n);
-  if (allocation.overpaymentMinor > 0n) await transaction.loan.update({ where: { id: current.id }, data: { status: "OVERPAID" } });
+  if (retainedOverpaymentMinor > 0n) await transaction.loan.update({ where: { id: current.id }, data: { status: "OVERPAID" } });
   else if (remainingAfter <= 0n) await transaction.loan.update({ where: { id: current.id }, data: { status: "CLOSED" } });
   else if (current.status === "IN_ARREARS" && overdueRemainingAfter <= 0n) await transaction.loan.update({ where: { id: current.id }, data: { status: "ACTIVE" } });
   const correlationId = randomUUID();
@@ -161,6 +261,15 @@ async function applyRepaymentInTransaction(transaction: Tx, params: ApplyRepayme
       penalties: allocation.penaltiesMinor.toString(),
       overpayment: allocation.overpaymentMinor.toString(),
     },
+    overpaymentSweep:
+      sweptOverpaymentMinor > 0n && overpaymentSweepAccount
+        ? {
+            savingsAccountId: overpaymentSweepAccount.id,
+            savingsAccountNumber: overpaymentSweepAccount.accountNumber,
+            amountMinor: sweptOverpaymentMinor.toString(),
+          }
+        : null,
+    overpaymentRetainedOnLiability: retainedOverpaymentMinor > 0n,
   };
   const eventHash = createHash("sha256").update(JSON.stringify({ correlationId, action: "loan.repayment.recorded", metadata })).digest("hex");
   await transaction.auditEvent.create({ data: { actorId: params.actorUserId, action: "loan.repayment.recorded", entityType: "Loan", entityId: current.id, correlationId, metadata, eventHash } });
@@ -280,6 +389,7 @@ export async function transferSavingsToLoan(prisma: PrismaClient, command: Trans
       idempotencyKey: command.idempotencyKey,
       actorUserId: command.actorUserId,
       source: { ledgerAccountId: savingsLiabilityAccountId, channelName: `Savings ${account.accountNumber}` },
+      preferredOverpaymentSavingsAccountId: account.id,
     });
 
     await recordSavingsTransactionInTransaction(transaction, {

@@ -1,8 +1,8 @@
 "use client";
 
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, Search } from "lucide-react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
 import { AccountMenu } from "./account-menu";
@@ -22,12 +22,18 @@ export function AppHeader({
   officeName?: string | null;
   reportSections?: ReportNavSection[];
 }) {
+  const router = useRouter();
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const navRef = useRef<HTMLElement>(null);
   const [openMenu, setOpenMenu] = useState<string | null>(null);
+  const [isSearching, setIsSearching] = useState(false);
+  const activeQuery = searchParams.get("query") ?? "";
+  const searchFieldKey = `${pathname}:${activeQuery}`;
 
   useEffect(() => {
-    setOpenMenu(null);
+    const timeout = window.setTimeout(() => setOpenMenu(null), 0);
+    return () => window.clearTimeout(timeout);
   }, [pathname]);
 
   useEffect(() => {
@@ -57,6 +63,40 @@ export function AppHeader({
 
   function closeMenus() {
     setOpenMenu(null);
+  }
+
+  async function handleGlobalSearch(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const formData = new FormData(event.currentTarget);
+    const rawQuery = formData.get("query");
+    const query = typeof rawQuery === "string" ? rawQuery.trim() : "";
+    closeMenus();
+
+    if (!query) {
+      router.push("/clients");
+      return;
+    }
+
+    setIsSearching(true);
+    try {
+      const response = await fetch(`/api/search?q=${encodeURIComponent(query)}`, {
+        headers: { accept: "application/json" },
+        cache: "no-store",
+      });
+      if (response.ok) {
+        const data = (await response.json()) as { href?: string };
+        if (typeof data.href === "string" && data.href.startsWith("/")) {
+          router.push(data.href);
+          return;
+        }
+      }
+    } catch {
+      // Fall back to the client directory if the resolver is unavailable.
+    } finally {
+      setIsSearching(false);
+    }
+
+    router.push(`/clients?query=${encodeURIComponent(query)}`);
   }
 
   return (
@@ -182,6 +222,9 @@ export function AppHeader({
               <ChevronDown size={13} />
             </summary>
             <div className="header-dropdown">
+              <Link href="/reports/accounting/chart-of-accounts" onClick={closeMenus}>
+                Chart of accounts
+              </Link>
               <Link href="/backoffice/accounting" onClick={closeMenus}>
                 Accounting mappings
               </Link>
@@ -265,6 +308,21 @@ export function AppHeader({
             </div>
           </details>
         ) : null}
+        <form className="header-global-search" onSubmit={handleGlobalSearch} role="search">
+          <input
+            aria-label="Search clients, loans, savings accounts, or groups"
+            autoComplete="off"
+            defaultValue={activeQuery}
+            key={searchFieldKey}
+            name="query"
+            placeholder="Search client, account or loan"
+            spellCheck={false}
+            type="search"
+          />
+          <button aria-label="Search records" disabled={isSearching} type="submit">
+            <Search size={15} />
+          </button>
+        </form>
       </nav>
       <AccountMenu />
     </header>

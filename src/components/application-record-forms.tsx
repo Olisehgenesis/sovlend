@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
 
+import { BrandActionButton } from "@/components/ui/brand-action-button";
+
 type ApplicationNote = Readonly<{ id: string; body: string; authorName: string; createdAtLabel: string }>;
 type ApplicationDocument = Readonly<{ id: string; name: string; description: string | null; mediaType: string; createdAtLabel: string }>;
 type ApplicationCollateralItem = Readonly<{ type?: string; description?: string; estimatedValueLabel?: string }>;
@@ -57,9 +59,9 @@ export function ApplicationNotesPanel({ applicationId, notes, canManage }: { app
             </label>
           </fieldset>
           <div className="form-actions">
-            <button className="invest-button" disabled={pending}>
-              {pending ? <LoaderCircle className="spin" size={16} /> : <Plus size={16} />} Add note
-            </button>
+            <BrandActionButton disabled={pending} icon={pending ? <LoaderCircle className="spin" size={16} /> : <Plus size={16} />} type="submit">
+              Add note
+            </BrandActionButton>
           </div>
         </form>
       ) : null}
@@ -141,9 +143,9 @@ export function ApplicationDocumentsPanel({ applicationId, documents, canManage 
             </label>
           </fieldset>
           <div className="form-actions">
-            <button className="invest-button" disabled={pendingUpload}>
-              {pendingUpload ? <LoaderCircle className="spin" size={16} /> : <Upload size={16} />} Upload
-            </button>
+            <BrandActionButton disabled={pendingUpload} icon={pendingUpload ? <LoaderCircle className="spin" size={16} /> : <Upload size={16} />} type="submit">
+              Upload
+            </BrandActionButton>
           </div>
         </form>
       ) : null}
@@ -230,9 +232,9 @@ export function ApplicationCollateralPanel({
             </label>
           </fieldset>
           <div className="form-actions">
-            <button className="invest-button" disabled={pending}>
-              {pending ? <LoaderCircle className="spin" size={16} /> : <Plus size={16} />} Add collateral
-            </button>
+            <BrandActionButton disabled={pending} icon={pending ? <LoaderCircle className="spin" size={16} /> : <Plus size={16} />} type="submit">
+              Add collateral
+            </BrandActionButton>
           </div>
         </form>
       ) : null}

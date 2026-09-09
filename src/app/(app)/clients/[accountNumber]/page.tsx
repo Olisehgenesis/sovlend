@@ -130,15 +130,6 @@ export default async function ClientDetailPage({ params, searchParams }: { param
         }))
     : [];
 
-  const transferSourceAccounts = savingsRows
-    .filter(({ account, balanceMinor }) => account.status === "ACTIVE" && balanceMinor > 0n)
-    .map(({ account, balanceMinor }) => ({
-      id: account.id,
-      accountNumber: account.accountNumber,
-      currencyCode: account.currencyCode,
-      balanceMinor: balanceMinor.toString(),
-    }));
-
   // Nearest unpaid installment across the client's open loans, for the "next repayment due"
   // countdown badge. Flattens every open loan's outstanding installments rather than assuming a
   // single loan, since a client can hold more than one active loan at once.
@@ -185,7 +176,6 @@ export default async function ClientDetailPage({ params, searchParams }: { param
           loanTargets={loanPaymentTargets}
           savingsTarget={canTransact && primarySavingsAccount ? { id: primarySavingsAccount.id, accountNumber: primarySavingsAccount.accountNumber, currencyCode: primarySavingsAccount.currencyCode } : null}
           settlementAccounts={settlementAccounts}
-          transferSourceAccounts={transferSourceAccounts}
         />
         <span className={`status-dot ${client.status === "ACTIVE" ? "up-to-date" : "review"}`} />
       </header>

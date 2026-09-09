@@ -39,6 +39,7 @@ export const reportSections: readonly ReportSection[] = [
     description: "Ledger-backed statements for finance and treasury sign-off.",
     icon: BookOpenText,
     reports: [
+      { href: "/reports/accounting/chart-of-accounts", permission: permissions.reportGeneralLedger, title: "Chart of Accounts", description: "Browse ledger accounts, balances, and recent debit/credit activity." },
       { href: "/reports/accounting/balance-sheet", permission: permissions.reportBalanceSheet, title: "Balance Sheet", description: "Statement of financial position across the organization." },
       { href: "/reports/accounting/income-statement", permission: permissions.reportIncomeStatement, title: "Income Statement", description: "Profit, loss, and period performance." },
       { href: "/reports/accounting/trial-balance", permission: permissions.reportTrialBalance, title: "Trial Balance", description: "Debits and credits by account before close." },

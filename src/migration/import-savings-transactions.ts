@@ -1,11 +1,9 @@
-import Decimal from "decimal.js";
 import type { PrismaClient } from "@prisma/client";
 
 import { prisma } from "@/lib/prisma";
 
 import { ReadOnlyFineractClient } from "./fineract-client";
-
-type LegacySavingsTransaction = Record<string, unknown>;
+import { legacySavingsAccountIdFromAccountNumber, planLegacySavingsTransactionImports } from "./legacy-savings";
 
 function required(environment: NodeJS.ProcessEnv, name: string) {
   const value = environment[name];
@@ -25,56 +23,6 @@ async function sleep(ms: number) {
 
 function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error);
-}
-
-function toMinor(amount: number, exponent = 2): bigint {
-  return BigInt(new Decimal(amount).mul(new Decimal(10).pow(exponent)).toDecimalPlaces(0, Decimal.ROUND_HALF_UP).toFixed(0));
-}
-
-function dateFromParts(value: unknown): Date | null {
-  if (!Array.isArray(value) || value.length < 3) return null;
-  const [year, month, day] = value as number[];
-  return new Date(Date.UTC(year, month - 1, day));
-}
-
-function asRecord(value: unknown): Record<string, unknown> | null {
-  return value !== null && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
-}
-
-function asString(value: unknown): string | null {
-  return typeof value === "string" && value.trim() ? value.trim() : null;
-}
-
-function asNumber(value: unknown): number | null {
-  return typeof value === "number" && Number.isFinite(value) ? value : null;
-}
-
-function legacySavingsAccountIdFromAccountNumber(accountNumber: string): number | null {
-  if (!/^\d+$/.test(accountNumber)) return null;
-  const legacySavingsAccountId = Number.parseInt(accountNumber, 10);
-  if (!Number.isInteger(legacySavingsAccountId) || legacySavingsAccountId <= 0) return null;
-  return String(legacySavingsAccountId).padStart(accountNumber.length, "0") === accountNumber ? legacySavingsAccountId : null;
-}
-
-function signedAmountMinor(transaction: LegacySavingsTransaction, exponent: number): bigint {
-  if (transaction.reversed === true) return 0n;
-
-  const amountMinor = toMinor(asNumber(transaction.amount) ?? 0, exponent);
-  const transactionType = asRecord(transaction.transactionType);
-
-  if (transactionType?.deposit === true || transactionType?.dividendPayout === true || transactionType?.interestPosting === true || transactionType?.approveTransfer === true || transactionType?.amountRelease === true || transactionType?.rejectTransfer === true) {
-    return amountMinor;
-  }
-
-  if (transactionType?.withdrawal === true || transactionType?.feeDeduction === true || transactionType?.initiateTransfer === true || transactionType?.withdrawTransfer === true || transactionType?.overdraftInterest === true || transactionType?.overdraftFee === true || transactionType?.withholdTax === true || transactionType?.escheat === true || transactionType?.amountHold === true || transactionType?.writtenoff === true) {
-    return -amountMinor;
-  }
-
-  return amountMinor;
-}
-
-function asTransactions(value: unknown): LegacySavingsTransaction[] {
-  return Array.isArray(value) ? value.map(asRecord).filter((entry): entry is LegacySavingsTransaction => entry !== null) : [];
 }
 
 export async function importSavingsTransactions(
@@ -107,36 +55,30 @@ export async function importSavingsTransactions(
     }
     await sleep(staggerMs);
 
-    const savingsAccount = asRecord(payload);
-    const currency = asRecord(savingsAccount?.currency);
-    const exponent = asNumber(currency?.decimalPlaces) ?? 2;
-    const transactions = asTransactions(savingsAccount?.transactions);
+    const existingIdempotencyKeys = new Set(
+      (await prisma.savingsTransaction.findMany({
+        where: { savingsAccountId: account.id },
+        select: { idempotencyKey: true },
+      })).map((transaction) => transaction.idempotencyKey),
+    );
+    const plan = planLegacySavingsTransactionImports(account.accountNumber, payload, existingIdempotencyKeys);
+    transactionsSkipped.push(...plan.skipped);
 
-    for (const transaction of transactions) {
-      const legacyTransactionId = asNumber(transaction.id);
-      if (legacyTransactionId === null) {
-        transactionsSkipped.push(`${account.accountNumber}: encountered transaction without numeric id`);
-        continue;
-      }
-
-      const idempotencyKey = `savings-tx-${legacySavingsAccountId}-${legacyTransactionId}`;
-      const existing = await prisma.savingsTransaction.findUnique({ where: { idempotencyKey }, select: { id: true } });
-      if (existing) continue;
-
+    for (const transaction of plan.transactionsToCreate) {
       try {
         await prisma.savingsTransaction.create({
           data: {
             savingsAccountId: account.id,
-            transactionType: asString(asRecord(transaction.transactionType)?.value) ?? "Unknown",
-            amountMinor: signedAmountMinor(transaction, exponent),
-            externalReference: String(legacyTransactionId),
-            idempotencyKey,
-            createdAt: dateFromParts(transaction.date) ?? new Date(),
+            transactionType: transaction.transactionType,
+            amountMinor: transaction.amountMinor,
+            externalReference: transaction.externalReference,
+            idempotencyKey: transaction.idempotencyKey,
+            createdAt: transaction.createdAt,
           },
         });
         transactionsImported += 1;
       } catch (error) {
-        transactionsSkipped.push(`${account.accountNumber} transaction ${legacyTransactionId}: ${errorMessage(error)}`);
+        transactionsSkipped.push(`${account.accountNumber} transaction ${transaction.legacyTransactionId}: ${errorMessage(error)}`);
       }
     }
   }
