@@ -37,7 +37,16 @@ export type BalanceSheetReport = {
   sections: ReportSection[];
   assetsTotalMinor: bigint;
   liabilitiesTotalMinor: bigint;
+  /** Equity account balances only, excluding {@link netIncomeToDateMinor}. */
   equityTotalMinor: bigint;
+  /**
+   * Cumulative Revenue minus Expenses since inception, through {@link asOfDate}. Revenue and
+   * expense are temporary accounts with no closing-entry mechanism in this system, so their
+   * running balance is folded into equity here (as "retained earnings") -- otherwise Assets would
+   * never equal Liabilities + Equity for any organization with posted income or expense activity.
+   */
+  netIncomeToDateMinor: bigint;
+  /** Liabilities + Equity account balances + {@link netIncomeToDateMinor}. */
   liabilitiesAndEquityTotalMinor: bigint;
   differenceMinor: bigint;
 };
@@ -173,7 +182,7 @@ export type JournalReconciliationReport = {
   journals: JournalReconciliationJournal[];
 };
 
-const OPENING_BALANCE_START_DATE = new Date("1970-01-01T00:00:00.000Z");
+export const OPENING_BALANCE_START_DATE = new Date("1970-01-01T00:00:00.000Z");
 
 export const accountingAccountTypeSections: ReadonlyArray<{ label: string; type: AccountType }> = [
   { label: "Assets", type: "ASSET" },
@@ -331,7 +340,9 @@ export async function getBalanceSheetReport(
         office: { organizationId: scope.organizationId },
         ...(filters.officeId ? { officeId: filters.officeId } : officeWhere(scope)),
       },
-      account: { ...DETAIL_ACCOUNT_WHERE, type: { in: ["ASSET", "LIABILITY", "EQUITY"] } },
+      // Revenue/Expense lines are included too (not just Asset/Liability/Equity) so their
+      // cumulative net effect can be folded into equity below -- see netIncomeToDateMinor.
+      account: { ...DETAIL_ACCOUNT_WHERE, type: { in: ["ASSET", "LIABILITY", "EQUITY", "REVENUE", "EXPENSE"] } },
     },
     select: {
       journalId: true,
@@ -344,10 +355,16 @@ export async function getBalanceSheetReport(
 
   const balances = new Map<string, bigint>();
   const journalIds = new Set<string>();
+  let revenueToDateMinor = 0n;
+  let expensesToDateMinor = 0n;
   for (const line of lines) {
     journalIds.add(line.journalId);
-    balances.set(line.accountId, (balances.get(line.accountId) ?? 0n) + signedAmountForAccount(line.account.type, line.direction, line.amountMinor));
+    const signedMinor = signedAmountForAccount(line.account.type, line.direction, line.amountMinor);
+    if (line.account.type === "REVENUE") revenueToDateMinor += signedMinor;
+    else if (line.account.type === "EXPENSE") expensesToDateMinor += signedMinor;
+    else balances.set(line.accountId, (balances.get(line.accountId) ?? 0n) + signedMinor);
   }
+  const netIncomeToDateMinor = revenueToDateMinor - expensesToDateMinor;
 
   const sections = ([
     { label: "Assets", type: "ASSET" as const },
@@ -358,7 +375,7 @@ export async function getBalanceSheetReport(
   const assetsTotalMinor = sections[0]?.totalMinor ?? 0n;
   const liabilitiesTotalMinor = sections[1]?.totalMinor ?? 0n;
   const equityTotalMinor = sections[2]?.totalMinor ?? 0n;
-  const liabilitiesAndEquityTotalMinor = liabilitiesTotalMinor + equityTotalMinor;
+  const liabilitiesAndEquityTotalMinor = liabilitiesTotalMinor + equityTotalMinor + netIncomeToDateMinor;
 
   return {
     asOfDate: filters.endDate,
@@ -370,6 +387,7 @@ export async function getBalanceSheetReport(
     assetsTotalMinor,
     liabilitiesTotalMinor,
     equityTotalMinor,
+    netIncomeToDateMinor,
     liabilitiesAndEquityTotalMinor,
     differenceMinor: assetsTotalMinor - liabilitiesAndEquityTotalMinor,
   };
@@ -789,7 +807,15 @@ export function balanceSheetReportCsv(report: BalanceSheetReport) {
           Account: `${row.code} · ${row.name}`,
           Balance: row.balanceMinor.toString(),
         })),
-        { Account: `Total ${section.label}`, Balance: section.totalMinor.toString() },
+        ...(section.type === "EQUITY"
+          ? [{ Account: "Net income (retained earnings to date)", Balance: report.netIncomeToDateMinor.toString() }]
+          : []),
+        {
+          Account: `Total ${section.label}`,
+          Balance: section.type === "EQUITY"
+            ? (section.totalMinor + report.netIncomeToDateMinor).toString()
+            : section.totalMinor.toString(),
+        },
       ]),
       { Account: "Assets", Balance: report.assetsTotalMinor.toString() },
       { Account: "Liabilities + Equity", Balance: report.liabilitiesAndEquityTotalMinor.toString() },
@@ -809,6 +835,7 @@ export function serializeBalanceSheetReport(report: BalanceSheetReport) {
     assetsTotalMinor: minorToString(report.assetsTotalMinor),
     liabilitiesTotalMinor: minorToString(report.liabilitiesTotalMinor),
     equityTotalMinor: minorToString(report.equityTotalMinor),
+    netIncomeToDateMinor: minorToString(report.netIncomeToDateMinor),
     liabilitiesAndEquityTotalMinor: minorToString(report.liabilitiesAndEquityTotalMinor),
     differenceMinor: minorToString(report.differenceMinor),
     sections: report.sections.map((section) => ({

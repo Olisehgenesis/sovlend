@@ -62,6 +62,13 @@ export default async function IncomeStatementPage({
   });
   const apiHref = `/api/reports/accounting/income-statement${queryString ? `?${queryString}` : ""}`;
   const exportHref = `${apiHref}${queryString ? "&" : "?"}format=csv`;
+  const generalLedgerHref = (accountId: string) =>
+    `/reports/accounting/general-ledger?${buildReportQueryString({
+      startDate: formatDateInputValue(startDate),
+      endDate: formatDateInputValue(endDate),
+      officeId,
+      accountId,
+    })}`;
 
   return (
     <main className="directory-page">
@@ -144,7 +151,7 @@ export default async function IncomeStatementPage({
           </div>
         ) : (
           <div className="table-scroll">
-            <table>
+            <table className="clickable-rows">
               <thead>
                 <tr>
                   <th>Account</th>
@@ -152,8 +159,16 @@ export default async function IncomeStatementPage({
                 </tr>
               </thead>
               <tbody>
-                <StatementSection label="Revenue" rows={report.revenue.rows.map((row) => ({ id: row.id, label: `${row.code} · ${row.name}`, amountMinor: row.balanceMinor }))} totalMinor={report.revenue.totalMinor} />
-                <StatementSection label="Expenses" rows={report.expenses.rows.map((row) => ({ id: row.id, label: `${row.code} · ${row.name}`, amountMinor: row.balanceMinor }))} totalMinor={report.expenses.totalMinor} />
+                <StatementSection
+                  label="Revenue"
+                  rows={report.revenue.rows.map((row) => ({ id: row.id, label: `${row.code} · ${row.name}`, amountMinor: row.balanceMinor, href: generalLedgerHref(row.id) }))}
+                  totalMinor={report.revenue.totalMinor}
+                />
+                <StatementSection
+                  label="Expenses"
+                  rows={report.expenses.rows.map((row) => ({ id: row.id, label: `${row.code} · ${row.name}`, amountMinor: row.balanceMinor, href: generalLedgerHref(row.id) }))}
+                  totalMinor={report.expenses.totalMinor}
+                />
                 <tr>
                   <td>
                     <strong>Net income</strong>
@@ -177,7 +192,7 @@ function StatementSection({
   totalMinor,
 }: {
   label: string;
-  rows: Array<{ id: string; label: string; amountMinor: bigint }>;
+  rows: Array<{ id: string; label: string; amountMinor: bigint; href: string }>;
   totalMinor: bigint;
 }) {
   return (
@@ -189,7 +204,10 @@ function StatementSection({
       </tr>
       {rows.map((row) => (
         <tr key={row.id}>
-          <td>{row.label}</td>
+          <td>
+            {row.label}
+            <Link className="row-link" href={row.href} aria-label={`Open ${row.label} in the general ledger`} />
+          </td>
           <td className="mono">{formatMinor(row.amountMinor, "UGX")}</td>
         </tr>
       ))}

@@ -171,7 +171,7 @@ export default async function GeneralLedgerPage({
           </div>
         ) : (
           <div className="table-scroll">
-            <table>
+            <table className="clickable-rows">
               <thead>
                 <tr>
                   <th>Date</th>
@@ -186,9 +186,19 @@ export default async function GeneralLedgerPage({
               <tbody>
                 {report.entries.map((entry) => {
                   const running = report.account ? summarizeBalance(report.account.type, entry.runningBalanceMinor) : null;
+                  const entryDate = formatDateInputValue(entry.businessDate);
+                  const journalHref = `/reports/accounting/journal-reconciliation?${buildReportQueryString({
+                    startDate: entryDate,
+                    endDate: entryDate,
+                    officeId,
+                    accountId: report.account?.id ?? null,
+                  })}#journal-${entry.journalId}`;
                   return (
                     <tr key={entry.id}>
-                      <td>{formatReportDate(entry.businessDate)}</td>
+                      <td>
+                        {formatReportDate(entry.businessDate)}
+                        <Link className="row-link" href={journalHref} aria-label={`Open journal for ${formatReportDate(entry.businessDate)}`} />
+                      </td>
                       <td>
                         <strong>{entry.referenceType.replaceAll("_", " ")}</strong>
                         <small>{entry.referenceId ?? entry.journalId}</small>
