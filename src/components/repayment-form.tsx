@@ -2,7 +2,7 @@
 
 import { Banknote, LoaderCircle } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { toast } from "sonner";
 
 import { BrandActionButton } from "@/components/ui/brand-action-button";
@@ -19,6 +19,12 @@ export function RepaymentForm({ loanId, settlementAccounts, defaultAmountMinor, 
   const router = useRouter();
   const [pending, setPending] = useState(false);
   const defaultAmount = minorToAmountString(defaultAmountMinor ?? "0");
+  // Cash is the most common payment method in practice, so it's listed (and pre-selected) ahead
+  // of whatever bank/mobile-money account happens to be listed first -- still changeable.
+  const orderedSettlementAccounts = useMemo(() => {
+    const cashAccount = settlementAccounts.find((account) => account.type === "CASH");
+    return cashAccount ? [cashAccount, ...settlementAccounts.filter((account) => account.id !== cashAccount.id)] : settlementAccounts;
+  }, [settlementAccounts]);
   async function repay(formData: FormData) {
     setPending(true);
     const amount = String(formData.get("amount"));
@@ -30,5 +36,5 @@ export function RepaymentForm({ loanId, settlementAccounts, defaultAmountMinor, 
     if (!response.ok) { toast.error(result.error ?? "Repayment could not be recorded"); return; }
     toast.success("Repayment recorded and allocated"); router.refresh(); onSuccess?.();
   }
-  return <form action={repay} className="entity-form compact-mapping"><fieldset><legend>Record repayment</legend><label>Amount (UGX)<input defaultValue={defaultAmount || undefined} inputMode="decimal" name="amount" pattern="[0-9]+([.][0-9]{1,2})?" required /></label>{defaultAmount ? <p className="field-help">Defaults to the next installment due &mdash; change it if the borrower is paying a different amount.</p> : null}{settlementAccounts.length === 0 ? <aside className="configuration-note"><strong>Settlement setup required</strong><span>Add the receiving cash, bank, Airtel Money, MTN MoMo, or other account in Backoffice → Accounting mappings.</span></aside> : <label>Received into<select name="settlementAccountId" required>{settlementAccounts.map((account) => <option key={account.id} value={account.id}>{account.name} · {account.type.replaceAll("_", " ")}</option>)}</select></label>}<div className="form-row"><label>Business date<input name="businessDate" type="date" defaultValue={new Date().toISOString().slice(0, 10)} required /></label><label>Receipt / reference<input name="externalReference" /></label></div></fieldset><div className="form-actions"><BrandActionButton disabled={pending || settlementAccounts.length === 0} icon={pending ? <LoaderCircle className="spin" size={18} /> : <Banknote size={18} />} type="submit">Record repayment</BrandActionButton></div></form>;
+  return <form action={repay} className="entity-form compact-mapping"><fieldset><legend>Record repayment</legend><label>Amount (UGX)<input defaultValue={defaultAmount || undefined} inputMode="decimal" name="amount" pattern="[0-9]+([.][0-9]{1,2})?" required /></label>{defaultAmount ? <p className="field-help">Defaults to the next installment due &mdash; change it if the borrower is paying a different amount.</p> : null}{orderedSettlementAccounts.length === 0 ? <aside className="configuration-note"><strong>Settlement setup required</strong><span>Add the receiving cash, bank, Airtel Money, MTN MoMo, or other account in Backoffice → Accounting mappings.</span></aside> : <label>Received into<select name="settlementAccountId" required>{orderedSettlementAccounts.map((account) => <option key={account.id} value={account.id}>{account.name} · {account.type.replaceAll("_", " ")}</option>)}</select></label>}<div className="form-row"><label>Business date<input name="businessDate" type="date" defaultValue={new Date().toISOString().slice(0, 10)} required /></label><label>Receipt / reference<input name="externalReference" /></label></div></fieldset><div className="form-actions"><BrandActionButton disabled={pending || orderedSettlementAccounts.length === 0} icon={pending ? <LoaderCircle className="spin" size={18} /> : <Banknote size={18} />} type="submit">Record repayment</BrandActionButton></div></form>;
 }

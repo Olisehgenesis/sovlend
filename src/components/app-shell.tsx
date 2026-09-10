@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { AppHeader } from "./app-header";
 import { auth } from "@/lib/auth";
 import { canManageProducts } from "@/lib/can-manage-products";
+import { canPostLedger } from "@/lib/can-post-ledger";
 import { prisma } from "@/lib/prisma";
 import { loadVisibleReportSections } from "@/modules/reports/report-catalog";
 
@@ -19,6 +20,7 @@ export async function AppShell({ children }: { children: React.ReactNode }) {
   if (user?.mustChangePassword) redirect("/change-password");
   const admin = session.user.role === "admin";
   const { allowed: products } = admin ? { allowed: true } : await canManageProducts(session);
+  const ledgerPost = admin ? true : await canPostLedger(session);
   const visibleReportSections = user?.organizationId
     ? await loadVisibleReportSections(prisma, session.user.id, user.organizationId)
     : [];
@@ -34,7 +36,7 @@ export async function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="app-shell">
-      <AppHeader admin={admin} canManageProducts={products} officeName={user?.office?.name} reportSections={reportSections} workspaceName={user?.organization?.name} />
+      <AppHeader admin={admin} canManageProducts={products} canPostLedger={ledgerPost} officeName={user?.office?.name} reportSections={reportSections} workspaceName={user?.organization?.name} />
       <div className="app-main">{children}</div>
     </div>
   );

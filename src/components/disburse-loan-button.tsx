@@ -11,6 +11,7 @@ export function DisburseLoanButton({
   loanId,
   settlementAccounts,
   savingsAccounts,
+  payoffLoanOptions,
 }: {
   loanId: string;
   settlementAccounts: Array<{ id: string; name: string; type: string }>;
@@ -19,6 +20,12 @@ export function DisburseLoanButton({
     accountNumber: string;
     isDefault: boolean;
     productName?: string | null;
+  }>;
+  payoffLoanOptions?: Array<{
+    id: string;
+    accountNumber: string;
+    outstandingMinor: string;
+    currencyCode: string;
   }>;
 }) {
   const dialogRef = useRef<DialogHandle>(null);
@@ -36,6 +43,7 @@ export function DisburseLoanButton({
         <DisburseLoanForm
           loanId={loanId}
           onSuccess={() => dialogRef.current?.close()}
+          payoffLoanOptions={payoffLoanOptions}
           savingsAccounts={savingsAccounts}
           settlementAccounts={settlementAccounts}
         />

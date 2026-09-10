@@ -6,6 +6,7 @@ import { useMemo, useState } from "react";
 import { toast } from "sonner";
 
 import { BrandActionButton } from "@/components/ui/brand-action-button";
+import { formatMinor } from "@/modules/money/domain/format-minor";
 
 type SettlementAccountOption = Readonly<{
   id: string;
@@ -20,19 +21,29 @@ type SavingsAccountOption = Readonly<{
   productName?: string | null;
 }>;
 
+type PayoffLoanOption = Readonly<{
+  id: string;
+  accountNumber: string;
+  outstandingMinor: string;
+  currencyCode: string;
+}>;
+
 export function DisburseLoanForm({
   loanId,
   settlementAccounts,
   savingsAccounts = [],
+  payoffLoanOptions = [],
   onSuccess,
 }: {
   loanId: string;
   settlementAccounts: SettlementAccountOption[];
   savingsAccounts?: SavingsAccountOption[];
+  payoffLoanOptions?: PayoffLoanOption[];
   onSuccess?: () => void;
 }) {
   const router = useRouter();
   const [pending, setPending] = useState(false);
+  const [payOffPrevious, setPayOffPrevious] = useState(false);
   const defaultSavingsAccountId = useMemo(
     () => savingsAccounts.find((account) => account.isDefault)?.id ?? savingsAccounts[0]?.id ?? "",
     [savingsAccounts],
@@ -47,6 +58,7 @@ export function DisburseLoanForm({
   async function disburse(formData: FormData) {
     const savingsAccountId = String(formData.get("savingsAccountId") || defaultSavingsAccountId || "");
     const paymentMethodSettlementAccountId = String(formData.get("paymentMethodSettlementAccountId") || "");
+    const topUpOfLoanId = payOffPrevious ? String(formData.get("topUpOfLoanId") || "") : "";
 
     if (!savingsAccountId) {
       toast.error("Client has no active savings account to credit");
@@ -63,6 +75,7 @@ export function DisburseLoanForm({
         businessDate: formData.get("businessDate"),
         externalReference: formData.get("externalReference") || undefined,
         idempotencyKey: crypto.randomUUID(),
+        topUpOfLoanId: topUpOfLoanId || undefined,
       }),
     });
     const result = await response.json().catch(() => ({}));
@@ -71,7 +84,11 @@ export function DisburseLoanForm({
       toast.error(result.error ?? "Loan could not be disbursed");
       return;
     }
-    toast.success("Loan disbursed and repayment schedule created");
+    toast.success(
+      topUpOfLoanId
+        ? "Loan disbursed — previous loan paid off from the proceeds"
+        : "Loan disbursed and repayment schedule created",
+    );
     router.refresh();
     onSuccess?.();
   }
@@ -134,6 +151,35 @@ export function DisburseLoanForm({
           </label>
         </div>
       </fieldset>
+      {payoffLoanOptions.length > 0 ? (
+        <fieldset>
+          <legend>Top up</legend>
+          <label className="check-row">
+            <input
+              checked={payOffPrevious}
+              onChange={(event) => setPayOffPrevious(event.target.checked)}
+              type="checkbox"
+            />
+            Pay off a previous loan from these proceeds
+          </label>
+          {payOffPrevious ? (
+            <label>
+              Loan to pay off
+              <select defaultValue={payoffLoanOptions[0]?.id} name="topUpOfLoanId" required>
+                {payoffLoanOptions.map((option) => (
+                  <option key={option.id} value={option.id}>
+                    {option.accountNumber} · outstanding {formatMinor(BigInt(option.outstandingMinor), option.currencyCode)}
+                  </option>
+                ))}
+              </select>
+              <span className="field-hint">
+                Proceeds first pay this loan off in full (or as much as the proceeds cover); the
+                client receives whatever remains.
+              </span>
+            </label>
+          ) : null}
+        </fieldset>
+      ) : null}
       <div className="form-actions">
         <BrandActionButton disabled={submitDisabled} icon={pending ? <LoaderCircle className="spin" size={18} /> : <PiggyBank size={18} />} type="submit">
           Disburse loan
