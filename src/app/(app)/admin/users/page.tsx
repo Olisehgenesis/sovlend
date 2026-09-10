@@ -12,7 +12,19 @@ export default async function AdminUsersPage() {
   if (session.user.role !== "admin") redirect("/");
 
   const users = await prisma.user.findMany({
-    select: { id: true, name: true, email: true, role: true, systemRole: true, banned: true, organization: { select: { name: true } }, office: { select: { name: true } } },
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      role: true,
+      systemRole: true,
+      banned: true,
+      mobileNumber: true,
+      genderCode: true,
+      joinedOn: true,
+      organization: { select: { name: true } },
+      office: { select: { name: true } },
+    },
     orderBy: { name: "asc" },
     take: 100,
   });
@@ -21,5 +33,17 @@ export default async function AdminUsersPage() {
     prisma.office.findMany({ select: { id: true, name: true, organizationId: true }, orderBy: { name: "asc" } }),
   ]);
 
-  return <AdminUsersPanel initialUsers={users.map(({ organization, office, ...user }) => ({ ...user, systemRole: user.systemRole, organizationName: organization?.name ?? null, officeName: office?.name ?? null }))} organizations={organizations} offices={offices} />;
+  return (
+    <AdminUsersPanel
+      initialUsers={users.map(({ organization, office, joinedOn, ...user }) => ({
+        ...user,
+        systemRole: user.systemRole,
+        organizationName: organization?.name ?? null,
+        officeName: office?.name ?? null,
+        joinedOn: joinedOn ? joinedOn.toISOString() : null,
+      }))}
+      organizations={organizations}
+      offices={offices}
+    />
+  );
 }

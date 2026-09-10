@@ -6,7 +6,24 @@ import { toast } from "sonner";
 
 import { EntityAvatar } from "@/components/entity-avatar";
 
-type UserSummary = { id: string; name: string; email: string; role: string | null; systemRole: string | null; banned: boolean | null; organizationName: string | null; officeName: string | null };
+type UserSummary = {
+  id: string;
+  name: string;
+  email: string;
+  role: string | null;
+  systemRole: string | null;
+  banned: boolean | null;
+  mobileNumber: string | null;
+  genderCode: string | null;
+  joinedOn: string | null;
+  organizationName: string | null;
+  officeName: string | null;
+};
+
+function formatJoinedOn(joinedOn: string | null) {
+  if (!joinedOn) return "\u2014";
+  return new Date(joinedOn).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+}
 type OrganizationOption = { id: string; name: string };
 type OfficeOption = { id: string; name: string; organizationId: string };
 
@@ -42,7 +59,22 @@ export function AdminUsersPanel({ initialUsers, organizations, offices }: { init
     }
 
     const created = result.user;
-    setUsers((current) => [...current, { id: created.id, name: created.name, email: created.email, role: created.role ?? null, systemRole, banned: false, organizationName: organizations.find((item) => item.id === organizationId)?.name ?? null, officeName: offices.find((item) => item.id === officeId)?.name ?? null }]);
+    setUsers((current) => [
+      ...current,
+      {
+        id: created.id,
+        name: created.name,
+        email: created.email,
+        role: created.role ?? null,
+        systemRole,
+        banned: false,
+        mobileNumber: null,
+        genderCode: null,
+        joinedOn: null,
+        organizationName: organizations.find((item) => item.id === organizationId)?.name ?? null,
+        officeName: offices.find((item) => item.id === officeId)?.name ?? null,
+      },
+    ]);
     toast.success(`${created.name} can now sign in`);
   }
 
@@ -51,7 +83,7 @@ export function AdminUsersPanel({ initialUsers, organizations, offices }: { init
       <section className="page-heading"><div><p className="eyebrow">Access administration</p><h1>Users and access</h1><p>Create controlled accounts and review their SovLend responsibilities.</p></div></section>
       <section className="admin-grid">
         <article className="panel user-list"><div className="panel-heading"><div><h2>Workspace users</h2><p>{users.length} connected identities</p></div><ShieldCheck size={19} /></div>
-          <div className="table-scroll"><table><thead><tr><th>User</th><th>System role</th><th>Office</th><th>Access</th><th>Status</th></tr></thead><tbody>{users.map((user) => <tr key={user.id}><td><div className="person-cell"><EntityAvatar name={user.name} seed={user.id} size={28} /><span className="person-copy"><strong>{user.name}</strong><small>{user.email}</small></span></div></td><td>{user.systemRole?.replaceAll("_", " ") ?? "Not assigned"}</td><td>{user.officeName ?? user.organizationName ?? "Not assigned"}</td><td>{user.role === "admin" ? "Administrator" : "Standard"}</td><td><span className={`status ${user.banned ? "in-arrears" : "up-to-date"}`}>{user.banned ? "Suspended" : "Active"}</span></td></tr>)}</tbody></table></div>
+          <div className="table-scroll"><table><thead><tr><th>User</th><th>System role</th><th>Office</th><th>Joined</th><th>Access</th><th>Status</th></tr></thead><tbody>{users.map((user) => <tr key={user.id}><td><div className="person-cell"><EntityAvatar name={user.name} seed={user.id} size={28} /><span className="person-copy"><strong>{user.name}</strong><small>{user.email}</small>{(user.mobileNumber || user.genderCode) && <small>{[user.mobileNumber, user.genderCode].filter(Boolean).join(" \u00b7 ")}</small>}</span></div></td><td>{user.systemRole?.replaceAll("_", " ") ?? "Not assigned"}</td><td>{user.officeName ?? user.organizationName ?? "Not assigned"}</td><td>{formatJoinedOn(user.joinedOn)}</td><td>{user.role === "admin" ? "Administrator" : "Standard"}</td><td><span className={`status ${user.banned ? "in-arrears" : "up-to-date"}`}>{user.banned ? "Suspended" : "Active"}</span></td></tr>)}</tbody></table></div>
         </article>
         <aside className="panel create-user"><div className="panel-heading"><div><h2>Add user</h2><p>Email and temporary password</p></div><Plus size={18} /></div>
           <form action={createUser} className="stack-form">
