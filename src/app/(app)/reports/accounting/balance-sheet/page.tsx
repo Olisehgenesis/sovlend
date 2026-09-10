@@ -18,6 +18,7 @@ import {
   formatReportDate,
   getBalanceSheetReport,
   listAccountingReportOffices,
+  OPENING_BALANCE_START_DATE,
   parseDateInput,
   resolveOfficeFilter,
 } from "@/modules/reports/domain/accounting-report";
@@ -55,6 +56,16 @@ export default async function BalanceSheetPage({
   });
   const apiHref = `/api/reports/accounting/balance-sheet${queryString ? `?${queryString}` : ""}`;
   const exportHref = `${apiHref}${queryString ? "&" : "?"}format=csv`;
+  // Balance sheet balances are cumulative since inception, so drill-down links use the same
+  // full history (opening balance date through the "as of" date) rather than the current month.
+  const historyRangeQuery = {
+    startDate: formatDateInputValue(OPENING_BALANCE_START_DATE),
+    endDate: formatDateInputValue(endDate),
+    officeId,
+  };
+  const generalLedgerHref = (accountId: string) =>
+    `/reports/accounting/general-ledger?${buildReportQueryString({ ...historyRangeQuery, accountId })}`;
+  const incomeStatementHref = `/reports/accounting/income-statement?${buildReportQueryString(historyRangeQuery)}`;
 
   return (
     <main className="directory-page">
@@ -133,7 +144,7 @@ export default async function BalanceSheetPage({
           </div>
         ) : (
           <div className="table-scroll">
-            <table>
+            <table className="clickable-rows">
               <thead>
                 <tr>
                   <th>Account</th>
@@ -141,13 +152,27 @@ export default async function BalanceSheetPage({
                 </tr>
               </thead>
               <tbody>
-                {report.sections.map((section) => (
-                  <SectionRows key={section.label} label={section.label} rows={section.rows.map((row) => ({
-                    id: row.id,
-                    label: `${row.code} · ${row.name}`,
-                    amountMinor: row.balanceMinor,
-                  }))} totalMinor={section.totalMinor} />
-                ))}
+                {report.sections.map((section) => {
+                  const isEquity = section.type === "EQUITY";
+                  return (
+                    <SectionRows
+                      key={section.label}
+                      label={section.label}
+                      netIncomeRow={
+                        isEquity && report.netIncomeToDateMinor !== 0n
+                          ? { amountMinor: report.netIncomeToDateMinor, href: incomeStatementHref }
+                          : null
+                      }
+                      rows={section.rows.map((row) => ({
+                        id: row.id,
+                        label: `${row.code} · ${row.name}`,
+                        amountMinor: row.balanceMinor,
+                        href: generalLedgerHref(row.id),
+                      }))}
+                      totalMinor={isEquity ? section.totalMinor + report.netIncomeToDateMinor : section.totalMinor}
+                    />
+                  );
+                })}
                 <tr>
                   <td>
                     <strong>Assets</strong>
@@ -184,10 +209,12 @@ export default async function BalanceSheetPage({
 function SectionRows({
   label,
   rows,
+  netIncomeRow,
   totalMinor,
 }: {
   label: string;
-  rows: Array<{ id: string; label: string; amountMinor: bigint }>;
+  rows: Array<{ id: string; label: string; amountMinor: bigint; href: string }>;
+  netIncomeRow: { amountMinor: bigint; href: string } | null;
   totalMinor: bigint;
 }) {
   return (
@@ -199,10 +226,22 @@ function SectionRows({
       </tr>
       {rows.map((row) => (
         <tr key={row.id}>
-          <td>{row.label}</td>
+          <td>
+            {row.label}
+            <Link className="row-link" href={row.href} aria-label={`Open ${row.label} in the general ledger`} />
+          </td>
           <td className="mono">{formatMinor(row.amountMinor, "UGX")}</td>
         </tr>
       ))}
+      {netIncomeRow ? (
+        <tr>
+          <td>
+            Net income (retained earnings to date)
+            <Link className="row-link" href={netIncomeRow.href} aria-label="Open the income statement" />
+          </td>
+          <td className="mono">{formatMinor(netIncomeRow.amountMinor, "UGX")}</td>
+        </tr>
+      ) : null}
       <tr>
         <td>
           <strong>Total {label}</strong>

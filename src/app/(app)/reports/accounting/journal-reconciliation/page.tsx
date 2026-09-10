@@ -98,6 +98,13 @@ export default async function JournalReconciliationPage({
   });
   const apiHref = `/api/reports/accounting/journal-reconciliation${queryString ? `?${queryString}` : ""}`;
   const exportHref = `${apiHref}${queryString ? "&" : "?"}format=csv`;
+  const generalLedgerHref = (lineAccountId: string) =>
+    `/reports/accounting/general-ledger?${buildReportQueryString({
+      startDate: formatDateInputValue(startDate),
+      endDate: formatDateInputValue(endDate),
+      officeId,
+      accountId: lineAccountId,
+    })}`;
 
   return (
     <main className="directory-page">
@@ -233,7 +240,7 @@ export default async function JournalReconciliationPage({
               </table>
             </div>
             {report.journals.map((journal) => (
-              <article className="panel" key={journal.id} style={{ marginTop: 20 }}>
+              <article className="panel" id={`journal-${journal.id}`} key={journal.id} style={{ marginTop: 20 }}>
                 <div className="panel-heading">
                   <div>
                     <h2>{formatReportDate(journal.businessDate)} · {journal.referenceType.replaceAll("_", " ")}</h2>
@@ -247,7 +254,7 @@ export default async function JournalReconciliationPage({
                 </div>
                 <p>{journal.narration}</p>
                 <div className="table-scroll">
-                  <table>
+                  <table className="clickable-rows">
                     <thead>
                       <tr>
                         <th>Account</th>
@@ -263,6 +270,7 @@ export default async function JournalReconciliationPage({
                           <td>
                             <strong>{line.code}</strong>
                             <small>{line.name}</small>
+                            <Link className="row-link" href={generalLedgerHref(line.id)} aria-label={`Open ${line.code} · ${line.name} in the general ledger`} />
                           </td>
                           <td>{accountTypeLabel(line.type)}</td>
                           <td className="mono">{line.direction === "DEBIT" ? formatMinor(line.amountMinor, "UGX") : "—"}</td>
