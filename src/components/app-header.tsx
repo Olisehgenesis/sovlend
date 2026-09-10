@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronDown, Search } from "lucide-react";
+import { ChevronDown, LoaderCircle, Search } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
@@ -364,7 +364,7 @@ export function AppHeader({
             type="search"
           />
           <button aria-label="Search records" disabled={isSearching} type="submit">
-            <Search size={15} />
+            {isSearching ? <LoaderCircle className="spin" size={15} /> : <Search size={15} />}
           </button>
         </form>
       </nav>
