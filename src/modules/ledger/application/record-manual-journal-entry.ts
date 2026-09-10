@@ -6,6 +6,7 @@ import { AuthorizationService } from "@/modules/identity/application/authorizati
 import { permissions } from "@/modules/identity/domain/permissions";
 
 import { assertBalancedJournal } from "../domain/journal";
+import { assertPeriodOpen } from "./assert-period-open";
 
 export type ManualJournalEntryType = "INCOME" | "EXPENSE";
 
@@ -70,6 +71,7 @@ export async function recordManualJournalEntry(prisma: PrismaClient, command: Ma
     amountMinor: command.amountMinor,
     currencyCode: settlementAccount.currencyCode,
   });
+  await assertPeriodOpen(prisma, { officeId: command.officeId, businessDate: command.businessDate });
 
   return prisma.$transaction(async (transaction) => {
     const journal = await transaction.journal.create({

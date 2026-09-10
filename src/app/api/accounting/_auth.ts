@@ -26,5 +26,5 @@ export async function requireSuperAdminForAccountingApi() {
     };
   }
 
-  return { organizationId: user.organizationId };
+  return { organizationId: user.organizationId, userId: session.user.id };
 }

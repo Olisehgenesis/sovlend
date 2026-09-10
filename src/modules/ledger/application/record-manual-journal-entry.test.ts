@@ -15,6 +15,7 @@ function buildPrisma(overrides: {
   office?: unknown;
   settlementAccount?: unknown;
   ledgerAccount?: unknown;
+  closureDate?: Date | null;
 }) {
   const journalCreate = vi.fn(async (args: { data: Record<string, unknown> }) => ({ id: "journal-1", ...args.data }));
   const journalLineCreateMany = vi.fn(async () => ({ count: 2 }));
@@ -56,6 +57,9 @@ function buildPrisma(overrides: {
       ),
     },
     $transaction: vi.fn(async (callback: (tx: unknown) => Promise<unknown>) => callback(tx)),
+    accountingClosure: {
+      findFirst: vi.fn(async () => (overrides.closureDate ? { closingDate: overrides.closureDate } : null)),
+    },
   } as unknown as PrismaClient;
 
   return { prisma, journalCreate, journalLineCreateMany, journalUpdate, auditEventCreate, outboxEventCreate };
@@ -123,5 +127,12 @@ describe("recordManualJournalEntry", () => {
     await expect(
       recordManualJournalEntry(prisma, { ...baseCommand, amountMinor: 0n, entryType: "INCOME", ledgerAccountId: "revenue-account-1", settlementAccountId: "settlement-1" }),
     ).rejects.toThrow("greater than zero");
+  });
+
+  it("rejects when the office's accounting period is closed on/before the businessDate", async () => {
+    const { prisma } = buildPrisma({ closureDate: new Date("2026-09-09T00:00:00.000Z") });
+    await expect(
+      recordManualJournalEntry(prisma, { ...baseCommand, entryType: "INCOME", ledgerAccountId: "revenue-account-1", settlementAccountId: "settlement-1" }),
+    ).rejects.toThrow(/accounting period/i);
   });
 });

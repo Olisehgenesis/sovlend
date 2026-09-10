@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 
 import type { PrismaClient } from "@prisma/client";
 
+import { assertPeriodOpen, PeriodClosedError } from "@/modules/ledger/application/assert-period-open";
 import { assertBalancedJournal } from "@/modules/ledger/domain/journal";
 
 import {
@@ -176,61 +177,75 @@ export async function assessLoanPenalties(
         .update(JSON.stringify({ correlationId, action, metadata }))
         .digest("hex");
 
-      const assessed = await prisma.$transaction(
-        async (transaction) => {
-          const updated = await transaction.loanInstallment.updateMany({
-            where: { id: installment.id, penaltyAssessedOn: null },
-            data: {
-              penaltiesDueMinor: { increment: amountMinor },
-              penaltyAssessedOn: businessDate,
-            },
-          });
-          if (updated.count !== 1) return false;
+      let assessed: boolean;
+      try {
+        assessed = await prisma.$transaction(
+          async (transaction) => {
+            await assertPeriodOpen(transaction, { officeId: loan.officeId, businessDate });
+            const updated = await transaction.loanInstallment.updateMany({
+              where: { id: installment.id, penaltyAssessedOn: null },
+              data: {
+                penaltiesDueMinor: { increment: amountMinor },
+                penaltyAssessedOn: businessDate,
+              },
+            });
+            if (updated.count !== 1) return false;
 
-          const journal = await transaction.journal.create({
-            data: {
-              officeId: loan.officeId,
-              businessDate,
-              referenceType: "LOAN_PENALTY_ASSESSMENT",
-              referenceId: installment.id,
-              narration: `Penalty assessment ${loan.accountNumber} installment ${installment.installmentNumber}`,
-              idempotencyKey: `penalty-assessment:${installment.id}`,
-            },
-          });
-          await transaction.journalLine.createMany({
-            data: journalLines.map(({ currencyCode: _currencyCode, ...line }) => ({
-              journalId: journal.id,
-              ...line,
-            })),
-          });
-          await transaction.journal.update({
-            where: { id: journal.id },
-            data: { status: "POSTED", postedAt: new Date() },
-          });
-          await transaction.auditEvent.create({
-            data: {
-              actorId: null,
-              action,
-              entityType: "LoanInstallment",
-              entityId: installment.id,
-              correlationId,
-              metadata,
-              eventHash,
-            },
-          });
-          await transaction.outboxEvent.create({
-            data: {
-              aggregateType: "Loan",
-              aggregateId: loan.id,
-              eventType: action,
-              payload: metadata,
-            },
-          });
+            const journal = await transaction.journal.create({
+              data: {
+                officeId: loan.officeId,
+                businessDate,
+                referenceType: "LOAN_PENALTY_ASSESSMENT",
+                referenceId: installment.id,
+                narration: `Penalty assessment ${loan.accountNumber} installment ${installment.installmentNumber}`,
+                idempotencyKey: `penalty-assessment:${installment.id}`,
+              },
+            });
+            await transaction.journalLine.createMany({
+              data: journalLines.map(({ currencyCode: _currencyCode, ...line }) => ({
+                journalId: journal.id,
+                ...line,
+              })),
+            });
+            await transaction.journal.update({
+              where: { id: journal.id },
+              data: { status: "POSTED", postedAt: new Date() },
+            });
+            await transaction.auditEvent.create({
+              data: {
+                actorId: null,
+                action,
+                entityType: "LoanInstallment",
+                entityId: installment.id,
+                correlationId,
+                metadata,
+                eventHash,
+              },
+            });
+            await transaction.outboxEvent.create({
+              data: {
+                aggregateType: "Loan",
+                aggregateId: loan.id,
+                eventType: action,
+                payload: metadata,
+              },
+            });
 
-          return true;
-        },
-        { isolationLevel: "Serializable" },
-      );
+            return true;
+          },
+          { isolationLevel: "Serializable" },
+        );
+      } catch (error) {
+        if (error instanceof PeriodClosedError) {
+          recordSkip({
+            loanId: loan.id,
+            installmentId: installment.id,
+            reason: error.message,
+          });
+          continue;
+        }
+        throw error;
+      }
 
       if (assessed) {
         assessedCount += 1;

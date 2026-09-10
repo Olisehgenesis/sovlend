@@ -77,6 +77,7 @@ function buildTransactionMock(options: MockOptions = {}) {
     },
     auditEvent: { create: vi.fn(async () => ({})) },
     outboxEvent: { create: vi.fn(async () => ({})) },
+    accountingClosure: { findFirst: vi.fn(async () => null) },
   } as unknown as Prisma.TransactionClient;
 
   return { transaction, captures };
@@ -117,6 +118,26 @@ describe("recordSavingsTransactionInTransaction", () => {
     expectBalanced(captures.journalLineBatches[0] as unknown[]);
     expect(captures.savingsTransactionData).toMatchObject({ amountMinor: 50_000n, settlementAccountId: "settlement-1" });
   });
+
+  it("rejects the transaction when the office's accounting period is closed on/before the businessDate", async () => {
+    const { transaction } = buildTransactionMock();
+    (transaction.accountingClosure.findFirst as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      closingDate: new Date("2024-06-30T00:00:00.000Z"),
+    });
+
+    await expect(
+      recordSavingsTransactionInTransaction(transaction, {
+        savingsAccountId: "savings-1",
+        actorUserId: "teller-1",
+        transactionType: "DEPOSIT",
+        amountMinor: 50_000n,
+        settlementAccountId: "settlement-1",
+        idempotencyKey: "dep-closed",
+        businessDate: new Date("2024-06-15T00:00:00.000Z"),
+      }),
+    ).rejects.toThrow(/accounting period/i);
+  });
+
 
   it("posts a balanced journal for a withdrawal: debit savings liability, credit settlement", async () => {
     const { transaction, captures } = buildTransactionMock({ openingBalanceMinor: 100_000n });

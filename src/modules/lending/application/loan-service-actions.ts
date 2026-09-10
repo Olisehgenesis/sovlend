@@ -4,6 +4,7 @@ import { z } from "zod";
 
 import { AuthorizationService } from "@/modules/identity/application/authorization-service";
 import { permissions } from "@/modules/identity/domain/permissions";
+import { assertPeriodOpen } from "@/modules/ledger/application/assert-period-open";
 import { assertBalancedJournal } from "@/modules/ledger/domain/journal";
 import { recordSavingsTransactionInTransaction } from "@/modules/savings/application/post-savings-transaction";
 import { buildLoanDisbursementSavingsIdempotencyKey } from "@/modules/savings/application/savings-ledger";
@@ -162,6 +163,7 @@ async function executeUndoDisbursal(tx: Tx, loanId: string, payload: UndoDisburs
   if (!originalJournal) throw new Error("Original disbursement journal is unavailable for reversal");
   const businessDate = new Date(`${payload.businessDate}T00:00:00.000Z`);
   const idempotencyKey = `service:${requestId}`;
+  await assertPeriodOpen(tx, { officeId: current.officeId, businessDate });
   const savingsMirror = await tx.savingsTransaction.findUnique({
     where: {
       idempotencyKey: buildLoanDisbursementSavingsIdempotencyKey(disbursement.id, "credit"),
@@ -235,6 +237,7 @@ async function executeFullSettlement(tx: Tx, loanId: string, payload: PrepayPayl
   if (quote.feesOutstandingMinor > 0n && !mapping.feeIncomeAccountId) throw new Error("Fee income account is not configured");
   if (quote.monitoringFeeOutstandingMinor > 0n && !monitoringFeeIncomeAccountId) throw new Error("Monitoring fee income account is not configured");
   if (quote.penaltiesCollectedMinor > 0n && !mapping.penaltyIncomeAccountId) throw new Error("Penalty income account is not configured");
+  await assertPeriodOpen(tx, { officeId: current.officeId, businessDate });
 
   const idempotencyKey = `service:${requestId}`;
   const transactionRecord = await tx.loanTransaction.create({
@@ -308,6 +311,7 @@ async function executeTransactionReversal(tx: Tx, loanId: string, payload: Rever
   const settlement = await tx.settlementAccount.findUniqueOrThrow({ where: { id: original.settlementAccountId } });
   const businessDate = new Date(`${payload.businessDate}T00:00:00.000Z`);
   const idempotencyKey = `service:${requestId}`;
+  await assertPeriodOpen(tx, { officeId: current.officeId, businessDate });
 
   const reversal = await tx.loanTransaction.create({
     data: {

@@ -164,6 +164,10 @@ export type JournalReconciliationReport = {
   endDate: Date;
   officeId: string | null;
   accountId: string | null;
+  entrySource: JournalEntrySourceFilter;
+  search: string | null;
+  minAmountMinor: bigint | null;
+  maxAmountMinor: bigint | null;
   journalCount: number;
   issueCount: number;
   hasActivity: boolean;
@@ -172,6 +176,37 @@ export type JournalReconciliationReport = {
   differenceMinor: bigint;
   journals: JournalReconciliationJournal[];
 };
+
+// A journal is "manual" (a human posted it directly, e.g. record income/expense or a frequent
+// posting) when its referenceType begins with "MANUAL_"; every system-generated posting (loan
+// disbursement, repayment, savings transaction, penalty assessment, etc.) uses a different
+// referenceType prefix. This lets Search Journal Entries filter "manual entries only" the same
+// way iLend does, without a dedicated boolean column.
+export type JournalEntrySourceFilter = "ALL" | "MANUAL" | "SYSTEM";
+
+export function isManualJournalReferenceType(referenceType: string): boolean {
+  return referenceType.startsWith("MANUAL_");
+}
+
+export function resolveEntrySourceFilter(requested: string | null | undefined): JournalEntrySourceFilter {
+  return requested === "MANUAL" || requested === "SYSTEM" ? requested : "ALL";
+}
+
+export function parseAmountFilterMinor(value: string | null | undefined): bigint | null {
+  if (!value) return null;
+  const trimmed = value.trim();
+  if (!/^\d+(\.\d{1,2})?$/.test(trimmed)) return null;
+  const [whole, fraction = ""] = trimmed.split(".");
+  return BigInt(whole) * 100n + BigInt(fraction.padEnd(2, "0"));
+}
+
+/** Inverse of parseAmountFilterMinor -- renders a minor-unit amount back into a plain decimal
+ * string suitable for a numeric filter input's default value (e.g. 50000n -> "500.00"). */
+export function minorToAmountInputValue(minor: bigint) {
+  const whole = minor / 100n;
+  const fraction = (minor % 100n).toString().padStart(2, "0");
+  return `${whole}.${fraction}`;
+}
 
 const OPENING_BALANCE_START_DATE = new Date("1970-01-01T00:00:00.000Z");
 
@@ -683,14 +718,41 @@ export async function getChartOfAccountsReport(
 export async function getJournalReconciliationReport(
   db: ReportPrisma,
   scope: UserDataScope,
-  filters: { startDate: Date; endDate: Date; officeId: string | null; accountId: string | null },
+  filters: {
+    startDate: Date;
+    endDate: Date;
+    officeId: string | null;
+    accountId: string | null;
+    entrySource?: JournalEntrySourceFilter;
+    search?: string | null;
+    minAmountMinor?: bigint | null;
+    maxAmountMinor?: bigint | null;
+  },
 ): Promise<JournalReconciliationReport> {
+  const entrySource = filters.entrySource ?? "ALL";
+  const search = filters.search?.trim() || null;
+  const minAmountMinor = filters.minAmountMinor ?? null;
+  const maxAmountMinor = filters.maxAmountMinor ?? null;
+
   const journals = await db.journal.findMany({
     where: {
       businessDate: { gte: filters.startDate, lte: filters.endDate },
       office: { organizationId: scope.organizationId },
       ...(filters.officeId ? { officeId: filters.officeId } : officeWhere(scope)),
       ...(filters.accountId ? { lines: { some: { accountId: filters.accountId } } } : {}),
+      ...(entrySource === "MANUAL" ? { referenceType: { startsWith: "MANUAL_" } } : {}),
+      ...(entrySource === "SYSTEM" ? { NOT: { referenceType: { startsWith: "MANUAL_" } } } : {}),
+      ...(search
+        ? {
+            OR: [
+              { referenceId: { contains: search, mode: "insensitive" as const } },
+              { narration: { contains: search, mode: "insensitive" as const } },
+              // Journal.id is a UUID column -- Prisma's UUID filter only supports exact equality,
+              // not `contains`, so only add it when the search term is itself a full UUID.
+              ...(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(search) ? [{ id: search }] : []),
+            ],
+          }
+        : {}),
     },
     select: {
       id: true,
@@ -727,49 +789,65 @@ export async function getJournalReconciliationReport(
   let totalCreditsMinor = 0n;
   let issueCount = 0;
 
-  const serializedJournals = journals.map((journal) => {
-    let debitTotalMinor = 0n;
-    let creditTotalMinor = 0n;
-    for (const line of journal.lines) {
-      if (line.direction === "DEBIT") {
-        debitTotalMinor += line.amountMinor;
-        totalDebitsMinor += line.amountMinor;
-      } else {
-        creditTotalMinor += line.amountMinor;
-        totalCreditsMinor += line.amountMinor;
+  const serializedJournals = journals
+    .map((journal) => {
+      let debitTotalMinor = 0n;
+      let creditTotalMinor = 0n;
+      for (const line of journal.lines) {
+        if (line.direction === "DEBIT") {
+          debitTotalMinor += line.amountMinor;
+        } else {
+          creditTotalMinor += line.amountMinor;
+        }
       }
-    }
-    const differenceMinor = debitTotalMinor - creditTotalMinor;
-    const isBalanced = differenceMinor === 0n;
-    if (!isBalanced) issueCount += 1;
-    return {
-      id: journal.id,
-      businessDate: journal.businessDate,
-      officeId: journal.officeId,
-      officeName: journal.office.name,
-      referenceType: journal.referenceType,
-      referenceId: journal.referenceId,
-      narration: journal.narration,
-      status: journal.status,
-      debitTotalMinor,
-      creditTotalMinor,
-      differenceMinor,
-      isBalanced,
-      lines: journal.lines.map((line) => ({
-        lineId: line.id,
-        direction: line.direction,
-        amountMinor: line.amountMinor,
-        memo: line.memo,
-        ...line.account,
-      })),
-    };
-  });
+      const differenceMinor = debitTotalMinor - creditTotalMinor;
+      const isBalanced = differenceMinor === 0n;
+      return {
+        id: journal.id,
+        businessDate: journal.businessDate,
+        officeId: journal.officeId,
+        officeName: journal.office.name,
+        referenceType: journal.referenceType,
+        referenceId: journal.referenceId,
+        narration: journal.narration,
+        status: journal.status,
+        debitTotalMinor,
+        creditTotalMinor,
+        differenceMinor,
+        isBalanced,
+        lines: journal.lines.map((line) => ({
+          lineId: line.id,
+          direction: line.direction,
+          amountMinor: line.amountMinor,
+          memo: line.memo,
+          ...line.account,
+        })),
+      };
+    })
+    // The transaction amount (the larger of the two totals -- equal when balanced) is filtered
+    // in-memory rather than in the SQL query since it's a derived sum across a journal's lines.
+    .filter((journal) => {
+      const transactionAmountMinor = journal.debitTotalMinor > journal.creditTotalMinor ? journal.debitTotalMinor : journal.creditTotalMinor;
+      if (minAmountMinor !== null && transactionAmountMinor < minAmountMinor) return false;
+      if (maxAmountMinor !== null && transactionAmountMinor > maxAmountMinor) return false;
+      return true;
+    });
+
+  for (const journal of serializedJournals) {
+    totalDebitsMinor += journal.debitTotalMinor;
+    totalCreditsMinor += journal.creditTotalMinor;
+    if (!journal.isBalanced) issueCount += 1;
+  }
 
   return {
     startDate: filters.startDate,
     endDate: filters.endDate,
     officeId: filters.officeId,
     accountId: filters.accountId,
+    entrySource,
+    search,
+    minAmountMinor,
+    maxAmountMinor,
     journalCount: serializedJournals.length,
     issueCount,
     hasActivity: serializedJournals.length > 0,
@@ -1085,6 +1163,10 @@ export function serializeJournalReconciliationReport(report: JournalReconciliati
     endDate: dateToString(report.endDate),
     officeId: report.officeId,
     accountId: report.accountId,
+    entrySource: report.entrySource,
+    search: report.search,
+    minAmountMinor: report.minAmountMinor === null ? null : minorToString(report.minAmountMinor),
+    maxAmountMinor: report.maxAmountMinor === null ? null : minorToString(report.maxAmountMinor),
     journalCount: report.journalCount,
     issueCount: report.issueCount,
     hasActivity: report.hasActivity,
