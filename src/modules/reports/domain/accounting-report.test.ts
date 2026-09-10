@@ -179,8 +179,6 @@ describe("parseAmountFilterMinor / minorToAmountInputValue", () => {
   });
 });
 
-const scope = { organizationId: "org-1", officeIds: null, officerUserId: null };
-
 function buildJournal(overrides: Partial<{ id: string; referenceType: string; referenceId: string | null; narration: string; lines: Array<{ direction: "DEBIT" | "CREDIT"; amountMinor: bigint }> }>) {
   const lines = overrides.lines ?? [
     { direction: "DEBIT" as const, amountMinor: 10_000n },
@@ -300,7 +298,5 @@ describe("getJournalReconciliationReport", () => {
     });
     expect(report.issueCount).toBe(1);
     expect(report.journals[0]!.isBalanced).toBe(false);
-  });
-});
   });
 });
