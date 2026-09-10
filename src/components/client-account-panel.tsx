@@ -21,6 +21,10 @@ export type SavingsDepositTarget = Readonly<{
   id: string;
   accountNumber: string;
   currencyCode: string;
+  // The savings product name (e.g. "Member Savings Account", "Compulsory savings") -- shown
+  // ahead of the account number in every picker so an operator can tell at a glance which kind
+  // of account they're about to move money into, instead of scanning bare account numbers.
+  productName: string;
   // A client can hold more than one savings account (e.g. personal + group-linked accounts) --
   // this flags which one is the designated default so forms can pre-select it without forcing
   // an operator to hunt for the right account when there's more than one option.
@@ -93,7 +97,7 @@ export function DepositWithdrawForm({
         kind: "savings",
         accountNumber: savingsTarget.accountNumber,
         currencyCode: savingsTarget.currencyCode,
-        label: `Savings account · ${savingsTarget.accountNumber}${savingsTarget.isDefault ? " · default" : ""}`,
+        label: `${savingsTarget.productName} \u00b7 ${savingsTarget.accountNumber}${savingsTarget.isDefault ? " \u00b7 default" : ""}`,
         hint: "Posts a normal deposit or withdrawal on this savings account.",
       });
     }
@@ -232,10 +236,13 @@ export function DepositWithdrawForm({
   );
 }
 
-type TransferSourceAccount = Readonly<{
+export type TransferSourceAccount = Readonly<{
   id: string;
   accountNumber: string;
   currencyCode: string;
+  // The savings product name (e.g. "Member Savings Account") -- shown ahead of the account
+  // number so an operator picks the right kind of account, not just a bare number.
+  productName: string;
   balanceMinor: string;
 }>;
 
@@ -304,7 +311,7 @@ export function TransferToLoanForm({
   return (
     <div className="account-card-form">
       <div className="form-row">
-        <label>From savings<select onChange={(event) => setSavingsAccountId(event.target.value)} value={savingsAccountId}>{savingsAccounts.map((account) => <option key={account.id} value={account.id}>{`${account.accountNumber} \u00b7 ${formatMinor(BigInt(account.balanceMinor), account.currencyCode)}`}</option>)}</select></label>
+        <label>From savings<select onChange={(event) => setSavingsAccountId(event.target.value)} value={savingsAccountId}>{savingsAccounts.map((account) => <option key={account.id} value={account.id}>{`${account.productName} \u00b7 ${account.accountNumber} \u00b7 ${formatMinor(BigInt(account.balanceMinor), account.currencyCode)}`}</option>)}</select></label>
         <label>To loan<select onChange={(event) => setLoanId(event.target.value)} value={loanId}>{loanTargets.map((loan) => <option key={loan.id} value={loan.id}>{`${loan.accountNumber} \u00b7 ${loan.productName}`}</option>)}</select></label>
       </div>
       <label>Amount<input inputMode="decimal" min={1} onChange={(event) => setAmount(event.target.value)} placeholder="0.00" step="0.01" type="number" value={amount} /></label>
@@ -314,6 +321,129 @@ export function TransferToLoanForm({
       <div className="account-card-actions">
         <BrandActionButton disabled={pending || !source || !destination} icon={pending ? <LoaderCircle className="spin" size={15} /> : <Plus size={15} />} onClick={transfer} type="button">Transfer to loan</BrandActionButton>
       </div>
+    </div>
+  );
+}
+
+/**
+ * Internal transfer between two of a member's own savings sub-accounts (e.g. personal <->
+ * group-linked). See transferSavingsToSavings() in transfer-savings.ts for the accounting
+ * treatment. Needs at least two active savings accounts to be usable at all.
+ */
+export function TransferToSavingsForm({
+  savingsAccounts,
+  onSuccess,
+}: {
+  savingsAccounts: readonly TransferSourceAccount[];
+  onSuccess?: () => void;
+}) {
+  const router = useRouter();
+  const [amount, setAmount] = useState("");
+  const [reason, setReason] = useState("");
+  const [pending, setPending] = useState(false);
+  const [fromId, setFromId] = useState(savingsAccounts[0]?.id ?? "");
+  const [toId, setToId] = useState(savingsAccounts[1]?.id ?? "");
+  const source = savingsAccounts.find((account) => account.id === fromId) ?? null;
+  const destinationOptions = savingsAccounts.filter((account) => account.id !== fromId);
+  const destination = destinationOptions.find((account) => account.id === toId) ?? destinationOptions[0] ?? null;
+
+  function selectFrom(nextFromId: string) {
+    setFromId(nextFromId);
+    const stillValid = savingsAccounts.some((account) => account.id !== nextFromId && account.id === toId);
+    if (!stillValid) {
+      setToId(savingsAccounts.find((account) => account.id !== nextFromId)?.id ?? "");
+    }
+  }
+
+  async function transfer() {
+    const amountMinor = parseAmountToMinor(amount);
+    if (!amountMinor || BigInt(amountMinor) <= 0n) { toast.error("Enter a valid amount"); return; }
+    if (!source) { toast.error("Select a savings account to transfer from"); return; }
+    if (!destination) { toast.error("Select a savings account to transfer to"); return; }
+    if (BigInt(amountMinor) > BigInt(source.balanceMinor)) { toast.error("Amount exceeds the available savings balance"); return; }
+    setPending(true);
+    try {
+      const response = await fetch(`/api/savings-accounts/${source.id}/transfer`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          toSavingsAccountId: destination.id,
+          amountMinor,
+          businessDate: new Date().toISOString().slice(0, 10),
+          externalReference: reason.trim() || undefined,
+          idempotencyKey: crypto.randomUUID(),
+        }),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) { toast.error(result.error ?? "Could not transfer between these savings accounts"); return; }
+      toast.success(`Transferred from ${source.accountNumber} to ${destination.accountNumber}`);
+      setAmount("");
+      setReason("");
+      router.refresh();
+      onSuccess?.();
+    } catch {
+      toast.error("Could not transfer between these savings accounts");
+    } finally {
+      setPending(false);
+    }
+  }
+
+  if (savingsAccounts.length < 2) {
+    return <p className="field-help">This client needs at least two active savings accounts to transfer between them.</p>;
+  }
+
+  return (
+    <div className="account-card-form">
+      <div className="form-row">
+        <label>From savings<select onChange={(event) => selectFrom(event.target.value)} value={fromId}>{savingsAccounts.map((account) => <option key={account.id} value={account.id}>{`${account.productName} \u00b7 ${account.accountNumber} \u00b7 ${formatMinor(BigInt(account.balanceMinor), account.currencyCode)}`}</option>)}</select></label>
+        <label>To savings<select onChange={(event) => setToId(event.target.value)} value={destination?.id ?? ""}>{destinationOptions.map((account) => <option key={account.id} value={account.id}>{`${account.productName} \u00b7 ${account.accountNumber} \u00b7 ${formatMinor(BigInt(account.balanceMinor), account.currencyCode)}`}</option>)}</select></label>
+      </div>
+      <label>Amount<input inputMode="decimal" min={1} onChange={(event) => setAmount(event.target.value)} placeholder="0.00" step="0.01" type="number" value={amount} /></label>
+      <label>Reason / note<input maxLength={200} onChange={(event) => setReason(event.target.value)} placeholder="Moving savings between accounts" value={reason} /></label>
+      {source ? <p className="field-help">Available balance: {formatMinor(BigInt(source.balanceMinor), source.currencyCode)}</p> : null}
+      <div className="account-card-actions">
+        <BrandActionButton disabled={pending || !source || !destination} icon={pending ? <LoaderCircle className="spin" size={15} /> : <Plus size={15} />} onClick={transfer} type="button">Transfer between savings</BrandActionButton>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Single "Transfer" entry point shown ahead of Record payment / Top up / Withdraw. Toggles
+ * between the two internal-transfer flows above: moving money between the client's own savings
+ * sub-accounts, or straight onto one of their loans as a repayment (never a generic balance move
+ * -- see TransferToLoanForm). Hidden entirely when neither flow has enough targets to be useful.
+ */
+export function TransferForm({
+  savingsAccounts,
+  loanTargets,
+  canTransferToLoan,
+  onSuccess,
+}: {
+  savingsAccounts: readonly TransferSourceAccount[];
+  loanTargets: readonly LoanDepositTarget[];
+  canTransferToLoan: boolean;
+  onSuccess?: () => void;
+}) {
+  const canTransferToSavings = savingsAccounts.length >= 2;
+  const canTransferToLoanNow = canTransferToLoan && savingsAccounts.length > 0 && loanTargets.length > 0;
+  const [mode, setMode] = useState<"savings" | "loan">(canTransferToSavings ? "savings" : "loan");
+
+  if (!canTransferToSavings && !canTransferToLoanNow) return null;
+
+  return (
+    <div className="account-card-form">
+      {canTransferToSavings && canTransferToLoanNow ? (
+        <div className="auth-tabs" role="tablist">
+          <button className={mode === "savings" ? "auth-tab active" : "auth-tab"} onClick={() => setMode("savings")} role="tab" type="button">Between savings</button>
+          <button className={mode === "loan" ? "auth-tab active" : "auth-tab"} onClick={() => setMode("loan")} role="tab" type="button">To a loan</button>
+        </div>
+      ) : null}
+      {mode === "savings" && canTransferToSavings ? (
+        <TransferToSavingsForm onSuccess={onSuccess} savingsAccounts={savingsAccounts} />
+      ) : (
+        <TransferToLoanForm loanTargets={loanTargets} onSuccess={onSuccess} savingsAccounts={savingsAccounts} />
+      )}
     </div>
   );
 }

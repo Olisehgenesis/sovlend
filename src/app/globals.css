@@ -234,6 +234,7 @@ tbody tr:last-child td { border-bottom: 0; }.mono { font-family: var(--font-mono
 }
 .brand-action-button--gold { --background: #8a611a; --background-hover: #9c6f1e; --background-left: #4d3607; --folder: var(--mint); --folder-inner: #a9c7b8; --pencil-top: var(--forest); --pencil-bottom: var(--gold); }
 .brand-action-button--blue { --background: var(--blue); --background-hover: #3c6d90; --background-left: #1c3549; --folder: var(--gold); --pencil-top: var(--gold); --pencil-bottom: var(--blue); }
+.brand-action-button--purple { --background: #5b3a7a; --background-hover: #6c4590; --background-left: #331f47; --folder: var(--mint); --folder-inner: #cbb8dc; --pencil-top: var(--gold); --pencil-bottom: #5b3a7a; }
 .brand-action-button:disabled { cursor: not-allowed; opacity: .55; }
 .brand-action-button > div { top: 0; left: 0; bottom: 0; width: 42px; position: absolute; overflow: hidden; border-radius: 5px 0 0 5px; background: var(--background-left); }
 .brand-action-button > div .folder { width: 18px; height: 21px; position: absolute; left: 12px; top: 10px; }
@@ -287,7 +288,7 @@ tbody tr:last-child td { border-bottom: 0; }.mono { font-family: var(--font-mono
 
 .client-photo { width: 52px; height: 52px; flex: 0 0 52px; border-radius: 50%; object-fit: cover; background: var(--mint); }.client-photo-placeholder { display: grid; place-items: center; color: var(--forest); }
 .wallet-balance { font-size: 13px; font-weight: 650; padding: 3px 8px; border-radius: 4px; color: #24553e; background: #dfeee6; }.wallet-balance.negative { color: #853724; background: #f7e3dd; }
-.wallet-summary { margin-bottom: 18px; }.wallet-summary td:first-child { display: flex; align-items: center; gap: 7px; color: var(--muted); font-size: 13px; }.wallet-summary tr.wallet-net-row td { border-top: 1px solid var(--line); }.wallet-summary tr.wallet-net-row td:first-child { color: var(--ink); }
+.wallet-summary { margin-bottom: 18px; }.wallet-summary td:first-child { display: flex; align-items: center; gap: 7px; color: var(--muted); font-size: 13px; }.wallet-summary tr.wallet-net-row td { border-top: 1px solid var(--line); }.wallet-summary tr.wallet-net-row td:first-child { color: var(--ink); }.wallet-summary tr.wallet-subtotal-row td { border-top: 1px dashed var(--line); font-size: 12px; color: var(--muted); font-style: italic; }
 .client-body { display: grid; grid-template-columns: minmax(0, 1fr) 240px; gap: 18px; align-items: start; }
 .client-side { position: sticky; top: 66px; margin-top: 52px; padding: 4px 0 16px; border: 1px solid var(--line); border-radius: 8px; background: var(--paper); }.client-side .panel-heading { padding: 12px 14px; border-bottom: 1px solid var(--line); }.client-side .panel-heading h2 { margin: 0; font-size: 13px; }
 .client-actions { display: flex; flex-direction: column; gap: 2px; padding: 8px; }

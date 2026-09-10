@@ -352,8 +352,11 @@ export async function listStandingOrderSweepJobs(
       client: {
         select: {
           mobileNumber: true,
+          // Standing orders only ever sweep a member's own Member Savings Account (MSA) --
+          // not compulsory savings, security-fee, LIF, or group-general accounts, which serve
+          // other purposes and must not be drained by an automated loan sweep.
           savingsAccounts: {
-            where: { status: "ACTIVE" },
+            where: { status: "ACTIVE", product: { shortName: "MSA" } },
             select: { id: true, isDefault: true, currencyCode: true },
             orderBy: [{ isDefault: "desc" }, { createdAt: "asc" }],
           },

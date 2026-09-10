@@ -190,7 +190,7 @@ export default async function LoanPage({
   // discriminator, so it must not be used to filter here — the query above already scopes this
   // list to ACTIVE savings accounts.
   const savingsTargets = loan.clientId
-    ? savingsAccounts.map((account) => ({ id: account.id, accountNumber: account.accountNumber, currencyCode: loan.denominationCurrency, isDefault: account.isDefault }))
+    ? savingsAccounts.map((account) => ({ id: account.id, accountNumber: account.accountNumber, currencyCode: loan.denominationCurrency, productName: account.product?.name ?? account.accountType.replaceAll("_", " "), isDefault: account.isDefault }))
     : [];
   // Surfaces this client's other accounts from the loan detail page, mirroring how
   // savings-accounts/[accountNumber]/page.tsx links back to its owning client/group.
