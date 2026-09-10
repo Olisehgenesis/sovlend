@@ -14,7 +14,7 @@ export function BrandActionButton({
   className,
   ...rest
 }: {
-  variant?: "primary" | "gold" | "blue";
+  variant?: "primary" | "gold" | "blue" | "purple";
   icon?: React.ReactNode;
 } & ButtonHTMLAttributes<HTMLButtonElement>) {
   const variantClass = variant === "primary" ? "" : ` brand-action-button--${variant}`;

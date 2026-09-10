@@ -86,7 +86,8 @@ export default async function ClientDetailPage({ params, searchParams }: { param
   // every one of them is offered to the record-payment/top-up/withdraw forms so an operator can
   // pick the right account instead of always landing on whichever one the query returns first.
   const activeSavingsAccounts = client.savingsAccounts.filter((account) => account.status === "ACTIVE");
-  const savingsTargets = activeSavingsAccounts.map((account) => ({ id: account.id, accountNumber: account.accountNumber, currencyCode: account.currencyCode, isDefault: account.isDefault }));
+  const savingsProductLabel = (account: { product: { name: string } | null; accountType: string }) => account.product?.name ?? account.accountType.replaceAll("_", " ");
+  const savingsTargets = activeSavingsAccounts.map((account) => ({ id: account.id, accountNumber: account.accountNumber, currencyCode: account.currencyCode, productName: savingsProductLabel(account), isDefault: account.isDefault }));
   const businessDate = new Date(`${new Date().toISOString().slice(0, 10)}T00:00:00.000Z`);
 
   const loanRows = client.loans.map((loan) => {
@@ -113,6 +114,17 @@ export default async function ClientDetailPage({ params, searchParams }: { param
     account,
     balanceMinor: account.transactions.reduce((sum, transaction) => sum + transaction.amountMinor, 0n),
   }));
+  // Same active savings accounts offered to Top up/Withdraw, but shaped for the Transfer form,
+  // which needs each account's current balance to validate against and offer as "from".
+  const transferSavingsAccounts = savingsRows
+    .filter(({ account }) => account.status === "ACTIVE")
+    .map(({ account, balanceMinor }) => ({
+      id: account.id,
+      accountNumber: account.accountNumber,
+      currencyCode: account.currencyCode,
+      productName: savingsProductLabel(account),
+      balanceMinor: balanceMinor.toString(),
+    }));
 
   const activeLoanCount = client.loans.filter((loan) => (OPEN_LOAN_STATUSES as readonly string[]).includes(loan.status)).length;
   const activeSavingsCount = client.savingsAccounts.filter((account) => account.status === "ACTIVE").length;
@@ -184,6 +196,7 @@ export default async function ClientDetailPage({ params, searchParams }: { param
           loanTargets={loanPaymentTargets}
           savingsTargets={canTransact ? savingsTargets : []}
           settlementAccounts={settlementAccounts}
+          transferSavingsAccounts={canTransact ? transferSavingsAccounts : []}
         />
         <span className={`status-dot ${client.status === "ACTIVE" ? "up-to-date" : "review"}`} />
       </header>
@@ -200,13 +213,24 @@ export default async function ClientDetailPage({ params, searchParams }: { param
               </tr>
             </thead>
             <tbody>
+              {savingsRows
+                .filter(({ account }) => account.status === "ACTIVE")
+                .map(({ account, balanceMinor }) => (
+                  <tr key={account.id}>
+                    <td>{savingsProductLabel(account)}</td>
+                    <td className="mono">{account.accountNumber}</td>
+                    <td>{formatMinor(balanceMinor, account.currencyCode)}</td>
+                  </tr>
+                ))}
+              {activeSavingsCount > 1 ? (
+                <tr className="wallet-subtotal-row">
+                  <td>Savings subtotal</td>
+                  <td>{activeSavingsCount.toLocaleString()} active of {client.savingsAccounts.length.toLocaleString()}</td>
+                  <td>{formatMinor(wallet.savingsBalanceMinor, wallet.currencyCode)}</td>
+                </tr>
+              ) : null}
               <tr>
-                <td><PiggyBank size={15} /> Savings</td>
-                <td>{activeSavingsCount.toLocaleString()} active of {client.savingsAccounts.length.toLocaleString()}</td>
-                <td>{formatMinor(wallet.savingsBalanceMinor, wallet.currencyCode)}</td>
-              </tr>
-              <tr>
-                <td><Wallet size={15} /> Loans</td>
+                <td>Loans</td>
                 <td>{activeLoanCount.toLocaleString()} open of {client.loans.length.toLocaleString()}</td>
                 <td>-{formatMinor(wallet.loanOutstandingMinor, wallet.currencyCode)}</td>
               </tr>
