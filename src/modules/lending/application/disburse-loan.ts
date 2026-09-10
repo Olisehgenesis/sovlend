@@ -5,6 +5,7 @@ import { z } from "zod";
 
 import { AuthorizationService } from "@/modules/identity/application/authorization-service";
 import { permissions } from "@/modules/identity/domain/permissions";
+import { assertPeriodOpen } from "@/modules/ledger/application/assert-period-open";
 import { assertBalancedJournal } from "@/modules/ledger/domain/journal";
 import { canDisburseWithoutMakerCheckerSplit } from "@/modules/lending/application/loan-application-access";
 import { transferSavingsToLoan } from "@/modules/lending/application/post-repayment";
@@ -191,6 +192,7 @@ export async function disburseLoan(
     amountMinor: loan.principalMinor,
     currencyCode: loan.denominationCurrency,
   });
+  await assertPeriodOpen(prisma, { officeId: loan.officeId, businessDate: command.businessDate });
 
   const schedule = generateRepaymentSchedule({
     principalMinor: loan.principalMinor,

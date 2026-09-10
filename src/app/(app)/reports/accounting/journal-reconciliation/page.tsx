@@ -23,15 +23,27 @@ import {
   listAccountingReportAccounts,
   listAccountingReportOffices,
   normalizeDateRange,
+  parseAmountFilterMinor,
   parseDateInput,
   resolveAccountFilter,
+  resolveEntrySourceFilter,
   resolveOfficeFilter,
+  minorToAmountInputValue,
 } from "@/modules/reports/domain/accounting-report";
 
 export default async function JournalReconciliationPage({
   searchParams,
 }: {
-  searchParams: Promise<{ startDate?: string; endDate?: string; officeId?: string; accountId?: string }>;
+  searchParams: Promise<{
+    startDate?: string;
+    endDate?: string;
+    officeId?: string;
+    accountId?: string;
+    entrySource?: string;
+    search?: string;
+    minAmount?: string;
+    maxAmount?: string;
+  }>;
 }) {
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session) redirect("/sign-in");
@@ -59,13 +71,30 @@ export default async function JournalReconciliationPage({
   );
   const officeId = resolveOfficeFilter(offices, params.officeId ?? null);
   const accountId = resolveAccountFilter(accounts, params.accountId ?? null);
-  const report = await getJournalReconciliationReport(prisma, scope, { startDate, endDate, officeId, accountId });
+  const entrySource = resolveEntrySourceFilter(params.entrySource ?? null);
+  const search = params.search?.trim() || null;
+  const minAmountMinor = parseAmountFilterMinor(params.minAmount);
+  const maxAmountMinor = parseAmountFilterMinor(params.maxAmount);
+  const report = await getJournalReconciliationReport(prisma, scope, {
+    startDate,
+    endDate,
+    officeId,
+    accountId,
+    entrySource,
+    search,
+    minAmountMinor,
+    maxAmountMinor,
+  });
   const activeOfficeName = offices.find((office) => office.id === officeId)?.name ?? "All offices";
   const queryString = buildReportQueryString({
     startDate: formatDateInputValue(startDate),
     endDate: formatDateInputValue(endDate),
     officeId,
     accountId,
+    entrySource: entrySource === "ALL" ? null : entrySource,
+    search,
+    minAmount: minAmountMinor === null ? null : minorToAmountInputValue(minAmountMinor),
+    maxAmount: maxAmountMinor === null ? null : minorToAmountInputValue(maxAmountMinor),
   });
   const apiHref = `/api/reports/accounting/journal-reconciliation${queryString ? `?${queryString}` : ""}`;
   const exportHref = `${apiHref}${queryString ? "&" : "?"}format=csv`;
@@ -79,13 +108,14 @@ export default async function JournalReconciliationPage({
 
   return (
     <main className="directory-page">
-      <Breadcrumbs items={[{ label: "Reports", href: "/reports" }, { label: "Accounting", href: "/reports" }, { label: "Journal Reconciliation" }]} />
+      <Breadcrumbs items={[{ label: "Reports", href: "/reports" }, { label: "Accounting", href: "/reports" }, { label: "Search Journal Entries" }]} />
       <header className="directory-header">
         <div>
           <p className="eyebrow">Accounting statements</p>
-          <h1>Journal Entries Reconciliation</h1>
+          <h1>Search Journal Entries</h1>
           <p>
             Journal integrity review from {formatReportDate(report.startDate)} to {formatReportDate(report.endDate)} · {activeOfficeName}
+            {entrySource !== "ALL" ? ` · ${entrySource === "MANUAL" ? "manual entries only" : "system-generated only"}` : ""}
           </p>
         </div>
         <ReportPicker current="/reports/accounting/journal-reconciliation" options={pickerOptions} />
@@ -137,6 +167,28 @@ export default async function JournalReconciliationPage({
                   </option>
                 ))}
               </select>
+            </label>
+            <div className="form-row three">
+              <label>
+                Entry type
+                <select defaultValue={entrySource} name="entrySource">
+                  <option value="ALL">All entries</option>
+                  <option value="MANUAL">Manual entries only</option>
+                  <option value="SYSTEM">System-generated only</option>
+                </select>
+              </label>
+              <label>
+                Min amount (UGX)
+                <input defaultValue={minAmountMinor === null ? "" : minorToAmountInputValue(minAmountMinor)} inputMode="decimal" name="minAmount" pattern="[0-9]+([.][0-9]{1,2})?" placeholder="0.00" />
+              </label>
+              <label>
+                Max amount (UGX)
+                <input defaultValue={maxAmountMinor === null ? "" : minorToAmountInputValue(maxAmountMinor)} inputMode="decimal" name="maxAmount" pattern="[0-9]+([.][0-9]{1,2})?" placeholder="No limit" />
+              </label>
+            </div>
+            <label>
+              Search
+              <input defaultValue={search ?? ""} name="search" placeholder="Journal ID, transaction ID, or narration" />
             </label>
           </fieldset>
           <div className="form-actions">

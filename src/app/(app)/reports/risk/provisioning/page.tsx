@@ -39,10 +39,11 @@ export default async function ProvisioningReportPage({
   if (!allowed) redirect("/reports");
 
   const filters = parseRiskFilters(await searchParams);
-  const [report, options, pickerOptions] = await Promise.all([
+  const [report, options, pickerOptions, canPostProvisioning] = await Promise.all([
     loadProvisioningReport(prisma, scope, filters),
     loadRiskFilterOptions(prisma, scope),
     loadReportPickerOptions(prisma, session.user.id, scope.organizationId),
+    new AuthorizationService(prisma).isAllowedForOrganization(session.user.id, scope.organizationId, permissions.ledgerPost),
   ]);
 
   return (
@@ -73,6 +74,11 @@ export default async function ProvisioningReportPage({
           <Link className="secondary-action" href="/reports/risk/aging">
             Aging report
           </Link>
+          {canPostProvisioning ? (
+            <Link className="secondary-action" href="/backoffice/accounting/provisioning">
+              Post provisioning entry
+            </Link>
+          ) : null}
         </div>
       </header>
 

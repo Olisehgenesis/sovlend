@@ -13,8 +13,10 @@ import {
   listAccountingReportAccounts,
   listAccountingReportOffices,
   normalizeDateRange,
+  parseAmountFilterMinor,
   parseDateInput,
   resolveAccountFilter,
+  resolveEntrySourceFilter,
   resolveOfficeFilter,
   serializeJournalReconciliationReport,
 } from "@/modules/reports/domain/accounting-report";
@@ -55,7 +57,11 @@ export async function GET(request: Request) {
     parseDateInput(url.searchParams.get("startDate"), defaults.startDate),
     parseDateInput(url.searchParams.get("endDate"), defaults.endDate),
   );
-  const report = await getJournalReconciliationReport(prisma, scope, { startDate, endDate, officeId, accountId });
+  const entrySource = resolveEntrySourceFilter(url.searchParams.get("entrySource"));
+  const search = url.searchParams.get("search");
+  const minAmountMinor = parseAmountFilterMinor(url.searchParams.get("minAmount"));
+  const maxAmountMinor = parseAmountFilterMinor(url.searchParams.get("maxAmount"));
+  const report = await getJournalReconciliationReport(prisma, scope, { startDate, endDate, officeId, accountId, entrySource, search, minAmountMinor, maxAmountMinor });
 
   if (url.searchParams.get("format")?.toLowerCase() === "csv") {
     return new NextResponse(journalReconciliationReportCsv(report), {

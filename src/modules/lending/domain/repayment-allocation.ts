@@ -16,6 +16,7 @@ export type AllocatableInstallment = Readonly<{
   monitoringFeeDueMinor?: bigint;
   monitoringFeePaidMinor?: bigint;
   penaltyAssessedOn?: Date | null;
+  interestAccruedOn?: Date | null;
 }>;
 
 export type InstallmentAllocation = Readonly<{
@@ -26,6 +27,7 @@ export type InstallmentAllocation = Readonly<{
   penaltiesMinor: bigint;
   monitoringFeeMinor: bigint;
   penaltyAssessedOn?: Date | null;
+  interestAccruedOn?: Date | null;
 }>;
 
 export function allocateRepayment(installments: readonly AllocatableInstallment[], paymentMinor: bigint) {
@@ -44,6 +46,9 @@ export function allocateRepayment(installments: readonly AllocatableInstallment[
       monitoringFeeMinor: 0n,
       ...(Object.prototype.hasOwnProperty.call(installment, "penaltyAssessedOn")
         ? { penaltyAssessedOn: installment.penaltyAssessedOn ?? null }
+        : {}),
+      ...(Object.prototype.hasOwnProperty.call(installment, "interestAccruedOn")
+        ? { interestAccruedOn: installment.interestAccruedOn ?? null }
         : {}),
     };
     allocation.penaltiesMinor = take(installment.penaltiesDueMinor - installment.penaltiesPaidMinor, remaining); remaining -= allocation.penaltiesMinor;

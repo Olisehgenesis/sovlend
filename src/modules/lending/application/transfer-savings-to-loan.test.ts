@@ -116,6 +116,7 @@ function buildPrismaMock() {
     },
     auditEvent: { create: vi.fn(async () => ({})) },
     outboxEvent: { create: vi.fn(async () => ({})) },
+    accountingClosure: { findFirst: vi.fn(async () => null) },
   };
 
   const prisma = {

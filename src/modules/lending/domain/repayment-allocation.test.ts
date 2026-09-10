@@ -50,4 +50,19 @@ describe("repayment allocation", () => {
       penaltyAssessedOn,
     });
   });
+
+  it("carries an installment's interestAccruedOn flag into the allocation when present", () => {
+    const interestAccruedOn = new Date("2026-09-04T00:00:00.000Z");
+    const result = allocateRepayment([{ ...installment, interestAccruedOn }], 3_000n);
+    expect(result.allocations[0]).toMatchObject({
+      installmentId: "one",
+      interestMinor: 2_000n,
+      interestAccruedOn,
+    });
+  });
+
+  it("omits interestAccruedOn from the allocation for historical installments that never set the field", () => {
+    const result = allocateRepayment([installment], 2_000n);
+    expect(Object.prototype.hasOwnProperty.call(result.allocations[0], "interestAccruedOn")).toBe(false);
+  });
 });

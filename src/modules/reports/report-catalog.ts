@@ -44,7 +44,7 @@ export const reportSections: readonly ReportSection[] = [
       { href: "/reports/accounting/income-statement", permission: permissions.reportIncomeStatement, title: "Income Statement", description: "Profit, loss, and period performance." },
       { href: "/reports/accounting/trial-balance", permission: permissions.reportTrialBalance, title: "Trial Balance", description: "Debits and credits by account before close." },
       { href: "/reports/accounting/general-ledger", permission: permissions.reportGeneralLedger, title: "General Ledger", description: "Detailed journal-backed account activity." },
-      { href: "/reports/accounting/journal-reconciliation", permission: permissions.reportJournalReconciliation, title: "Journal Reconciliation", description: "Reconcile journal lines and posting integrity." },
+      { href: "/reports/accounting/journal-reconciliation", permission: permissions.reportJournalReconciliation, title: "Search Journal Entries", description: "Search, filter, and reconcile posted journal entries by date, office, account, amount, and manual vs. system-generated." },
     ],
   },
   {

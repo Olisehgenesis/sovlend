@@ -148,6 +148,7 @@ function buildPrismaMock(options: MockOptions) {
       findUnique: vi.fn(async () => ({ savingsAccountId: savingsAccount.id })),
     },
     $transaction: vi.fn(async (callback: (tx: typeof transaction) => unknown) => callback(transaction)),
+    accountingClosure: { findFirst: vi.fn(async () => null) },
   } as unknown as PrismaClient;
 
   return { prisma };
