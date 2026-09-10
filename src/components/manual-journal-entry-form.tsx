@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 
+import { SearchableSelect } from "@/components/searchable-select";
 import { BrandActionButton } from "@/components/ui/brand-action-button";
 
 export function ManualJournalEntryForm({
@@ -22,6 +23,7 @@ export function ManualJournalEntryForm({
 }) {
   const router = useRouter();
   const [pending, setPending] = useState(false);
+  const [ledgerAccountId, setLedgerAccountId] = useState("");
   const label = entryType === "INCOME" ? "income" : "expense";
   // Cash is the most common settlement method in practice, so it's pre-selected ahead of
   // whichever bank/mobile-money account happens to sort first -- still changeable.
@@ -29,8 +31,22 @@ export function ManualJournalEntryForm({
     const cashAccount = settlementAccounts.find((account) => account.type === "CASH");
     return cashAccount ? [cashAccount, ...settlementAccounts.filter((account) => account.id !== cashAccount.id)] : settlementAccounts;
   }, [settlementAccounts]);
+  const [settlementAccountId, setSettlementAccountId] = useState(orderedSettlementAccounts[0]?.id ?? "");
+  const ledgerAccountOptions = useMemo(() => ledgerAccounts.map((account) => ({ value: account.id, label: `${account.code} · ${account.name}` })), [ledgerAccounts]);
+  const settlementAccountOptions = useMemo(
+    () => orderedSettlementAccounts.map((account) => ({ value: account.id, label: account.name, searchText: account.type.replaceAll("_", " ") })),
+    [orderedSettlementAccounts],
+  );
 
   async function submit(formData: FormData) {
+    if (!ledgerAccountId) {
+      toast.error(`Select an ${entryType === "INCOME" ? "income" : "expense"} account`);
+      return;
+    }
+    if (!settlementAccountId) {
+      toast.error(entryType === "INCOME" ? "Select where the money was received into" : "Select where the money was paid from");
+      return;
+    }
     setPending(true);
     const amount = String(formData.get("amount"));
     if (!/^\d+(\.\d{1,2})?$/.test(amount)) {
@@ -83,16 +99,7 @@ export function ManualJournalEntryForm({
         ) : null}
         <label>
           {entryType === "INCOME" ? "Income account" : "Expense account"}
-          <select name="ledgerAccountId" required defaultValue="">
-            <option value="" disabled>
-              Select an account
-            </option>
-            {ledgerAccounts.map((account) => (
-              <option key={account.id} value={account.id}>
-                {account.code} · {account.name}
-              </option>
-            ))}
-          </select>
+          <SearchableSelect name="ledgerAccountId" options={ledgerAccountOptions} placeholder="Search account by code or name..." onChange={setLedgerAccountId} />
         </label>
         <label>
           Amount (UGX)
@@ -100,13 +107,13 @@ export function ManualJournalEntryForm({
         </label>
         <label>
           {entryType === "INCOME" ? "Received into" : "Paid from"}
-          <select name="settlementAccountId" required defaultValue={orderedSettlementAccounts[0]?.id ?? ""}>
-            {orderedSettlementAccounts.map((account) => (
-              <option key={account.id} value={account.id}>
-                {account.name} · {account.type.replaceAll("_", " ")}
-              </option>
-            ))}
-          </select>
+          <SearchableSelect
+            name="settlementAccountId"
+            options={settlementAccountOptions}
+            defaultValue={settlementAccountId}
+            placeholder="Search settlement account..."
+            onChange={setSettlementAccountId}
+          />
         </label>
         <div className="form-row">
           <label>

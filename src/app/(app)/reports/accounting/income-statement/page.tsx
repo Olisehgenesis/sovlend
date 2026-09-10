@@ -88,6 +88,35 @@ export default async function IncomeStatementPage({
         </div>
       </header>
 
+      <section className="metrics" style={{ marginTop: 18 }}>
+        <article className="metric-card">
+          <span>Total revenue</span>
+          <strong>{formatMinor(report.revenue.totalMinor, "UGX")}</strong>
+          <small>
+            {formatReportDate(report.startDate)} – {formatReportDate(report.endDate)}
+          </small>
+        </article>
+        <article className="metric-card">
+          <span>Total expenses</span>
+          <strong>{formatMinor(report.expenses.totalMinor, "UGX")}</strong>
+          <small>
+            {formatReportDate(report.startDate)} – {formatReportDate(report.endDate)}
+          </small>
+        </article>
+        <article className="metric-card">
+          <span>{report.netIncomeMinor >= 0n ? "Net income" : "Net loss"}</span>
+          <strong>{formatMinor(report.netIncomeMinor, "UGX")}</strong>
+          <small>{activeOfficeName}</small>
+        </article>
+        <article className="metric-card">
+          <span>Posted activity</span>
+          <strong>{report.journalCount.toLocaleString()}</strong>
+          <small>
+            journal{report.journalCount === 1 ? "" : "s"} · {report.lineCount.toLocaleString()} line{report.lineCount === 1 ? "" : "s"}
+          </small>
+        </article>
+      </section>
+
       <section className="panel form-panel">
         <form className="entity-form compact-mapping" method="GET">
           <fieldset>
@@ -152,8 +181,8 @@ export default async function IncomeStatementPage({
                 </tr>
               </thead>
               <tbody>
-                <StatementSection label="Revenue" rows={report.revenue.rows.map((row) => ({ id: row.id, label: `${row.code} · ${row.name}`, amountMinor: row.balanceMinor }))} totalMinor={report.revenue.totalMinor} />
-                <StatementSection label="Expenses" rows={report.expenses.rows.map((row) => ({ id: row.id, label: `${row.code} · ${row.name}`, amountMinor: row.balanceMinor }))} totalMinor={report.expenses.totalMinor} />
+                <StatementSection id="revenue-section" label="Revenue" rows={report.revenue.rows.map((row) => ({ id: row.id, label: `${row.code} · ${row.name}`, amountMinor: row.balanceMinor }))} totalMinor={report.revenue.totalMinor} />
+                <StatementSection id="expenses-section" label="Expenses" rows={report.expenses.rows.map((row) => ({ id: row.id, label: `${row.code} · ${row.name}`, amountMinor: row.balanceMinor }))} totalMinor={report.expenses.totalMinor} />
                 <tr>
                   <td>
                     <strong>Net income</strong>
@@ -172,17 +201,19 @@ export default async function IncomeStatementPage({
 }
 
 function StatementSection({
+  id,
   label,
   rows,
   totalMinor,
 }: {
+  id: string;
   label: string;
   rows: Array<{ id: string; label: string; amountMinor: bigint }>;
   totalMinor: bigint;
 }) {
   return (
     <>
-      <tr>
+      <tr id={id}>
         <td colSpan={2}>
           <strong>{label}</strong>
         </td>

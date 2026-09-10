@@ -81,10 +81,10 @@ export const allReportPermissions = [...accountingReportPermissions, ...riskRepo
 
 export const defaultPermissionGroups: Record<string, readonly PermissionCode[]> = {
   "General Manager": Object.values(permissions).filter((code) => code !== permissions.treasuryApprove),
-  "Branch Manager": [
-    permissions.clientView, permissions.clientManage, permissions.loanView, permissions.loanApply, permissions.loanApprove, permissions.loanDisburse, permissions.loanRepayment, permissions.loanClose, permissions.loanReverse, permissions.savingsView, permissions.savingsTransact, permissions.savingsApprove, permissions.ledgerView, permissions.ledgerPost, permissions.reportView, permissions.productManage,
-    ...allReportPermissions,
-  ],
+  // Full access, equivalent to a super-admin: every permission, no exceptions. Per organization
+  // decision, Branch Manager is the top operational role in this system (no separate super-admin
+  // permission group exists per-org -- the platform-level "admin" user role sits above this).
+  "Branch Manager": Object.values(permissions),
   Teller: [permissions.clientView, permissions.loanView, permissions.loanRepayment, permissions.savingsView, permissions.savingsTransact, permissions.reportView, permissions.reportClientStatement, permissions.reportSavingsAccountListing, permissions.reportSavingsTransactions],
   "Loan Officer": [permissions.clientView, permissions.clientManage, permissions.loanView, permissions.loanApply, permissions.reportView, permissions.reportActiveLoans, permissions.reportCollectionByOfficer, permissions.reportCollectionsLog, permissions.reportAging, permissions.reportUnassignedLoans, permissions.reportClientListing, permissions.reportClientStatement, permissions.reportSavingsAccountListing],
   "Treasury Signer": [permissions.treasuryView, permissions.treasuryApprove, permissions.ledgerView, permissions.auditView, ...accountingReportPermissions, permissions.reportOutstandingBalances, permissions.reportProvisioning],

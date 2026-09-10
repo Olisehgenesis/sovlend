@@ -230,6 +230,9 @@ export function AppHeader({
               <Link href="/backoffice/accounting/expense" onClick={closeMenus}>
                 Record expense
               </Link>
+              <Link href="/backoffice/accounting/journal-entries" onClick={closeMenus}>
+                Add journal entries
+              </Link>
               <Link href="/backoffice/accounting/frequent-postings" onClick={closeMenus}>
                 Frequent postings
               </Link>
@@ -238,6 +241,16 @@ export function AppHeader({
               </Link>
               <Link href="/reports/accounting/journal-reconciliation" onClick={closeMenus}>
                 Search journal entries
+              </Link>
+              <hr className="header-dropdown-divider" />
+              <Link href="/reports/accounting/chart-of-accounts?accountType=REVENUE" onClick={closeMenus}>
+                Incomes
+              </Link>
+              <Link href="/reports/accounting/chart-of-accounts?accountType=EXPENSE" onClick={closeMenus}>
+                Expenses
+              </Link>
+              <Link href="/reports/accounting/income-statement" onClick={closeMenus}>
+                Income statement
               </Link>
               {admin ? (
                 <>
