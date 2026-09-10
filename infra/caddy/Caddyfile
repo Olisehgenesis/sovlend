@@ -9,3 +9,16 @@
     -Server
   }
 }
+
+beta.sovlend.space {
+  encode zstd gzip
+  reverse_proxy sovlend-beta-web-1:3000
+  header {
+    Strict-Transport-Security "max-age=31536000; includeSubDomains"
+    X-Content-Type-Options "nosniff"
+    Referrer-Policy "strict-origin-when-cross-origin"
+    Permissions-Policy "camera=(), microphone=(), geolocation=()"
+    X-Robots-Tag "noindex, nofollow"
+    -Server
+  }
+}
