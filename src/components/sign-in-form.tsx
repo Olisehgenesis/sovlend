@@ -1,6 +1,7 @@
 "use client";
 
-import { Fingerprint, IdCard, LoaderCircle, LockKeyhole, Mail, Phone, TrendingUp, X } from "lucide-react";
+import { Fingerprint, IdCard, LoaderCircle, LockKeyhole, Mail, Phone, TrendingUp } from "lucide-react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -12,8 +13,6 @@ export function SignInForm() {
   const router = useRouter();
   const [pending, setPending] = useState(false);
   const [mode, setMode] = useState<"staff" | "client">("staff");
-  const [investorPortal, setInvestorPortal] = useState(false);
-  const destination = investorPortal ? "/investor" : "/";
 
   async function signInAsClient(formData: FormData) {
     setPending(true);
@@ -43,7 +42,7 @@ export function SignInForm() {
     const result = await authClient.signIn.email({
       email: String(formData.get("email")),
       password: String(formData.get("password")),
-      callbackURL: destination,
+      callbackURL: "/",
     });
     setPending(false);
 
@@ -53,7 +52,7 @@ export function SignInForm() {
     }
 
     toast.success("Signed in securely");
-    router.replace(destination);
+    router.replace("/");
     router.refresh();
   }
 
@@ -68,14 +67,14 @@ export function SignInForm() {
     }
 
     toast.success("Passkey verified");
-    router.replace(destination);
+    router.replace("/");
     router.refresh();
   }
 
   return (
     <div className="auth-card">
       <div className="auth-brand"><SovLendMark /><span>SovLend</span></div>
-      <div className="auth-copy"><p className="eyebrow">{investorPortal ? "Investor portal" : "Secure operations"}</p><h1>{investorPortal ? "Sign in to your investor portal" : "Sign in to your workspace"}</h1><p>{investorPortal ? "Use the email, password, or passkey on your investor account." : "Use your work email, or sign in as a client with your account number."}</p></div>
+      <div className="auth-copy"><p className="eyebrow">Secure operations</p><h1>Sign in to your workspace</h1><p>Use your work email, or sign in as a client with your account number.</p></div>
       <div className="auth-tabs" role="tablist">
         <button className={mode === "staff" ? "auth-tab active" : "auth-tab"} onClick={() => setMode("staff")} role="tab" type="button">Staff</button>
         <button className={mode === "client" ? "auth-tab active" : "auth-tab"} onClick={() => setMode("client")} role="tab" type="button">Client</button>
@@ -101,13 +100,9 @@ export function SignInForm() {
         <>
           <div className="auth-divider"><span>or</span></div>
           <button className="passkey-button" disabled={pending} onClick={signInWithPasskey} type="button"><Fingerprint size={19} /> Sign in with a passkey</button>
-          {investorPortal ? (
-            <button className="investor-portal-chip" onClick={() => setInvestorPortal(false)} type="button"><TrendingUp size={16} /> Signing in to the investor portal <X size={14} /></button>
-          ) : (
-            <button className="investor-portal-button" disabled={pending} onClick={() => setInvestorPortal(true)} type="button"><TrendingUp size={17} /> Investor portal</button>
-          )}
         </>
       ) : null}
+      <Link className="investor-portal-button" href="/investor/sign-in"><TrendingUp size={17} /> Investor portal</Link>
       <p className="auth-footnote">Accounts are created by a SovLend administrator.</p>
     </div>
   );

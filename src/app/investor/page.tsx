@@ -10,7 +10,7 @@ import { formatMinor } from "@/modules/reporting/application/dashboard";
 
 export default async function InvestorPage() {
   const session = await auth.api.getSession({ headers: await headers() });
-  if (!session) redirect("/sign-in");
+  if (!session) redirect("/investor/sign-in");
   const investor = await prisma.investorProfile.findUnique({
     where: { userId: session.user.id },
     include: {
