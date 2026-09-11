@@ -264,6 +264,7 @@ tbody tr:last-child td { border-bottom: 0; }.mono { font-family: var(--font-mono
 .brand-action-button:not(:disabled):hover { --bg: var(--background-hover); --fx: -28px; --fr: -60deg; --fd: .15s; --fds: 0s; --pbx: 2px; --pby: -2px; --pbd: .15s; --pex: -18px; }
 
 .investment-history { min-height: 260px; }.compact-form { padding: 0; margin-top: 22px; }.compact-form textarea { padding: 10px; resize: vertical; color: var(--ink); background: white; border: 1px solid #cfd7d1; border-radius: 4px; font: 13px var(--font-body); }
+.pending-access-list { width: 100%; max-width: 360px; display: grid; gap: 8px; margin-top: 6px; }.pending-access-row { display: flex; align-items: center; gap: 9px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 6px; background: #f8faf8; color: var(--ink); font-size: 13px; font-weight: 600; }.pending-access-row span:first-of-type { flex: 1; }
 .settlement-pending, .awaiting-payment, .awaiting-invoice { color: #725510; background: #f5ebce; }
 
 @media (max-width: 840px) {
