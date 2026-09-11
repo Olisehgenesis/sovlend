@@ -33,6 +33,23 @@ function slugify(part: string) {
 }
 
 /**
+ * Order-independent name key used to catch a legacy Fineract staff record that is actually the
+ * same person as an already-existing real (non-legacy) account -- e.g. "Nakirijja Kivumbi,
+ * Teopista" (legacy `displayName`) vs. "Teopista Nakirijja Kivumbi" (a manually onboarded staff
+ * account). Sorting the tokens makes comma/word-order differences irrelevant.
+ */
+function normalizeNameForMatch(name: string): string {
+  return name
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[^a-z\s]/g, " ")
+    .split(/\s+/)
+    .filter(Boolean)
+    .sort()
+    .join(" ");
+}
+
+/**
  * Legacy staff names were imported verbatim from Fineract's `displayName` field, which is
  * consistently formatted as "Lastname(s), Firstname". Split on the comma to build a
  * firstname.lastname@sovlend.space address; fall back to splitting on whitespace for the rare
@@ -78,6 +95,13 @@ export type PromoteLegacyStaffResult = Readonly<{
  * Each promoted account gets a firstname.lastname@sovlend.space email and the shared temporary
  * password, with `mustChangePassword` set so the app forces a real password on first sign-in.
  * Safe to re-run: users whose email is no longer the synthetic placeholder are skipped.
+ *
+ * Guard against duplicate identities: a legacy Fineract staff record can describe the same real
+ * person as an account that was already onboarded manually (different id, different email domain,
+ * created outside this migration). Promoting it anyway would create a second working login with
+ * its own password, splitting that person's assignments across two accounts (this happened once in
+ * production -- see the "Nakirijja Kivumbi, Teopista" incident). Any legacy staff whose name
+ * matches an existing non-legacy user is skipped so a human can decide how to merge it instead.
  */
 export async function promoteLegacyStaffToAccounts(prismaClient: PrismaClient): Promise<PromoteLegacyStaffResult> {
   const legacyStaff = await prismaClient.user.findMany({
@@ -86,11 +110,32 @@ export async function promoteLegacyStaffToAccounts(prismaClient: PrismaClient): 
     orderBy: { name: "asc" },
   });
 
+  const otherUsers = await prismaClient.user.findMany({
+    where: {
+      NOT: { email: { startsWith: LEGACY_STAFF_EMAIL_PREFIX, endsWith: LEGACY_STAFF_EMAIL_SUFFIX } },
+    },
+    select: { id: true, name: true, email: true },
+  });
+  const existingByNameKey = new Map<string, { id: string; email: string }[]>();
+  for (const other of otherUsers) {
+    const key = normalizeNameForMatch(other.name);
+    if (!key) continue;
+    const bucket = existingByNameKey.get(key);
+    if (bucket) bucket.push({ id: other.id, email: other.email });
+    else existingByNameKey.set(key, [{ id: other.id, email: other.email }]);
+  }
+
   const promoted: { userId: string; name: string; email: string }[] = [];
   const skipped: { userId: string; name: string; reason: string }[] = [];
 
   for (const staff of legacyStaff) {
     try {
+      const possibleDuplicates = existingByNameKey.get(normalizeNameForMatch(staff.name));
+      if (possibleDuplicates && possibleDuplicates.length > 0) {
+        const matches = possibleDuplicates.map((match) => `${match.email} (${match.id})`).join(", ");
+        throw new Error(`Matches existing non-legacy account(s) by name -- possible duplicate, resolve manually: ${matches}`);
+      }
+
       const { firstName, lastName } = deriveNameParts(staff.name);
       const email = await buildUniqueEmail(prismaClient, firstName, lastName, staff.id);
 
