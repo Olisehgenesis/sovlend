@@ -5,7 +5,7 @@ import { z } from "zod";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { createInvestment } from "@/modules/investments/application/create-investment";
-import { LnbitsGateway } from "@/modules/investments/infrastructure/lnbits-gateway";
+import { createLightningGateway } from "@/modules/investments/infrastructure/create-lightning-gateway";
 import { createPriceService } from "@/modules/pricing/infrastructure/create-price-service";
 
 const requestSchema = z.object({
@@ -20,9 +20,8 @@ export async function POST(request: Request) {
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const input = requestSchema.parse(await request.json());
   const baseUrl = process.env.BETTER_AUTH_URL;
-  const lnbitsUrl = process.env.LNBITS_BASE_URL;
-  const lnbitsKey = process.env.LNBITS_INVOICE_KEY;
-  if (!baseUrl || !lnbitsUrl || !lnbitsKey) return NextResponse.json({ error: "Lightning gateway is not configured" }, { status: 503 });
+  const lightning = createLightningGateway();
+  if (!baseUrl || !lightning) return NextResponse.json({ error: "Lightning gateway is not configured" }, { status: 503 });
 
   const investment = await createInvestment(
     prisma,
@@ -30,7 +29,7 @@ export async function POST(request: Request) {
       crypto: createPriceService({ base: "BTC", quote: "USD" }),
       forex: createPriceService({ base: "USD", quote: "UGX" }),
     },
-    new LnbitsGateway(lnbitsUrl, lnbitsKey),
+    lightning,
     {
       userId: session.user.id,
       organizationId: input.organizationId,
