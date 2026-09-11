@@ -6,6 +6,7 @@ import { useMemo, useState } from "react";
 import { toast } from "sonner";
 
 import { BrandActionButton } from "@/components/ui/brand-action-button";
+import { PAYEE_TYPE_LABELS, PAYEE_TYPES, payeeReferencePlaceholder, type PayeeType } from "@/modules/ledger/domain/journal";
 import { formatMinor } from "@/modules/money/domain/format-minor";
 
 type SettlementAccountOption = Readonly<{
@@ -44,6 +45,7 @@ export function DisburseLoanForm({
   const router = useRouter();
   const [pending, setPending] = useState(false);
   const [payOffPrevious, setPayOffPrevious] = useState(false);
+  const [payeeType, setPayeeType] = useState<PayeeType | "">("");
   const defaultSavingsAccountId = useMemo(
     () => savingsAccounts.find((account) => account.isDefault)?.id ?? savingsAccounts[0]?.id ?? "",
     [savingsAccounts],
@@ -54,6 +56,7 @@ export function DisburseLoanForm({
     () => settlementAccounts.find((account) => account.type === "CASH")?.id ?? settlementAccounts[0]?.id ?? "",
     [settlementAccounts],
   );
+  const referencePlaceholder = payeeReferencePlaceholder(payeeType);
 
   async function disburse(formData: FormData) {
     const savingsAccountId = String(formData.get("savingsAccountId") || defaultSavingsAccountId || "");
@@ -76,6 +79,9 @@ export function DisburseLoanForm({
         externalReference: formData.get("externalReference") || undefined,
         idempotencyKey: crypto.randomUUID(),
         topUpOfLoanId: topUpOfLoanId || undefined,
+        payeeType: formData.get("payeeType") || undefined,
+        payeeName: formData.get("payeeName") || undefined,
+        payeeReference: formData.get("payeeReference") || undefined,
       }),
     });
     const result = await response.json().catch(() => ({}));
@@ -150,6 +156,34 @@ export function DisburseLoanForm({
             <input name="externalReference" />
           </label>
         </div>
+      </fieldset>
+      <fieldset>
+        <legend>Cash-out destination (optional)</legend>
+        <p className="field-hint">
+          Record who the payout actually went to -- a person, an account, mobile money, a card, or a
+          Blink/Lightning destination.
+        </p>
+        <div className="form-row">
+          <label>
+            Destination type
+            <select name="payeeType" value={payeeType} onChange={(event) => setPayeeType(event.target.value as PayeeType | "")}>
+              <option value="">Not recorded</option>
+              {PAYEE_TYPES.map((type) => (
+                <option key={type} value={type}>
+                  {PAYEE_TYPE_LABELS[type]}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Name
+            <input name="payeeName" maxLength={200} placeholder="e.g. Jane Nakato" />
+          </label>
+        </div>
+        <label>
+          Account / number / reference
+          <input name="payeeReference" maxLength={200} placeholder={referencePlaceholder} />
+        </label>
       </fieldset>
       {payoffLoanOptions.length > 0 ? (
         <fieldset>

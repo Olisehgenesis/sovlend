@@ -1289,6 +1289,15 @@ model Journal {
   referenceType           String
   referenceId             String?
   narration               String
+  // Who/what actually received (EXPENSE/disbursement) or sent (INCOME) the money -- distinct
+  // from settlementAccount, which is the institution's own cash/bank/momo account. Nullable and
+  // additive: existing journals (and entry paths that don't collect a destination) are
+  // unaffected. payeeType is a free-form code rather than an enum so new destination kinds
+  // (e.g. a new payment rail) don't need a migration -- see PAYEE_TYPES in
+  // record-manual-journal-entry.ts / disburse-loan.ts for the values the UI currently offers.
+  payeeType               String?
+  payeeName               String?
+  payeeReference          String?
   status                  JournalStatus            @default(PENDING)
   reversalOfId            String?                  @unique @db.Uuid
   idempotencyKey          String                   @unique

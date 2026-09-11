@@ -7,6 +7,7 @@ import { toast } from "sonner";
 
 import { SearchableSelect } from "@/components/searchable-select";
 import { BrandActionButton } from "@/components/ui/brand-action-button";
+import { PAYEE_TYPE_LABELS, PAYEE_TYPES, payeeReferencePlaceholder, type PayeeType } from "@/modules/ledger/domain/journal";
 
 export function ManualJournalEntryForm({
   entryType,
@@ -24,6 +25,7 @@ export function ManualJournalEntryForm({
   const router = useRouter();
   const [pending, setPending] = useState(false);
   const [ledgerAccountId, setLedgerAccountId] = useState("");
+  const [payeeType, setPayeeType] = useState<PayeeType | "">("");
   const label = entryType === "INCOME" ? "income" : "expense";
   // Cash is the most common settlement method in practice, so it's pre-selected ahead of
   // whichever bank/mobile-money account happens to sort first -- still changeable.
@@ -37,6 +39,7 @@ export function ManualJournalEntryForm({
     () => orderedSettlementAccounts.map((account) => ({ value: account.id, label: account.name, searchText: account.type.replaceAll("_", " ") })),
     [orderedSettlementAccounts],
   );
+  const referencePlaceholder = payeeReferencePlaceholder(payeeType);
 
   async function submit(formData: FormData) {
     if (!ledgerAccountId) {
@@ -68,6 +71,9 @@ export function ManualJournalEntryForm({
         businessDate: formData.get("businessDate"),
         narration: formData.get("narration"),
         idempotencyKey: crypto.randomUUID(),
+        payeeType: formData.get("payeeType") || undefined,
+        payeeName: formData.get("payeeName") || undefined,
+        payeeReference: formData.get("payeeReference") || undefined,
       }),
     });
     const result = await response.json();
@@ -134,6 +140,34 @@ export function ManualJournalEntryForm({
         <label>
           Description
           <input name="narration" maxLength={200} required placeholder={entryType === "INCOME" ? "e.g. Donation received" : "e.g. Office rent for September"} />
+        </label>
+      </fieldset>
+      <fieldset>
+        <legend>{entryType === "INCOME" ? "Received from" : "Paid to"} (optional)</legend>
+        <p className="field-hint">
+          Record who the money actually {entryType === "INCOME" ? "came from" : "went to"} -- a person, an account,
+          mobile money, a card, or a Blink/Lightning destination.
+        </p>
+        <div className="form-row">
+          <label>
+            Destination type
+            <select name="payeeType" value={payeeType} onChange={(event) => setPayeeType(event.target.value as PayeeType | "")}>
+              <option value="">Not recorded</option>
+              {PAYEE_TYPES.map((type) => (
+                <option key={type} value={type}>
+                  {PAYEE_TYPE_LABELS[type]}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Name
+            <input name="payeeName" maxLength={200} placeholder="e.g. Jane Nakato" />
+          </label>
+        </div>
+        <label>
+          Account / number / reference
+          <input name="payeeReference" maxLength={200} placeholder={referencePlaceholder} />
         </label>
       </fieldset>
       <div className="form-actions">

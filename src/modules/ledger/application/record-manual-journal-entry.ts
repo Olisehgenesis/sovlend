@@ -5,7 +5,7 @@ import type { PrismaClient } from "@prisma/client";
 import { AuthorizationService } from "@/modules/identity/application/authorization-service";
 import { permissions } from "@/modules/identity/domain/permissions";
 
-import { assertBalancedJournal } from "../domain/journal";
+import { assertBalancedJournal, type PayeeType } from "../domain/journal";
 import { assertPeriodOpen } from "./assert-period-open";
 
 export type ManualJournalEntryType = "INCOME" | "EXPENSE";
@@ -23,6 +23,10 @@ export type ManualJournalEntryCommand = Readonly<{
   businessDate: Date;
   narration: string;
   idempotencyKey: string;
+  /** Who actually received (EXPENSE) or sent (INCOME) the money -- see PAYEE_TYPES. */
+  payeeType?: PayeeType;
+  payeeName?: string;
+  payeeReference?: string;
 }>;
 
 /**
@@ -80,6 +84,9 @@ export async function recordManualJournalEntry(prisma: PrismaClient, command: Ma
         businessDate: command.businessDate,
         referenceType: command.entryType === "INCOME" ? "MANUAL_INCOME" : "MANUAL_EXPENSE",
         narration: command.narration.trim(),
+        payeeType: command.payeeType ?? null,
+        payeeName: command.payeeName?.trim() || null,
+        payeeReference: command.payeeReference?.trim() || null,
         idempotencyKey,
       },
     });
@@ -108,6 +115,9 @@ export async function recordManualJournalEntry(prisma: PrismaClient, command: Ma
       settlementAccountName: settlementAccount.name,
       amountMinor: command.amountMinor.toString(),
       narration: command.narration.trim(),
+      payeeType: command.payeeType ?? null,
+      payeeName: command.payeeName?.trim() || null,
+      payeeReference: command.payeeReference?.trim() || null,
     };
     const eventHash = createHash("sha256")
       .update(JSON.stringify({ correlationId, action: "ledger.manual_entry_posted", metadata }))
