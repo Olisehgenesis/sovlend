@@ -3,10 +3,10 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "dotenvx run --ignore=MISSING_ENV_FILE -- next dev",
     "build": "next build",
     "start": "next start",
-    "worker": "tsx src/worker.ts",
+    "worker": "dotenvx run --ignore=MISSING_ENV_FILE -- tsx src/worker.ts",
     "lint": "eslint",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -57,6 +57,7 @@
     "zod": "^4.5.4"
   },
   "devDependencies": {
+    "@dotenvx/dotenvx": "^2.23.0",
     "@inquirer/prompts": "^8.7.0",
     "@tailwindcss/postcss": "^4",
     "@types/archiver": "^7.0.0",
