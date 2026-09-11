@@ -37,8 +37,14 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# env files (can opt-in for committing if needed)
+# env files -- values are dotenvx-encrypted (see docs/ENV_SECURITY.md), so `.env`/`.env.beta`/
+# `.env.production` are safe to commit if you choose to opt in later, but the decryption keys
+# below must NEVER be committed under any circumstance -- they are the only thing that can
+# unlock the ciphertext, so treat them exactly like a plaintext secret.
 .env*
+!.env.example
+.env.keys*
+*.env.keys
 
 # vercel
 .vercel
