@@ -5,6 +5,7 @@ import { z } from "zod";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { PermissionDeniedError } from "@/modules/identity/application/authorization-service";
+import { PAYEE_TYPES } from "@/modules/ledger/domain/journal";
 import { disburseLoanAndPayOffPrevious } from "@/modules/lending/application/disburse-loan";
 
 const schema = z.object({
@@ -14,6 +15,9 @@ const schema = z.object({
   externalReference: z.string().trim().max(200).optional(),
   idempotencyKey: z.string().uuid(),
   topUpOfLoanId: z.string().uuid().optional(),
+  payeeType: z.enum(PAYEE_TYPES).optional(),
+  payeeName: z.string().trim().max(200).optional(),
+  payeeReference: z.string().trim().max(200).optional(),
 });
 
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -31,6 +35,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       externalReference: parsed.data.externalReference || undefined,
       idempotencyKey: parsed.data.idempotencyKey,
       topUpOfLoanId: parsed.data.topUpOfLoanId,
+      payeeType: parsed.data.payeeType,
+      payeeName: parsed.data.payeeName,
+      payeeReference: parsed.data.payeeReference,
     });
     return NextResponse.json({
       transactionId: disbursement.id,

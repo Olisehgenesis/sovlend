@@ -6,6 +6,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { PermissionDeniedError } from "@/modules/identity/application/authorization-service";
 import { getUserDataScope } from "@/modules/identity/application/data-scope";
+import { PAYEE_TYPES } from "@/modules/ledger/domain/journal";
 import { recordManualJournalEntry } from "@/modules/ledger/application/record-manual-journal-entry";
 
 const schema = z.object({
@@ -17,6 +18,9 @@ const schema = z.object({
   businessDate: z.iso.date(),
   narration: z.string().trim().min(1).max(200),
   idempotencyKey: z.string().uuid(),
+  payeeType: z.enum(PAYEE_TYPES).optional(),
+  payeeName: z.string().trim().max(200).optional(),
+  payeeReference: z.string().trim().max(200).optional(),
 });
 
 export async function POST(request: Request) {
@@ -41,6 +45,9 @@ export async function POST(request: Request) {
       businessDate: new Date(`${parsed.data.businessDate}T00:00:00.000Z`),
       narration: parsed.data.narration,
       idempotencyKey: parsed.data.idempotencyKey,
+      payeeType: parsed.data.payeeType,
+      payeeName: parsed.data.payeeName,
+      payeeReference: parsed.data.payeeReference,
     });
     return NextResponse.json({ journalId: journal.id });
   } catch (error) {

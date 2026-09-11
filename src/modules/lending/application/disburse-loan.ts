@@ -6,7 +6,7 @@ import { z } from "zod";
 import { AuthorizationService } from "@/modules/identity/application/authorization-service";
 import { permissions } from "@/modules/identity/domain/permissions";
 import { assertPeriodOpen } from "@/modules/ledger/application/assert-period-open";
-import { assertBalancedJournal } from "@/modules/ledger/domain/journal";
+import { assertBalancedJournal, type PayeeType } from "@/modules/ledger/domain/journal";
 import { canDisburseWithoutMakerCheckerSplit } from "@/modules/lending/application/loan-application-access";
 import { transferSavingsToLoan } from "@/modules/lending/application/post-repayment";
 import { recordSavingsTransactionInTransaction } from "@/modules/savings/application/post-savings-transaction";
@@ -50,6 +50,10 @@ export type LoanDisbursementCommand = {
   // link is recorded here -- disburseLoan() still credits the full net proceeds to savings
   // exactly as it always has.
   topUpOfLoanId?: string;
+  /** Who actually received the payout (cash-out destination) -- see PAYEE_TYPES. */
+  payeeType?: PayeeType;
+  payeeName?: string;
+  payeeReference?: string;
 };
 
 async function resolveSavingsDestination(
@@ -360,6 +364,9 @@ export async function disburseLoan(
           referenceType: "LOAN_DISBURSEMENT",
           referenceId: transactionRecord.id,
           narration: `Disbursement ${loan.accountNumber}`,
+          payeeType: command.payeeType ?? null,
+          payeeName: command.payeeName?.trim() || null,
+          payeeReference: command.payeeReference?.trim() || null,
           idempotencyKey: `journal:${command.idempotencyKey}`,
         },
       });
@@ -387,6 +394,9 @@ export async function disburseLoan(
         netProceedsMinor: netProceedsMinor.toString(),
         externalReference: command.externalReference ?? null,
         topUpOfLoanId: command.topUpOfLoanId ?? null,
+        payeeType: command.payeeType ?? null,
+        payeeName: command.payeeName?.trim() || null,
+        payeeReference: command.payeeReference?.trim() || null,
       };
       const eventHash = createHash("sha256")
         .update(JSON.stringify({ correlationId, action: "loan.disbursed", metadata }))

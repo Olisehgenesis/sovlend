@@ -1,22 +1,61 @@
 import { NextResponse } from "next/server";
+import { Webhook } from "svix";
 import { z } from "zod";
 
 import { prisma } from "@/lib/prisma";
-import { LnbitsGateway } from "@/modules/investments/infrastructure/lnbits-gateway";
+import { createLightningGateway } from "@/modules/investments/infrastructure/create-lightning-gateway";
 
-const webhookSchema = z.object({ payment_hash: z.string().min(16) });
+/**
+ * Blink webhook payload shape (dev.blink.sv/api/webhooks). We only care about the receive events
+ * (an incoming payment settling); send/onchain events are irrelevant to investor funding.
+ * `status` is lowercase in Blink's webhook examples ("success") even though GraphQL query
+ * responses use uppercase-style enums, so we compare case-insensitively.
+ */
+const blinkWebhookSchema = z.object({
+  eventType: z.string(),
+  transaction: z.object({
+    status: z.string(),
+    initiationVia: z.object({ paymentHash: z.string().optional() }).passthrough(),
+  }),
+});
+
+const RECEIVE_EVENT_TYPES = new Set(["receive.lightning", "receive.intraledger"]);
 
 export async function POST(request: Request) {
-  const payload = webhookSchema.parse(await request.json());
-  const invoice = await prisma.lightningInvoice.findUnique({ where: { paymentHash: payload.payment_hash } });
+  const rawBody = await request.text();
+
+  const webhookSecret = process.env.BLINK_WEBHOOK_SECRET;
+  if (!webhookSecret) return NextResponse.json({ error: "Gateway unavailable" }, { status: 503 });
+
+  const svixId = request.headers.get("svix-id");
+  const svixTimestamp = request.headers.get("svix-timestamp");
+  const svixSignature = request.headers.get("svix-signature");
+  if (!svixId || !svixTimestamp || !svixSignature) return NextResponse.json({ error: "Missing signature headers" }, { status: 400 });
+
+  try {
+    new Webhook(webhookSecret).verify(rawBody, { "svix-id": svixId, "svix-timestamp": svixTimestamp, "svix-signature": svixSignature });
+  } catch {
+    return NextResponse.json({ error: "Invalid signature" }, { status: 400 });
+  }
+
+  const payload = blinkWebhookSchema.parse(JSON.parse(rawBody));
+  if (!RECEIVE_EVENT_TYPES.has(payload.eventType)) return NextResponse.json({ received: true });
+
+  const paymentHash = payload.transaction.initiationVia.paymentHash;
+  if (!paymentHash) return NextResponse.json({ received: true });
+
+  const invoice = await prisma.lightningInvoice.findUnique({ where: { paymentHash } });
   if (!invoice) return NextResponse.json({ received: true });
   if (invoice.status === "PAID") return NextResponse.json({ received: true });
 
-  const lnbitsUrl = process.env.LNBITS_BASE_URL;
-  const lnbitsKey = process.env.LNBITS_INVOICE_KEY;
-  if (!lnbitsUrl || !lnbitsKey) return NextResponse.json({ error: "Gateway unavailable" }, { status: 503 });
-  const settled = await new LnbitsGateway(lnbitsUrl, lnbitsKey).isSettled(payload.payment_hash);
-  if (!settled) return NextResponse.json({ received: true });
+  const settled = payload.transaction.status.toUpperCase() === "SUCCESS";
+  if (!settled) {
+    // Fall back to an explicit settlement check in case Blink ever sends this webhook for a
+    // pending/failed state -- keeps this handler correct even if that assumption changes.
+    const gateway = createLightningGateway();
+    const confirmedSettled = gateway ? await gateway.isSettled(paymentHash) : false;
+    if (!confirmedSettled) return NextResponse.json({ received: true });
+  }
 
   await prisma.$transaction(async (transaction) => {
     const changed = await transaction.lightningInvoice.updateMany({
@@ -25,7 +64,7 @@ export async function POST(request: Request) {
     });
     if (changed.count !== 1) return;
     await transaction.investmentCommitment.update({ where: { id: invoice.commitmentId }, data: { status: "SETTLEMENT_PENDING" } });
-    await transaction.outboxEvent.create({ data: { aggregateType: "InvestmentCommitment", aggregateId: invoice.commitmentId, eventType: "investment.lightning.received", payload: { commitmentId: invoice.commitmentId, amountSats: invoice.amountSats.toString(), paymentHash: payload.payment_hash } } });
+    await transaction.outboxEvent.create({ data: { aggregateType: "InvestmentCommitment", aggregateId: invoice.commitmentId, eventType: "investment.lightning.received", payload: { commitmentId: invoice.commitmentId, amountSats: invoice.amountSats.toString(), paymentHash } } });
   });
 
   return NextResponse.json({ received: true });
