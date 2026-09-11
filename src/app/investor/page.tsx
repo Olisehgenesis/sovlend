@@ -21,6 +21,7 @@ export default async function InvestorPage() {
   if (!investor) redirect("/investor/request-access");
 
   const activeAccesses = investor.accesses.filter((access) => access.status === "ACTIVE");
+  const pendingAccesses = investor.accesses.filter((access) => access.status === "REQUESTED" || access.status === "INVITED");
   const requestedOrganizationIds = new Set(investor.accesses.map((access) => access.organizationId));
   const requestableOrganizations = await prisma.organization.findMany({
     where: { id: { notIn: [...requestedOrganizationIds] } },
@@ -35,6 +36,7 @@ export default async function InvestorPage() {
     <InvestorBoard
       investorName={investor.displayName}
       accesses={activeAccesses.map((access) => ({ id: access.id, organizationId: access.organizationId, organizationName: access.organization.name }))}
+      pendingAccesses={pendingAccesses.map((access) => ({ id: access.id, organizationName: access.organization.name, status: access.status, createdAt: access.createdAt.toISOString() }))}
       requestableOrganizations={requestableOrganizations}
       commitments={investor.commitments.map((item) => ({ id: item.id, organizationName: item.organization.name, amount: formatMinor(item.contributionAmountMinor, item.contributionCurrency), sats: item.amountSats.toLocaleString(), status: item.status, createdAt: item.createdAt.toISOString() }))}
       btcExposure={btcExposure.map((item) => ({
