@@ -14,11 +14,19 @@ export default async function InvestorPage() {
   const investor = await prisma.investorProfile.findUnique({
     where: { userId: session.user.id },
     include: {
-      accesses: { where: { status: "ACTIVE" }, include: { organization: { select: { name: true } } } },
+      accesses: { include: { organization: { select: { name: true } } } },
       commitments: { include: { organization: { select: { name: true } } }, orderBy: { createdAt: "desc" }, take: 100 },
     },
   });
   if (!investor) redirect("/investor/request-access");
+
+  const activeAccesses = investor.accesses.filter((access) => access.status === "ACTIVE");
+  const requestedOrganizationIds = new Set(investor.accesses.map((access) => access.organizationId));
+  const requestableOrganizations = await prisma.organization.findMany({
+    where: { id: { notIn: [...requestedOrganizationIds] } },
+    select: { id: true, name: true },
+    orderBy: { name: "asc" },
+  });
 
   const btcExposure = await loadInvestorBtcExposure(prisma, investor.id);
   const portfolio = await loadInvestorPortfolioSummary(prisma, investor.id);
@@ -26,7 +34,8 @@ export default async function InvestorPage() {
   return (
     <InvestorBoard
       investorName={investor.displayName}
-      accesses={investor.accesses.map((access) => ({ id: access.id, organizationId: access.organizationId, organizationName: access.organization.name }))}
+      accesses={activeAccesses.map((access) => ({ id: access.id, organizationId: access.organizationId, organizationName: access.organization.name }))}
+      requestableOrganizations={requestableOrganizations}
       commitments={investor.commitments.map((item) => ({ id: item.id, organizationName: item.organization.name, amount: formatMinor(item.contributionAmountMinor, item.contributionCurrency), sats: item.amountSats.toLocaleString(), status: item.status, createdAt: item.createdAt.toISOString() }))}
       btcExposure={btcExposure.map((item) => ({
         organizationId: item.organizationId,

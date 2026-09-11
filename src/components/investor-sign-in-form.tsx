@@ -1,6 +1,6 @@
 "use client";
 
-import { Fingerprint, LoaderCircle, LockKeyhole, Mail, Send } from "lucide-react";
+import { Fingerprint, LoaderCircle, LockKeyhole, Mail, User, UserPlus } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
@@ -9,9 +9,7 @@ import { toast } from "sonner";
 import { authClient } from "@/lib/auth-client";
 import { SovLendMark } from "@/components/sovlend-mark";
 
-type Organization = { id: string; name: string };
-
-export function InvestorSignInForm({ organizations }: { organizations: Organization[] }) {
+export function InvestorSignInForm() {
   const router = useRouter();
   const [tab, setTab] = useState<"signin" | "signup">("signin");
   const [pending, setPending] = useState(false);
@@ -50,22 +48,37 @@ export function InvestorSignInForm({ organizations }: { organizations: Organizat
     router.refresh();
   }
 
-  async function requestAccess(formData: FormData) {
+  async function signUp(formData: FormData) {
     setPending(true);
-    const response = await fetch("/api/investor/access-requests", {
+    const email = String(formData.get("email"));
+    const password = String(formData.get("password"));
+    const name = String(formData.get("name"));
+
+    const response = await fetch("/api/investor/sign-up", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(Object.fromEntries(formData)),
+      body: JSON.stringify({ name, email, password }),
     });
-    const result = await response.json();
-    setPending(false);
+    const result = await response.json().catch(() => null);
 
     if (!response.ok) {
-      toast.error(result.error ?? "Request could not be sent");
+      setPending(false);
+      toast.error(result?.error ?? "Account could not be created");
       return;
     }
 
-    toast.success("Request sent -- we'll email you an invite once it's approved");
+    const signInResult = await authClient.signIn.email({ email, password, callbackURL: "/investor" });
+    setPending(false);
+
+    if (signInResult.error) {
+      toast.success("Account created -- sign in below to continue");
+      setTab("signin");
+      return;
+    }
+
+    toast.success("Account created -- request access to a business once you're in");
+    router.replace("/investor");
+    router.refresh();
   }
 
   return (
@@ -73,14 +86,14 @@ export function InvestorSignInForm({ organizations }: { organizations: Organizat
       <div className="auth-aside">
         <p className="eyebrow">Invest with visibility</p>
         <strong>One login for every business you back. Track each contribution from invoice to settlement.</strong>
-        <small>New investors are reviewed before their first invite goes out -- existing investors can sign in below with email, password, or a passkey.</small>
+        <small>Create your account instantly -- business details unlock once an admin approves your access request.</small>
       </div>
       <div className="auth-card">
         <div className="auth-brand"><SovLendMark /><span>SovLend</span></div>
         <div className="auth-copy">
           <p className="eyebrow">Investor portal</p>
-          <h1>{tab === "signin" ? "Sign in to invest" : "Request investor access"}</h1>
-          <p>{tab === "signin" ? "Use the email, password, or passkey from your investor invite." : "Tell us which business you want to back -- we'll review and send an invite."}</p>
+          <h1>{tab === "signin" ? "Sign in to invest" : "Create your investor account"}</h1>
+          <p>{tab === "signin" ? "Use the email, password, or passkey on your investor account." : "Takes a minute. You can request access to a business right after."}</p>
         </div>
         <div className="auth-tabs" role="tablist">
           <button className={tab === "signin" ? "auth-tab active" : "auth-tab"} onClick={() => setTab("signin")} role="tab" type="button">Sign in</button>
@@ -99,17 +112,14 @@ export function InvestorSignInForm({ organizations }: { organizations: Organizat
             <button className="passkey-button" disabled={pending} onClick={signInWithPasskey} type="button"><Fingerprint size={19} /> Sign in with a passkey</button>
           </>
         ) : (
-          <form action={requestAccess} className="stack-form compact-form">
-            <label>Business
-              <select name="organizationId" required defaultValue="">
-                <option value="" disabled>Select a business</option>
-                {organizations.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
-              </select>
-            </label>
-            <label>Your name<input name="name" required /></label>
-            <label>Email<input name="email" type="email" required /></label>
-            <label>Message<textarea name="message" rows={3} /></label>
-            <button className="invest-button" disabled={pending}>{pending ? <LoaderCircle className="spin" size={18} /> : <Send size={18} />} Request investor access</button>
+          <form action={signUp} className="auth-form">
+            <label htmlFor="investor-signup-name">Your name</label>
+            <div className="auth-input"><User size={17} /><input id="investor-signup-name" name="name" autoComplete="name" required /></div>
+            <label htmlFor="investor-signup-email">Email address</label>
+            <div className="auth-input"><Mail size={17} /><input id="investor-signup-email" name="email" type="email" autoComplete="username" required /></div>
+            <label htmlFor="investor-signup-password">Password</label>
+            <div className="auth-input"><LockKeyhole size={17} /><input id="investor-signup-password" name="password" type="password" minLength={6} autoComplete="new-password" required /></div>
+            <button className="primary auth-submit" disabled={pending} type="submit">{pending ? <LoaderCircle className="spin" size={17} /> : <UserPlus size={17} />} Create account</button>
           </form>
         )}
         <p className="auth-footnote">Not an investor? <Link href="/sign-in">Sign in to your workspace</Link>.</p>
