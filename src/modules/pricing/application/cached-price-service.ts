@@ -35,7 +35,11 @@ export class CachedPriceService {
     if (cached) {
       const age = this.now().getTime() - cached.observedAt.getTime();
       if (purpose === "DISPLAY" && age <= CachedPriceService.displayMaxAgeMs) {
-        if (age >= CachedPriceService.refreshAfterMs) void this.refreshQueue.enqueue(pair);
+        if (age >= CachedPriceService.refreshAfterMs) {
+          // Best-effort background cache warm-up -- must never crash the request or the process
+          // on failure (e.g. queue backend down), so any rejection is swallowed here.
+          this.refreshQueue.enqueue(pair).catch(() => {});
+        }
         return cached;
       }
       if (purpose === "TRANSACTION" && age <= CachedPriceService.transactionMaxAgeMs && cached.sources.length >= 2) {

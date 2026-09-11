@@ -49,7 +49,9 @@ export class BullMqPriceRefreshQueue implements PriceRefreshQueue {
   async enqueue(pair: CurrencyPair) {
     const bucket = Math.floor(Date.now() / 300_000);
     await this.queue.add("refresh-price", pair, {
-      jobId: `price:${pair.base}:${pair.quote}:${bucket}`,
+      // BullMQ rejects a custom jobId with more than 3 colon-separated segments (it reserves that
+      // shape for repeatable-job ids) -- use dashes here so this never collides with that rule.
+      jobId: `price-${pair.base}-${pair.quote}-${bucket}`,
       attempts: 6,
       backoff: { type: "exponential", delay: 2_000 },
       removeOnComplete: 1_000,

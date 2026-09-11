@@ -1,17 +1,23 @@
+import { headers } from "next/headers";
 import Link from "next/link";
+import { redirect } from "next/navigation";
 
 import { Breadcrumbs } from "@/components/breadcrumbs";
 import { InvestorAccessReviewList } from "@/components/investor-access-review-list";
+import { auth } from "@/lib/auth";
+import { loadInvestorAccessScope } from "@/lib/can-manage-investor-access";
 import { prisma } from "@/lib/prisma";
-import { requireSuperAdmin } from "@/lib/require-super-admin";
 
 export const dynamic = "force-dynamic";
 
 export default async function InvestorsBackofficePage() {
-  await requireSuperAdmin();
+  const session = await auth.api.getSession({ headers: await headers() });
+  if (!session) redirect("/sign-in");
+  const scope = await loadInvestorAccessScope(session);
+  if (!scope) redirect("/");
 
   const pending = await prisma.investorOrganizationAccess.findMany({
-    where: { status: "REQUESTED" },
+    where: { status: "REQUESTED", ...(scope.isSuperAdmin ? {} : { organizationId: scope.organizationId }) },
     include: { investor: { select: { displayName: true, kycStatus: true } }, organization: { select: { name: true } } },
     orderBy: { createdAt: "asc" },
   });
@@ -19,10 +25,11 @@ export default async function InvestorsBackofficePage() {
   return (
     <main className="directory-page">
       <Breadcrumbs
-        items={[
-          { label: "Backoffice", href: "/backoffice" },
-          { label: "Investors" },
-        ]}
+        items={
+          scope.isSuperAdmin
+            ? [{ label: "Backoffice", href: "/backoffice" }, { label: "Investors" }]
+            : [{ label: "Investors" }]
+        }
       />
       <header className="directory-header">
         <div>
@@ -40,7 +47,7 @@ export default async function InvestorsBackofficePage() {
           createdAt: item.createdAt.toISOString(),
         }))}
       />
-      <p><Link href="/backoffice">Back to backoffice</Link></p>
+      {scope.isSuperAdmin ? <p><Link href="/backoffice">Back to backoffice</Link></p> : null}
     </main>
   );
 }

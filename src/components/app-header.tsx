@@ -6,6 +6,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
 import { AccountMenu } from "./account-menu";
+import { NotificationBell } from "./notification-bell";
 
 export type ReportNavSection = { id: string; title: string; reports: { href: string; title: string }[] };
 
@@ -13,6 +14,7 @@ export function AppHeader({
   admin = false,
   canManageProducts = false,
   canPostLedger = false,
+  canManageInvestors = false,
   workspaceName,
   officeName,
   reportSections = [],
@@ -20,6 +22,7 @@ export function AppHeader({
   admin?: boolean;
   canManageProducts?: boolean;
   canPostLedger?: boolean;
+  canManageInvestors?: boolean;
   workspaceName?: string | null;
   officeName?: string | null;
   reportSections?: ReportNavSection[];
@@ -320,6 +323,9 @@ export function AppHeader({
               <Link href="/backoffice" onClick={closeMenus}>
                 Admin panel
               </Link>
+              <Link href="/backoffice/investors" onClick={closeMenus}>
+                Investor access requests
+              </Link>
               <Link href="/backoffice/products" onClick={closeMenus}>
                 Products
               </Link>
@@ -334,7 +340,7 @@ export function AppHeader({
               </Link>
             </div>
           </details>
-        ) : canManageProducts ? (
+        ) : canManageProducts || canManageInvestors ? (
           <details open={openMenu === "admin"}>
             <summary
               onClick={(event) => {
@@ -346,9 +352,16 @@ export function AppHeader({
               <ChevronDown size={13} />
             </summary>
             <div className="header-dropdown">
-              <Link href="/backoffice/products" onClick={closeMenus}>
-                Products
-              </Link>
+              {canManageInvestors ? (
+                <Link href="/backoffice/investors" onClick={closeMenus}>
+                  Investor access requests
+                </Link>
+              ) : null}
+              {canManageProducts ? (
+                <Link href="/backoffice/products" onClick={closeMenus}>
+                  Products
+                </Link>
+              ) : null}
             </div>
           </details>
         ) : null}
@@ -368,6 +381,7 @@ export function AppHeader({
           </button>
         </form>
       </nav>
+      {canManageInvestors ? <NotificationBell /> : null}
       <AccountMenu />
     </header>
   );

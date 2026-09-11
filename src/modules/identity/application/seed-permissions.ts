@@ -64,6 +64,8 @@ const descriptions: Record<string, string> = {
 
   [permissions.btcAccountView]: "View client BTC accounts and balances",
   [permissions.btcAccountManage]: "Add, edit, and remove client BTC accounts",
+
+  [permissions.investorAccessManage]: "Approve or reject investor requests to access and fund a business",
 };
 
 /** Exported so a test can assert every permission code has a description -- Prisma requires

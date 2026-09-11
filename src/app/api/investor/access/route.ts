@@ -35,11 +35,32 @@ export async function POST(request: Request) {
       where: { id: existing.id },
       data: { status: "REQUESTED", approvedAt: null },
     });
+    await notifyInvestorAccessApprovers(updated.id, updated.organizationId, investor.displayName);
     return NextResponse.json({ status: updated.status });
   }
 
   const created = await prisma.investorOrganizationAccess.create({
     data: { investorId: investor.id, organizationId: input.organizationId, status: "REQUESTED" },
   });
+  await notifyInvestorAccessApprovers(created.id, created.organizationId, investor.displayName);
   return NextResponse.json({ status: created.status }, { status: 201 });
+}
+
+/** Lets branch managers/admins see and act on the request from the notification bell (see
+ * NotificationBell in app-header.tsx) instead of having to remember to check
+ * /backoffice/investors. audienceId is the business's organizationId so each staff member only
+ * sees requests for the business they manage; the deduplication key is prefixed with the
+ * access row's id so the approve/reject route can mark it read once it's actioned. */
+async function notifyInvestorAccessApprovers(accessId: string, organizationId: string, investorName: string) {
+  const organization = await prisma.organization.findUnique({ where: { id: organizationId }, select: { name: true } });
+  await prisma.notification.create({
+    data: {
+      audienceType: "INVESTOR_APPROVAL",
+      audienceId: organizationId,
+      title: "New investor access request",
+      body: `${investorName} requested access to fund ${organization?.name ?? "a business"}.`,
+      channels: { inApp: true },
+      deduplicationKey: `investor-access-request:${accessId}:${Date.now()}`,
+    },
+  });
 }

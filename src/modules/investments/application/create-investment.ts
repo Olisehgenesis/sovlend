@@ -18,10 +18,10 @@ export async function createInvestment(
   },
 ) {
   const access = await prisma.investorOrganizationAccess.findFirst({
-    where: { investor: { userId: command.userId }, organizationId: command.organizationId, status: "ACTIVE" },
+    where: { investor: { userId: command.userId }, organizationId: command.organizationId, status: { in: ["ACTIVE", "REQUESTED"] } },
     include: { investor: true, organization: { select: { name: true } } },
   });
-  if (!access) throw new Error("Active investor access is required for this organization");
+  if (!access) throw new Error("Investor access is required for this organization");
 
   const btcUsd = await prices.crypto.getPrice({ base: "BTC", quote: "USD" }, "TRANSACTION");
   const usdUgx = command.currencyCode === "UGX"
