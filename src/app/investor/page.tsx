@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { InvestorBoard } from "@/components/investor-board";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { loadInvestorBtcExposure } from "@/modules/btc/application/load-investor-btc-exposure";
 import { formatMinor } from "@/modules/reporting/application/dashboard";
 
 export default async function InvestorPage() {
@@ -18,5 +19,24 @@ export default async function InvestorPage() {
   });
   if (!investor) redirect("/investor/request-access");
 
-  return <InvestorBoard investorName={investor.displayName} accesses={investor.accesses.map((access) => ({ id: access.id, organizationId: access.organizationId, organizationName: access.organization.name }))} commitments={investor.commitments.map((item) => ({ id: item.id, organizationName: item.organization.name, amount: formatMinor(item.contributionAmountMinor, item.contributionCurrency), sats: item.amountSats.toLocaleString(), status: item.status, createdAt: item.createdAt.toISOString() }))} />;
+  const btcExposure = await loadInvestorBtcExposure(prisma, investor.id);
+
+  return (
+    <InvestorBoard
+      investorName={investor.displayName}
+      accesses={investor.accesses.map((access) => ({ id: access.id, organizationId: access.organizationId, organizationName: access.organization.name }))}
+      commitments={investor.commitments.map((item) => ({ id: item.id, organizationName: item.organization.name, amount: formatMinor(item.contributionAmountMinor, item.contributionCurrency), sats: item.amountSats.toLocaleString(), status: item.status, createdAt: item.createdAt.toISOString() }))}
+      btcExposure={btcExposure.map((item) => ({
+        organizationId: item.organizationId,
+        organizationName: item.organizationName,
+        clientBtcSats: item.clientBtcSats.toString(),
+        investorFundedSats: item.investorFundedSats.toString(),
+        totalBtcSats: item.totalBtcSats.toString(),
+        totalBtcValueFormatted: item.totalBtcUgxMinor === null ? null : formatMinor(item.totalBtcUgxMinor, "UGX"),
+        fiatPortfolioFormatted: formatMinor(item.fiatPortfolioMinor, "UGX"),
+        fundsUnderManagementFormatted: formatMinor(item.fundsUnderManagementMinor, "UGX"),
+        btcExposurePercent: (item.btcExposureBps / 100).toFixed(1),
+      }))}
+    />
+  );
 }

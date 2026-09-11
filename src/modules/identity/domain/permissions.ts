@@ -59,6 +59,10 @@ export const permissions = {
   reportSavingsAccountListing: "REPORT_VIEW_SAVINGS_ACCOUNT_LISTING",
   reportSavingsTransactions: "REPORT_VIEW_SAVINGS_TRANSACTIONS",
   reportSavingsPortfolioByOfficer: "REPORT_VIEW_SAVINGS_PORTFOLIO_BY_OFFICER",
+
+  // BTC integration Phase 1 (read-only custody, see docs/btc-integration-plan.md §7).
+  btcAccountView: "BTC_ACCOUNT_VIEW",
+  btcAccountManage: "BTC_ACCOUNT_MANAGE",
 } as const;
 
 export type PermissionCode = (typeof permissions)[keyof typeof permissions];
