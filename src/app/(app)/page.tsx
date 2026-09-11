@@ -9,6 +9,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { auth } from "@/lib/auth";
+import { prisma } from "@/lib/prisma";
 import { formatMinor, loadDashboard } from "@/modules/reporting/application/dashboard";
 
 const ugxCurrencyFormatter = new Intl.NumberFormat("en-UG", {
@@ -29,6 +30,12 @@ export default async function Home() {
 
   const dashboard = await loadDashboard(session.user.id);
   if (!dashboard) {
+    // Investors have no staff workspace assignment -- route them to their own portal instead of
+    // a dead-end "workspace required" screen (this also covers investors landing here directly,
+    // e.g. via a bookmark, rather than through the sign-in page's "Investor portal" button).
+    const investor = await prisma.investorProfile.findUnique({ where: { userId: session.user.id }, select: { id: true } });
+    if (investor) redirect("/investor");
+
     return (
       <main className="setup-state">
         <ShieldCheck size={30} />

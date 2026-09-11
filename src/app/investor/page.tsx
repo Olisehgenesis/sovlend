@@ -5,6 +5,7 @@ import { InvestorBoard } from "@/components/investor-board";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { loadInvestorBtcExposure } from "@/modules/btc/application/load-investor-btc-exposure";
+import { loadInvestorPortfolioSummary } from "@/modules/investments/application/load-investor-portfolio-summary";
 import { formatMinor } from "@/modules/reporting/application/dashboard";
 
 export default async function InvestorPage() {
@@ -20,6 +21,7 @@ export default async function InvestorPage() {
   if (!investor) redirect("/investor/request-access");
 
   const btcExposure = await loadInvestorBtcExposure(prisma, investor.id);
+  const portfolio = await loadInvestorPortfolioSummary(prisma, investor.id);
 
   return (
     <InvestorBoard
@@ -37,6 +39,16 @@ export default async function InvestorPage() {
         fundsUnderManagementFormatted: formatMinor(item.fundsUnderManagementMinor, "UGX"),
         btcExposurePercent: (item.btcExposureBps / 100).toFixed(1),
       }))}
+      portfolio={{
+        memberSince: portfolio.memberSince.toISOString(),
+        businessCount: portfolio.businessCount,
+        fundedCount: portfolio.fundedCount,
+        fundedSats: portfolio.fundedSats.toLocaleString(),
+        pendingCount: portfolio.pendingCount,
+        pendingSats: portfolio.pendingSats.toLocaleString(),
+        fundedByCurrency: portfolio.fundedByCurrency.map((entry) => ({ currencyCode: entry.currencyCode, formatted: formatMinor(entry.amountMinor, entry.currencyCode) })),
+        timeline: portfolio.timeline.map((point) => ({ date: point.date, cumulativeSats: Number(point.cumulativeSats) })),
+      }}
     />
   );
 }

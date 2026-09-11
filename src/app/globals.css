@@ -174,6 +174,7 @@ tbody tr:last-child td { border-bottom: 0; }.mono { font-family: var(--font-mono
 .auth-submit { width: 100%; margin-top: 10px; justify-content: center; }.auth-divider { margin: 20px 0; border-top: 1px solid var(--line); text-align: center; }.auth-divider span { padding: 0 10px; color: var(--muted); background: white; position: relative; top: -10px; font-size: 11px; }
 .auth-tabs { display: flex; gap: 6px; margin: 16px 0 4px; border: 1px solid var(--line); border-radius: 6px; padding: 3px; }.auth-tab { flex: 1; height: 32px; border: 0; border-radius: 4px; background: transparent; color: var(--muted); font-weight: 600; font-size: 13px; cursor: pointer; }.auth-tab.active { background: var(--forest); color: white; }
 .passkey-button { width: 100%; height: 40px; display: flex; align-items: center; justify-content: center; gap: 8px; color: var(--forest); background: white; border: 1px solid #b9c9bf; border-radius: 5px; font-weight: 650; }.passkey-button:hover { background: #f3f7f4; }
+.investor-portal-button { width: 100%; height: 40px; margin-top: 8px; display: flex; align-items: center; justify-content: center; gap: 8px; color: #0e6037; background: #e4f4e9; border: 1px solid #25814f; border-radius: 5px; font-weight: 650; }.investor-portal-button:hover { background: #cfebd8; }.investor-portal-chip { width: 100%; height: 40px; margin-top: 8px; display: flex; align-items: center; justify-content: center; gap: 8px; color: #0e6037; background: #e4f4e9; border: 1px solid #25814f; border-radius: 5px; font-weight: 650; }.investor-portal-chip:hover { background: #cfebd8; }
 .auth-footnote { margin: 22px 0 0; color: var(--muted); text-align: center; font-size: 11px; }
 .spin { animation: spin .8s linear infinite; } @keyframes spin { to { transform: rotate(360deg); } }
 .admin-page, .security-page { min-height: 100vh; padding: 42px clamp(20px, 5vw, 70px); background: var(--canvas); }
@@ -191,6 +192,14 @@ tbody tr:last-child td { border-bottom: 0; }.mono { font-family: var(--font-mono
 .investor-header { margin-bottom: 28px; padding-bottom: 22px; border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; align-items: flex-end; gap: 20px; }.investor-header h1 { margin: 0; }.investor-header p:last-child { margin: 7px 0 0; color: var(--muted); font-size: 13px; }
 .security-link, .green-link { color: #17643f; font-size: 12px; font-weight: 750; text-decoration: underline; text-underline-offset: 3px; }.security-link:focus-visible, .green-link:focus-visible { outline: 2px solid #17643f; outline-offset: 3px; }
 .investor-grid { margin-bottom: 16px; display: grid; grid-template-columns: minmax(340px, 1fr) minmax(320px, .8fr); gap: 16px; }.invest-panel, .invoice-panel, .invoice-placeholder { min-height: 430px; }
+.portfolio-overview { margin-bottom: 16px; }
+.kpi-row { margin: 18px 0 6px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+.kpi-card { padding: 14px 16px; display: flex; flex-direction: column; gap: 4px; background: #f7faf8; border: 1px solid var(--line); border-radius: 6px; }
+.kpi-label { color: var(--muted); font-size: 11px; font-weight: 650; text-transform: uppercase; letter-spacing: .03em; }
+.kpi-value { font-size: 19px; font-weight: 750; color: var(--ink); }
+.kpi-sub { color: var(--muted); font-size: 11px; }
+.portfolio-chart { margin-top: 16px; }
+.chart-empty-note { margin-top: 16px; display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; }
 .amount-row { display: grid; grid-template-columns: 1fr 120px; gap: 10px; }
 .invest-button { min-height: 42px; padding: 0 15px; display: flex; align-items: center; justify-content: center; gap: 8px; color: #0e6037; background: #e4f4e9; border: 1px solid #25814f; border-radius: 5px; font-weight: 750; }.invest-button:hover { color: #073d23; background: #cfebd8; border-color: #17643f; }.invest-button:disabled { color: #597567; background: #edf2ef; border-color: #afc0b5; cursor: not-allowed; }
 .invoice-panel { display: flex; flex-direction: column; align-items: center; }.invoice-panel .panel-heading { width: 100%; }.invoice-panel img { width: min(280px, calc(100% - 48px)); height: auto; margin: 22px; border: 8px solid white; }.invoice-panel code { width: calc(100% - 40px); padding: 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); background: #f3f6f3; font-size: 10px; }.invoice-panel > small { margin: 12px 0 20px; color: var(--muted); }
@@ -258,7 +267,7 @@ tbody tr:last-child td { border-bottom: 0; }.mono { font-family: var(--font-mono
 .settlement-pending, .awaiting-payment, .awaiting-invoice { color: #725510; background: #f5ebce; }
 
 @media (max-width: 840px) {
-  .investor-grid { grid-template-columns: 1fr; }.investor-header { align-items: flex-start; }.invest-panel, .invoice-panel, .invoice-placeholder { min-height: 360px; }
+  .investor-grid { grid-template-columns: 1fr; }.investor-header { align-items: flex-start; }.invest-panel, .invoice-panel, .invoice-placeholder { min-height: 360px; }.kpi-row { grid-template-columns: 1fr; }
 }
 @media (max-width: 520px) {
   .investor-page { padding-top: 22px; }.investor-header { display: block; }.security-link { display: inline-block; margin-top: 14px; }.amount-row { grid-template-columns: 1fr; }
