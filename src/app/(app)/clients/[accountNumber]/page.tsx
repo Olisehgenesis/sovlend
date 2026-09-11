@@ -1,4 +1,4 @@
-import { CircleUserRound, Coins, FileText, IdCard, PiggyBank, StickyNote, Users, Wallet } from "lucide-react";
+import { Bitcoin, CircleUserRound, Coins, FileText, IdCard, PiggyBank, StickyNote, Users, Wallet } from "lucide-react";
 import { headers } from "next/headers";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
@@ -6,12 +6,15 @@ import { notFound, redirect } from "next/navigation";
 import { Breadcrumbs } from "@/components/breadcrumbs";
 import { AddChargeForm, ApplyForLoanButton, ApproveSavingsAccountButton, ChargesList, DepositWithdrawForm } from "@/components/client-account-panel";
 import { ClientActionsMenu } from "@/components/client-actions-menu";
+import { ClientBtcAccountsPanel } from "@/components/client-btc-accounts-panel";
 import { ClientQuickActions } from "@/components/client-quick-actions";
 import { EntityAvatar } from "@/components/entity-avatar";
 import { AddFamilyMemberForm, AddIdentifierForm, AddNoteForm, UploadDocumentForm } from "@/components/client-record-forms";
 import { NewSavingsAccountWizard } from "@/components/new-savings-account-wizard";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { loadBtcUgxPrice } from "@/modules/btc/application/load-btc-price";
+import { loadClientBtcAccounts } from "@/modules/btc/application/load-client-btc-accounts";
 import { AuthorizationService } from "@/modules/identity/application/authorization-service";
 import { clientScopeWhere, getUserDataScope } from "@/modules/identity/application/data-scope";
 import { permissions } from "@/modules/identity/domain/permissions";
@@ -29,6 +32,7 @@ const tabs = [
   { key: "identities", label: "Identities", icon: IdCard },
   { key: "documents", label: "Documents", icon: FileText },
   { key: "notes", label: "Notes", icon: StickyNote },
+  { key: "btc", label: "BTC", icon: Bitcoin },
 ] as const;
 
 type TabKey = (typeof tabs)[number]["key"];
@@ -62,18 +66,23 @@ export default async function ClientDetailPage({ params, searchParams }: { param
   if (!client) notFound();
 
   const authorization = new AuthorizationService(prisma);
-  const [canManage, canApplyLoan, canTransact, canRecordRepayment, canApproveSavings, wallet, savingsProducts, officers, savingsCharges, settlementAccounts] = await Promise.all([
+  const [canManage, canApplyLoan, canTransact, canRecordRepayment, canApproveSavings, canManageBtc, wallet, savingsProducts, officers, savingsCharges, settlementAccounts] = await Promise.all([
     authorization.isAllowed({ actorUserId: session.user.id, permission: permissions.clientManage, organizationId: scope.organizationId, officeId: client.officeId }),
     authorization.isAllowed({ actorUserId: session.user.id, permission: permissions.loanApply, organizationId: scope.organizationId, officeId: client.officeId }),
     authorization.isAllowed({ actorUserId: session.user.id, permission: permissions.savingsTransact, organizationId: scope.organizationId, officeId: client.officeId }),
     authorization.isAllowed({ actorUserId: session.user.id, permission: permissions.loanRepayment, organizationId: scope.organizationId, officeId: client.officeId }),
     authorization.isAllowed({ actorUserId: session.user.id, permission: permissions.savingsApprove, organizationId: scope.organizationId, officeId: client.officeId }),
+    authorization.isAllowed({ actorUserId: session.user.id, permission: permissions.btcAccountManage, organizationId: scope.organizationId, officeId: client.officeId }),
     getClientWalletSummary(prisma, client.id),
     prisma.savingsProduct.findMany({ where: { organizationId: scope.organizationId, active: true }, orderBy: { name: "asc" } }),
     prisma.user.findMany({ where: { organizationId: scope.organizationId, officeId: client.officeId, systemRole: { in: [...STAFF_SYSTEM_ROLES] } }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
     prisma.chargeDefinition.findMany({ where: { organizationId: scope.organizationId, appliesTo: "SAVINGS", active: true }, orderBy: { name: "asc" } }),
     prisma.settlementAccount.findMany({ where: { organizationId: scope.organizationId, active: true }, select: { id: true, name: true, type: true, provider: true, accountReference: true, currencyCode: true }, orderBy: [{ type: "asc" }, { name: "asc" }] }),
   ]);
+
+  // Only resolve BTC balances (which may call out to a public block explorer for on-chain-tracked
+  // accounts) when the BTC tab is actually open -- keeps every other tab load fast.
+  const [btcAccounts, btcPriceUgx] = activeTab === "btc" ? await Promise.all([loadClientBtcAccounts(prisma, client.id), loadBtcUgxPrice(prisma)]) : [[], null];
 
   const fullName = [client.firstName, client.middleName, client.lastName].filter(Boolean).join(" ");
   const walletFormatted = formatMinor(wallet.netBalanceMinor, wallet.currencyCode);
@@ -327,6 +336,27 @@ export default async function ClientDetailPage({ params, searchParams }: { param
           <div className="panel-heading"><div><h2>Notes</h2><p>Internal notes visible to your office</p></div></div>
           {client.notes.length === 0 ? <div className="empty-state compact-empty"><StickyNote size={26} /><strong>No notes yet</strong><p>Leave context for other staff working with this client.</p></div> : <ul className="note-list">{client.notes.map((note) => <li key={note.id}><p>{note.body}</p><small>{note.author.name} \u00b7 {new Intl.DateTimeFormat("en-UG", { dateStyle: "medium", timeStyle: "short" }).format(note.createdAt)}</small></li>)}</ul>}
           <AddNoteForm clientId={client.id} />
+        </section>
+      ) : null}
+
+      {activeTab === "btc" ? (
+        <section className="panel">
+          <div className="panel-heading"><div><h2>BTC accounts</h2><p>Read-only record of client Bitcoin holdings -- SovLend holds no keys and moves no funds here</p></div></div>
+          <ClientBtcAccountsPanel
+            accounts={btcAccounts.map((account) => ({
+              id: account.id,
+              label: account.label,
+              balanceSource: account.balanceSource,
+              address: account.address,
+              status: account.status,
+              balanceSats: account.balanceSats.toString(),
+              balanceUnavailable: account.balanceUnavailable,
+              balanceAsOf: account.balanceAsOf?.toISOString() ?? null,
+            }))}
+            btcPriceUgx={btcPriceUgx?.priceUgx ?? null}
+            canManage={canManageBtc}
+            clientId={client.id}
+          />
         </section>
       ) : null}
         </div>

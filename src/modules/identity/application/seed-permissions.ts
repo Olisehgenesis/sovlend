@@ -61,6 +61,9 @@ const descriptions: Record<string, string> = {
   [permissions.reportSavingsPortfolioByOfficer]: "View savings balances grouped by savings officer",
 
   [permissions.reportClientStatement]: "Search a client and print their financial statement",
+
+  [permissions.btcAccountView]: "View client BTC accounts and balances",
+  [permissions.btcAccountManage]: "Add, edit, and remove client BTC accounts",
 };
 
 /** Exported so a test can assert every permission code has a description -- Prisma requires
