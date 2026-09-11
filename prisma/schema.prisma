@@ -184,6 +184,7 @@ model Organization {
   investorAccesses                 InvestorOrganizationAccess[]
   investorInvites                  InvestorInvite[]
   investorRequests                 InvestorAccessRequest[]
+  clientBtcAccounts                ClientBtcAccount[]
   investments                      InvestmentCommitment[]
   funds                            Fund[]
   settlementAccounts               SettlementAccount[]
@@ -403,12 +404,38 @@ model Client {
   notes               ClientNote[]
   charges             Charge[]
   groupMemberships    GroupMember[]
+  btcAccounts         ClientBtcAccount[]
   createdAt           DateTime             @default(now())
   updatedAt           DateTime             @updatedAt
 
   @@unique([organizationId, accountNumber])
   @@index([organizationId, officeId, status])
   @@index([organizationId, externalId])
+}
+
+// BTC integration Phase 1 (read-only custody, see docs/btc-integration-plan.md §7): a data
+// record for a client's BTC holding -- balance, optional public on-chain address, and status --
+// with no private key material and no money movement in this phase. Balance is either recorded
+// manually by staff ("MANUAL", used e.g. for a Blink/exchange wallet balance staff can see but
+// SovLend has no read API for yet) or resolved read-only from a public on-chain address balance
+// ("ON_CHAIN_ADDRESS") at render time; either way SovLend never holds a key for these funds.
+model ClientBtcAccount {
+  id                String       @id @default(uuid()) @db.Uuid
+  organizationId    String       @db.Uuid
+  clientId          String       @db.Uuid
+  label             String
+  balanceSource     String       @default("MANUAL")
+  address           String?
+  manualBalanceSats BigInt       @default(0)
+  status            String       @default("ACTIVE")
+  createdById       String
+  organization      Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  client            Client       @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+
+  @@index([organizationId, status])
+  @@index([clientId])
 }
 
 model ClientFamilyMember {
