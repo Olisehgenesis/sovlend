@@ -1,6 +1,6 @@
 "use client";
 
-import { Fingerprint, LoaderCircle, LockKeyhole, Mail, User, UserPlus } from "lucide-react";
+import { ArrowLeft, Fingerprint, LoaderCircle, LockKeyhole, Mail, User, UserPlus } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
@@ -13,6 +13,12 @@ export function InvestorSignInForm() {
   const router = useRouter();
   const [tab, setTab] = useState<"signin" | "signup">("signin");
   const [pending, setPending] = useState(false);
+  const [needsPasskeyDetails, setNeedsPasskeyDetails] = useState(false);
+
+  function goToInvestorDashboard() {
+    router.replace("/investor");
+    router.refresh();
+  }
 
   async function signIn(formData: FormData) {
     setPending(true);
@@ -29,23 +35,43 @@ export function InvestorSignInForm() {
     }
 
     toast.success("Signed in securely");
-    router.replace("/investor");
-    router.refresh();
+    goToInvestorDashboard();
   }
 
-  async function signInWithPasskey() {
+  async function continueWithPasskey() {
     setPending(true);
     const result = await authClient.signIn.passkey({ autoFill: false });
     setPending(false);
 
-    if (result.error) {
-      toast.error(result.error.message ?? "Passkey sign-in failed");
+    if (!result.error) {
+      toast.success("Passkey verified");
+      goToInvestorDashboard();
       return;
     }
 
-    toast.success("Passkey verified");
-    router.replace("/investor");
-    router.refresh();
+    // No passkey registered for this device/account yet -- offer to create one instead.
+    setNeedsPasskeyDetails(true);
+  }
+
+  async function createAccountWithPasskey(formData: FormData) {
+    setPending(true);
+    const name = String(formData.get("name")).trim();
+    const email = String(formData.get("email")).trim().toLowerCase();
+
+    const result = await authClient.passkey.addPasskey({
+      name: "Investor passkey",
+      context: JSON.stringify({ intent: "investor-signup", name, email }),
+      createSession: true,
+    });
+    setPending(false);
+
+    if (result.error) {
+      toast.error(result.error.message ?? "Could not create your passkey account");
+      return;
+    }
+
+    toast.success("Account created with your passkey");
+    goToInvestorDashboard();
   }
 
   async function signUp(formData: FormData) {
@@ -77,8 +103,7 @@ export function InvestorSignInForm() {
     }
 
     toast.success("Account created -- request access to a business once you're in");
-    router.replace("/investor");
-    router.refresh();
+    goToInvestorDashboard();
   }
 
   return (
@@ -90,37 +115,56 @@ export function InvestorSignInForm() {
       </div>
       <div className="auth-card">
         <div className="auth-brand"><SovLendMark /><span>SovLend</span></div>
-        <div className="auth-copy">
-          <p className="eyebrow">Investor portal</p>
-          <h1>{tab === "signin" ? "Sign in to invest" : "Create your investor account"}</h1>
-          <p>{tab === "signin" ? "Use the email, password, or passkey on your investor account." : "Takes a minute. You can request access to a business right after."}</p>
-        </div>
-        <div className="auth-tabs" role="tablist">
-          <button className={tab === "signin" ? "auth-tab active" : "auth-tab"} onClick={() => setTab("signin")} role="tab" type="button">Sign in</button>
-          <button className={tab === "signup" ? "auth-tab active" : "auth-tab"} onClick={() => setTab("signup")} role="tab" type="button">Sign up</button>
-        </div>
-        {tab === "signin" ? (
+        {needsPasskeyDetails ? (
           <>
-            <form action={signIn} className="auth-form">
-              <label htmlFor="investor-email">Email address</label>
-              <div className="auth-input"><Mail size={17} /><input id="investor-email" name="email" type="email" autoComplete="username webauthn" required /></div>
-              <label htmlFor="investor-password">Password</label>
-              <div className="auth-input"><LockKeyhole size={17} /><input id="investor-password" name="password" type="password" minLength={6} autoComplete="current-password webauthn" required /></div>
-              <button className="primary auth-submit" disabled={pending} type="submit">{pending ? <LoaderCircle className="spin" size={17} /> : null} Sign in</button>
+            <div className="auth-copy">
+              <p className="eyebrow">Investor portal</p>
+              <h1>Create your investor account</h1>
+              <p>No passkey found for this device. Add your name and email to create a new account -- your passkey becomes the login, no password needed.</p>
+            </div>
+            <form action={createAccountWithPasskey} className="auth-form">
+              <label htmlFor="passkey-signup-name">Your name</label>
+              <div className="auth-input"><User size={17} /><input id="passkey-signup-name" name="name" autoComplete="name" required /></div>
+              <label htmlFor="passkey-signup-email">Email address</label>
+              <div className="auth-input"><Mail size={17} /><input id="passkey-signup-email" name="email" type="email" autoComplete="username" required /></div>
+              <button className="primary auth-submit" disabled={pending} type="submit">{pending ? <LoaderCircle className="spin" size={17} /> : <Fingerprint size={17} />} Create account with passkey</button>
             </form>
-            <div className="auth-divider"><span>or</span></div>
-            <button className="passkey-button" disabled={pending} onClick={signInWithPasskey} type="button"><Fingerprint size={19} /> Sign in with a passkey</button>
+            <button className="text-button" disabled={pending} onClick={() => setNeedsPasskeyDetails(false)} type="button"><ArrowLeft size={14} /> Back</button>
           </>
         ) : (
-          <form action={signUp} className="auth-form">
-            <label htmlFor="investor-signup-name">Your name</label>
-            <div className="auth-input"><User size={17} /><input id="investor-signup-name" name="name" autoComplete="name" required /></div>
-            <label htmlFor="investor-signup-email">Email address</label>
-            <div className="auth-input"><Mail size={17} /><input id="investor-signup-email" name="email" type="email" autoComplete="username" required /></div>
-            <label htmlFor="investor-signup-password">Password</label>
-            <div className="auth-input"><LockKeyhole size={17} /><input id="investor-signup-password" name="password" type="password" minLength={6} autoComplete="new-password" required /></div>
-            <button className="primary auth-submit" disabled={pending} type="submit">{pending ? <LoaderCircle className="spin" size={17} /> : <UserPlus size={17} />} Create account</button>
-          </form>
+          <>
+            <div className="auth-copy">
+              <p className="eyebrow">Investor portal</p>
+              <h1>Sign in or create your investor account</h1>
+              <p>One passkey covers both -- it signs you in if you have an account, or creates one instantly if you don&apos;t.</p>
+            </div>
+            <button className="passkey-button" disabled={pending} onClick={continueWithPasskey} type="button"><Fingerprint size={19} /> Continue with a passkey</button>
+            <p className="field-hint">No password required.</p>
+            <div className="auth-divider"><span>or use email and password</span></div>
+            <div className="auth-tabs" role="tablist">
+              <button className={tab === "signin" ? "auth-tab active" : "auth-tab"} onClick={() => setTab("signin")} role="tab" type="button">Sign in</button>
+              <button className={tab === "signup" ? "auth-tab active" : "auth-tab"} onClick={() => setTab("signup")} role="tab" type="button">Sign up</button>
+            </div>
+            {tab === "signin" ? (
+              <form action={signIn} className="auth-form">
+                <label htmlFor="investor-email">Email address</label>
+                <div className="auth-input"><Mail size={17} /><input id="investor-email" name="email" type="email" autoComplete="username webauthn" required /></div>
+                <label htmlFor="investor-password">Password</label>
+                <div className="auth-input"><LockKeyhole size={17} /><input id="investor-password" name="password" type="password" minLength={6} autoComplete="current-password webauthn" required /></div>
+                <button className="primary auth-submit" disabled={pending} type="submit">{pending ? <LoaderCircle className="spin" size={17} /> : null} Sign in</button>
+              </form>
+            ) : (
+              <form action={signUp} className="auth-form">
+                <label htmlFor="investor-signup-name">Your name</label>
+                <div className="auth-input"><User size={17} /><input id="investor-signup-name" name="name" autoComplete="name" required /></div>
+                <label htmlFor="investor-signup-email">Email address</label>
+                <div className="auth-input"><Mail size={17} /><input id="investor-signup-email" name="email" type="email" autoComplete="username" required /></div>
+                <label htmlFor="investor-signup-password">Password</label>
+                <div className="auth-input"><LockKeyhole size={17} /><input id="investor-signup-password" name="password" type="password" minLength={6} autoComplete="new-password" required /></div>
+                <button className="primary auth-submit" disabled={pending} type="submit">{pending ? <LoaderCircle className="spin" size={17} /> : <UserPlus size={17} />} Create account</button>
+              </form>
+            )}
+          </>
         )}
         <p className="auth-footnote">Not an investor? <Link href="/sign-in">Sign in to your workspace</Link>.</p>
       </div>
