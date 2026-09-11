@@ -129,6 +129,7 @@ th { color: var(--muted); background: #f8faf8; text-align: left; font-size: 10px
 th, td { padding: 12px 18px; border-bottom: 1px solid #edf0ed; white-space: nowrap; }
 tbody tr:last-child td { border-bottom: 0; }.mono { font-family: var(--font-mono); color: var(--muted); }
 .status { padding: 4px 7px; border-radius: 4px; font-size: 10px; font-weight: 650; }.in-arrears { color: #853724; background: #f7e3dd; }.up-to-date { color: #24553e; background: #dfeee6; }.review { color: #725510; background: #f5ebce; }
+.check-status-button { margin-left: 8px; padding: 3px 8px; display: inline-flex; align-items: center; gap: 5px; color: #445048; background: white; border: 1px solid var(--line); border-radius: 4px; font-size: 10px; font-weight: 650; cursor: pointer; }.check-status-button:hover { background: #f2f5f3; }.check-status-button:disabled { color: #9aa5a0; cursor: not-allowed; }
 .clickable-rows tbody tr { position: relative; cursor: pointer; }
 .clickable-rows tbody tr:hover { background: #f5f8f4; }
 .clickable-rows td:first-child { width: 1%; color: var(--muted); }

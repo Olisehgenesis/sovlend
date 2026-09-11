@@ -4,6 +4,7 @@ import { z } from "zod";
 
 import { prisma } from "@/lib/prisma";
 import { createLightningGateway } from "@/modules/investments/infrastructure/create-lightning-gateway";
+import { settleLightningInvoice } from "@/modules/investments/application/settle-lightning-invoice";
 
 /**
  * Blink webhook payload shape (dev.blink.sv/api/webhooks). We only care about the receive events
@@ -57,15 +58,7 @@ export async function POST(request: Request) {
     if (!confirmedSettled) return NextResponse.json({ received: true });
   }
 
-  await prisma.$transaction(async (transaction) => {
-    const changed = await transaction.lightningInvoice.updateMany({
-      where: { id: invoice.id, status: "NEW" },
-      data: { status: "PAID", settledAt: new Date() },
-    });
-    if (changed.count !== 1) return;
-    await transaction.investmentCommitment.update({ where: { id: invoice.commitmentId }, data: { status: "SETTLEMENT_PENDING" } });
-    await transaction.outboxEvent.create({ data: { aggregateType: "InvestmentCommitment", aggregateId: invoice.commitmentId, eventType: "investment.lightning.received", payload: { commitmentId: invoice.commitmentId, amountSats: invoice.amountSats.toString(), paymentHash } } });
-  });
+  await settleLightningInvoice(prisma, invoice, paymentHash);
 
   return NextResponse.json({ received: true });
 }
