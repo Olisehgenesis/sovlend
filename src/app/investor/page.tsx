@@ -54,9 +54,9 @@ export default async function InvestorPage() {
         memberSince: portfolio.memberSince.toISOString(),
         businessCount: portfolio.businessCount,
         fundedCount: portfolio.fundedCount,
-        fundedSats: portfolio.fundedSats.toLocaleString(),
+        fundedSats: portfolio.fundedSats.toString(),
         pendingCount: portfolio.pendingCount,
-        pendingSats: portfolio.pendingSats.toLocaleString(),
+        pendingSats: portfolio.pendingSats.toString(),
         fundedByCurrency: portfolio.fundedByCurrency.map((entry) => ({ currencyCode: entry.currencyCode, formatted: formatMinor(entry.amountMinor, entry.currencyCode) })),
         timeline: portfolio.timeline.map((point) => ({ date: point.date, cumulativeSats: Number(point.cumulativeSats) })),
       }}

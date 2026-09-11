@@ -8,6 +8,8 @@ import { assessLoanInterestAccruals } from "@/modules/lending/application/assess
 import { classifyLoanArrears } from "@/modules/lending/application/classify-arrears";
 import { executeStandingOrderSweep } from "@/modules/lending/application/execute-standing-order-sweep";
 import { processLoanExportJob } from "@/modules/lending/application/export-loans";
+import { scanPendingInvestmentSettlements } from "@/modules/investments/application/scan-pending-investment-settlements";
+import { createLightningGateway } from "@/modules/investments/infrastructure/create-lightning-gateway";
 import { reminderJobId, reminderJobSchema } from "@/modules/notifications/domain/reminder";
 import { standingOrderSweepJobSchema } from "@/modules/notifications/domain/standing-order-sweep";
 import { sendSms } from "@/modules/notifications/infrastructure/sms";
@@ -49,6 +51,11 @@ const maintenanceWorker = new Worker(
     }
     if (job.name === "scan-standing-order-sweeps") {
       return { queued: await enqueueStandingOrderSweeps(prisma, standingOrderSweepQueue) };
+    }
+    if (job.name === "scan-pending-investments") {
+      const gateway = createLightningGateway();
+      if (!gateway) return { checked: 0, settled: 0, skipped: "Lightning gateway is not configured" };
+      return scanPendingInvestmentSettlements(prisma, gateway);
     }
     throw new Error(`Unknown maintenance job: ${job.name}`);
   },

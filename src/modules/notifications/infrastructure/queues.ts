@@ -48,4 +48,9 @@ export async function registerSchedules(): Promise<void> {
     { every: 15 * 60 * 1_000 },
     { name: "refresh-price", data: { base: "USD", quote: "UGX" } },
   );
+  await maintenanceQueue.upsertJobScheduler(
+    "pending-investment-settlement-scan",
+    { every: 2 * 60 * 1_000 },
+    { name: "scan-pending-investments", data: {} },
+  );
 }

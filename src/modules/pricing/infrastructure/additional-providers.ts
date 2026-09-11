@@ -129,8 +129,41 @@ export class FreeCryptoApiProvider extends JsonProvider {
   }
 }
 
+export class FrankfurterProvider extends JsonProvider {
+  readonly name = "frankfurter";
+
+  getUrl(pair: CurrencyPair) {
+    return `https://api.frankfurter.dev/v2/rates?base=${encodeURIComponent(pair.base)}&quotes=${encodeURIComponent(pair.quote)}`;
+  }
+
+  parse(payload: unknown) {
+    const entries = z.array(z.object({ date: z.string(), rate: z.coerce.string() })).parse(payload);
+    const first = entries[0];
+    if (!first) throw new Error("frankfurter returned no rates");
+    return { price: new Decimal(first.rate).toFixed(), observedAt: new Date(first.date) };
+  }
+}
+
+export class ExchangeRateFunProvider extends JsonProvider {
+  readonly name = "exchangerate-fun";
+
+  getUrl(pair: CurrencyPair) {
+    return `https://api.exchangerate.fun/latest?base=${encodeURIComponent(pair.base)}`;
+  }
+
+  parse(payload: unknown, pair: CurrencyPair) {
+    const root = unknownRecord.parse(payload);
+    const rates = z.record(z.string(), z.coerce.string()).parse(root.rates);
+    return { price: new Decimal(rates[pair.quote]).toFixed(), observedAt: new Date(z.number().parse(root.timestamp) * 1_000) };
+  }
+}
+
 export function createFiatProviders(environment: NodeJS.ProcessEnv): PriceProvider[] {
-  const providers: PriceProvider[] = [new FawazExchangeProvider()];
+  // Frankfurter and exchangerate.fun are free, keyless, and callable anytime (no daily quota) --
+  // they're always included so fiat quorum (minimumSources: 2) can be reached even with no API
+  // keys configured. ExchangeRate-API's free tier only refreshes once/day, so it's kept as an
+  // optional bonus source rather than something to rely on for freshness.
+  const providers: PriceProvider[] = [new FawazExchangeProvider(), new FrankfurterProvider(), new ExchangeRateFunProvider()];
   if (environment.CURRENCYFREAKS_API_KEY) providers.unshift(new CurrencyFreaksProvider(environment.CURRENCYFREAKS_API_KEY));
   if (environment.EXCHANGERATE_API_KEY) providers.unshift(new ExchangeRateApiProvider(environment.EXCHANGERATE_API_KEY));
   return providers;
