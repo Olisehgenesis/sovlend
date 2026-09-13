@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, Fingerprint, LoaderCircle, LockKeyhole, Mail, User, UserPlus } from "lucide-react";
+import { ArrowLeft, Fingerprint, LoaderCircle, Mail, User, UserPlus } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
@@ -8,6 +8,7 @@ import { toast } from "sonner";
 
 import { authClient } from "@/lib/auth-client";
 import { SovLendMark } from "@/components/sovlend-mark";
+import { PasswordInput } from "@/components/ui/password-input";
 
 export function InvestorSignInForm() {
   const router = useRouter();
@@ -150,7 +151,7 @@ export function InvestorSignInForm() {
                 <label htmlFor="investor-email">Email address</label>
                 <div className="auth-input"><Mail size={17} /><input id="investor-email" name="email" type="email" autoComplete="username webauthn" required /></div>
                 <label htmlFor="investor-password">Password</label>
-                <div className="auth-input"><LockKeyhole size={17} /><input id="investor-password" name="password" type="password" minLength={6} autoComplete="current-password webauthn" required /></div>
+                <PasswordInput id="investor-password" name="password" minLength={6} autoComplete="current-password webauthn" required />
                 <button className="primary auth-submit" disabled={pending} type="submit">{pending ? <LoaderCircle className="spin" size={17} /> : null} Sign in</button>
               </form>
             ) : (
@@ -160,7 +161,7 @@ export function InvestorSignInForm() {
                 <label htmlFor="investor-signup-email">Email address</label>
                 <div className="auth-input"><Mail size={17} /><input id="investor-signup-email" name="email" type="email" autoComplete="username" required /></div>
                 <label htmlFor="investor-signup-password">Password</label>
-                <div className="auth-input"><LockKeyhole size={17} /><input id="investor-signup-password" name="password" type="password" minLength={6} autoComplete="new-password" required /></div>
+                <PasswordInput id="investor-signup-password" name="password" minLength={6} autoComplete="new-password" required />
                 <button className="primary auth-submit" disabled={pending} type="submit">{pending ? <LoaderCircle className="spin" size={17} /> : <UserPlus size={17} />} Create account</button>
               </form>
             )}

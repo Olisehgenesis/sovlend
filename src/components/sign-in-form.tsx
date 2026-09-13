@@ -1,6 +1,6 @@
 "use client";
 
-import { Fingerprint, IdCard, LoaderCircle, LockKeyhole, Mail, Phone, TrendingUp, X } from "lucide-react";
+import { Fingerprint, IdCard, LoaderCircle, Mail, Phone, TrendingUp, X } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
@@ -8,6 +8,7 @@ import { toast } from "sonner";
 
 import { authClient } from "@/lib/auth-client";
 import { SovLendMark } from "@/components/sovlend-mark";
+import { PasswordInput } from "@/components/ui/password-input";
 
 export function SignInForm() {
   const router = useRouter();
@@ -86,7 +87,7 @@ export function SignInForm() {
           <label htmlFor="email">Email address</label>
           <div className="auth-input"><Mail size={17} /><input id="email" name="email" type="email" autoComplete="username webauthn" required /></div>
           <label htmlFor="password">Password</label>
-          <div className="auth-input"><LockKeyhole size={17} /><input id="password" name="password" type="password" minLength={6} autoComplete="current-password webauthn" required /></div>
+          <PasswordInput id="password" name="password" minLength={6} autoComplete="current-password webauthn" required />
           <button className="primary auth-submit" disabled={pending} type="submit">{pending ? <LoaderCircle className="spin" size={17} /> : null} Sign in</button>
         </form>
       ) : (
