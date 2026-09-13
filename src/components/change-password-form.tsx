@@ -1,12 +1,13 @@
 "use client";
 
-import { LoaderCircle, LockKeyhole } from "lucide-react";
+import { LoaderCircle } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
 
 import { authClient } from "@/lib/auth-client";
 import { SovLendMark } from "@/components/sovlend-mark";
+import { PasswordInput } from "@/components/ui/password-input";
 
 export function ChangePasswordForm() {
   const router = useRouter();
@@ -56,11 +57,11 @@ export function ChangePasswordForm() {
       </div>
       <form action={submit} className="auth-form">
         <label htmlFor="currentPassword">Temporary password</label>
-        <div className="auth-input"><LockKeyhole size={17} /><input autoComplete="current-password" id="currentPassword" minLength={6} name="currentPassword" required type="password" /></div>
+        <PasswordInput autoComplete="current-password" id="currentPassword" minLength={6} name="currentPassword" required />
         <label htmlFor="newPassword">New password</label>
-        <div className="auth-input"><LockKeyhole size={17} /><input autoComplete="new-password" id="newPassword" minLength={6} name="newPassword" required type="password" /></div>
+        <PasswordInput autoComplete="new-password" id="newPassword" minLength={6} name="newPassword" required />
         <label htmlFor="confirmPassword">Confirm new password</label>
-        <div className="auth-input"><LockKeyhole size={17} /><input autoComplete="new-password" id="confirmPassword" minLength={6} name="confirmPassword" required type="password" /></div>
+        <PasswordInput autoComplete="new-password" id="confirmPassword" minLength={6} name="confirmPassword" required />
         <button className="primary auth-submit" disabled={pending} type="submit">{pending ? <LoaderCircle className="spin" size={17} /> : null} Set new password</button>
       </form>
     </div>
