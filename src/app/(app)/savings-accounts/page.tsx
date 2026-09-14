@@ -188,6 +188,48 @@ export default async function SavingsAccountsPage({
   const pages = Math.max(1, Math.ceil(total / pageSize));
   const page = Math.min(requestedPage, pages);
 
+  // Scope-wide overview (ignores the current status filter/search so it always reflects the
+  // whole office scope, not just what's currently displayed below).
+  const scopeWhere: Prisma.SavingsAccountWhereInput = {
+    OR: [{ client: { is: clientScope } }, { group: { is: groupScope } }],
+  };
+  const [statusCounts, balanceAccounts] = await Promise.all([
+    prisma.savingsAccount.groupBy({ by: ["status"], where: scopeWhere, _count: { _all: true } }),
+    prisma.savingsAccount.findMany({
+      where: scopeWhere,
+      select: { currencyCode: true, transactions: { select: { amountMinor: true } } },
+    }),
+  ]);
+  const statusCountMap = new Map(statusCounts.map((row) => [row.status, row._count._all]));
+  const totalAccounts = statusCounts.reduce((sum, row) => sum + row._count._all, 0);
+  const activeAccounts = statusCountMap.get("ACTIVE") ?? 0;
+  const pendingAccounts = statusCountMap.get("SUBMITTED") ?? 0;
+  const balanceByCurrency = new Map<string, bigint>();
+  for (const account of balanceAccounts) {
+    const balance = account.transactions.reduce((sum, transaction) => sum + transaction.amountMinor, 0n);
+    balanceByCurrency.set(account.currencyCode, (balanceByCurrency.get(account.currencyCode) ?? 0n) + balance);
+  }
+  const totalBalanceLabel =
+    balanceByCurrency.size > 0
+      ? [...balanceByCurrency.entries()].map(([code, minor]) => formatMinor(minor, code)).join(" · ")
+      : formatMinor(0n, "UGX");
+  const overviewCards = [
+    { label: "Total accounts", value: totalAccounts.toLocaleString(), detail: "in your office scope", href: "/savings-accounts" },
+    {
+      label: "Active accounts",
+      value: activeAccounts.toLocaleString(),
+      detail: "currently open and operating",
+      href: "/savings-accounts?status=ACTIVE",
+    },
+    {
+      label: "Pending approval",
+      value: pendingAccounts.toLocaleString(),
+      detail: "awaiting review",
+      href: "/savings-accounts?status=SUBMITTED",
+    },
+    { label: "Total balance", value: totalBalanceLabel, detail: "across all accounts in scope", href: "/savings-accounts?status=ACTIVE" },
+  ];
+
   const accounts = await prisma.savingsAccount.findMany({
     where,
     include: {
@@ -253,6 +295,17 @@ export default async function SavingsAccountsPage({
           </Link>
         </div>
       </header>
+      <section aria-label="Savings accounts overview" className="metrics">
+        {overviewCards.map((card) => (
+          <Link key={card.label} className="metric-card" href={card.href}>
+            <article>
+              <span>{card.label}</span>
+              <strong>{card.value}</strong>
+              <small>{card.detail}</small>
+            </article>
+          </Link>
+        ))}
+      </section>
       <div className="directory-toolbar">
         <LiveSearchInput placeholder="Search account, client, group, product, officer or office" />
         <div className="directory-filter-chip">
