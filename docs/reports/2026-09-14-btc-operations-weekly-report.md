@@ -23,7 +23,7 @@ This is live in production today. It is the on-ramp: BTC in, from an investor, i
 
 ## 3. Where the BTC goes: Fred's role as treasury manager
 
-BTC received from investors is swept to **Fred Mawanda's account**, who is responsible for topping up the operational system from there. This is the current, hands-on version of what will later be an automated treasury process (see §7). Today it depends on Fred:
+BTC received from investors flows into SovLend's own treasury account, which **Fred manages** as the institution's designated treasury manager. This is the current, hands-on version of what will later be an automated treasury process (see §7). Today it depends on Fred:
 
 - receiving the BTC,
 - converting or holding it as directed,
@@ -75,7 +75,7 @@ This means an auditor looking at a loan's history sees BTC transactions in the s
 - **Pricing:** every BTC-denominated event stores its own price snapshot at the time it happened; nothing is priced retroactively.
 - **Ledger:** double-entry, append-only, and balance-checked per currency on every post. BTC transactions use the same ledger as cash/mobile-money/bank transactions — there is one ledger, not a BTC-only side ledger.
 - **Approvals:** existing maker-checker and office/permission scoping applies to BTC transactions exactly as it does to any other loan or disbursement action.
-- **Custody today:** BTC funds are held operationally and swept to Fred's account for treasury management by hand. There is **no live multisig or cold-storage vault yet** — that is a planned phase, not a current control (see the gap report, item on treasury custody).
+- **Custody today:** BTC funds are held in SovLend's own treasury account, administered by Fred day to day. There is **no live multisig or cold-storage vault yet** — that is a planned phase, not a current control (see the gap report, item on treasury custody).
 - **Known limitation:** the $500/day BTC cashier cap is policy-enforced (training + manager approval), not yet code-enforced. This is the single most important near-term hardening item.
 
 ---

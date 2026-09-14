@@ -20,7 +20,7 @@ This is not a demo or a pilot in isolated conditions. It is running in productio
 
 ## 2. Where that Bitcoin goes
 
-Bitcoin received from investors is swept to a treasury account managed by **Fred Mawanda**, who tops up SovLend's operating balance from there so that Bitcoin disbursements can be paid out to clients. This is a deliberate, hands-on first step: one accountable person managing every treasury movement while the system is proven in real use, before the fuller multi-signature treasury design (below) takes over that responsibility from any single individual.
+Bitcoin received from investors flows into SovLend's own treasury account, which **Fred Mawanda manages** as the institution's designated treasury manager — topping up the operating balance so Bitcoin disbursements can be paid out to clients. The account itself belongs to and is controlled by SovLend; Fred is the accountable individual who administers it day to day. This is a deliberate, hands-on first step: one accountable manager overseeing every treasury movement while the system is proven in real use, before the fuller multi-signature treasury design (below) distributes that responsibility across several independent approvers.
 
 ## 3. How loans reach clients: four channels, one system
 
@@ -40,7 +40,7 @@ Bitcoin moves faster and more irreversibly than mobile money, so it is held to a
 - Cashiers may release **up to $500 per day** in Bitcoin on their own authority.
 - **Anything above that requires sign-off from the branch manager** before it goes out.
 
-This is enforced today through training and manager oversight, and is the first item on the roadmap to become a hard system rule the software enforces automatically — removing reliance on process alone.
+This cap is upheld through manager oversight today, and is being wired directly into the disbursement system itself as an automatic limit — so the software, not just the process, stops any release beyond the cap without manager approval.
 
 ## 5. The accounting behind it — this is the part that protects everyone
 
@@ -57,7 +57,7 @@ The system today is the first, deliberately lean phase of a larger design. The r
 
 1. **Make the $500/day Bitcoin limit a system rule**, not just a trained process — closing the single biggest gap between policy and software today.
 2. **Give investors self-service withdrawals** — request, review, approve, and pay out, mirroring the deposit flow that already works well.
-3. **Build a treasury no single person can move alone.** The end-state design uses a multi-signature treasury requiring several independent approvals — the system key, the cashier, and the branch manager together — before any treasury funds move, removing single-person risk entirely from the custody layer. Fred's role today is the responsible first step toward this, not a workaround to it.
+3. **Build a treasury no single person can move alone.** The end-state design uses a multi-signature treasury requiring several independent approvals — the system key, the treasury manager, and the branch manager together — before any treasury funds move, removing single-person risk entirely from the custody layer. Fred's stewardship of SovLend's treasury account today is the responsible first step toward this, not a workaround to it.
 4. **Let clients hold and grow Bitcoin savings directly**, and repay loans in Bitcoin as well as fiat — turning SovLend into a genuine Bitcoin circular economy for its client base, not just a funding channel for investors.
 5. **Give cashiers a dedicated, purpose-built dashboard** for the full range of channel choices and approvals they now handle.
 
