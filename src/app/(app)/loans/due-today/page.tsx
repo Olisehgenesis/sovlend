@@ -26,6 +26,11 @@ export default async function LoansDueTodayPage() {
       dueOn: { gte: today, lt: tomorrow },
       loan: {
         office: { organizationId: userScope.organizationId },
+        // A loan must actually be disbursed to carry a real repayment obligation -- an
+        // APPROVED loan can still have a pre-generated installment schedule sitting in the
+        // database (e.g. from a legacy-system migration) without ever having been disbursed,
+        // and must not show up as "due today".
+        status: { in: ["ACTIVE", "IN_ARREARS"] },
         ...loanScopeWhere(userScope),
       },
     },

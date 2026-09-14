@@ -22,6 +22,16 @@ export default async function InvestorsBackofficePage() {
     orderBy: { createdAt: "asc" },
   });
 
+  // Separate from the in-app request flow above: this is the pre-account "request an account"
+  // lead form at /investor/request-access, which anyone can submit without signing up first.
+  // It used to write here and nothing ever displayed it -- surfacing it so a submitted lead is
+  // never silently lost.
+  const leads = await prisma.investorAccessRequest.findMany({
+    where: { status: "REQUESTED", ...(scope.isSuperAdmin ? {} : { organizationId: scope.organizationId }) },
+    include: { organization: { select: { name: true } } },
+    orderBy: { createdAt: "asc" },
+  });
+
   return (
     <main className="directory-page">
       <Breadcrumbs
@@ -47,6 +57,40 @@ export default async function InvestorsBackofficePage() {
           createdAt: item.createdAt.toISOString(),
         }))}
       />
+      {leads.length > 0 ? (
+        <section className="panel">
+          <div className="panel-heading">
+            <div>
+              <h2>Inbound investor leads</h2>
+              <p>Submitted before creating an account, via the public &ldquo;request an account&rdquo; form -- reach out directly and point them to sign up.</p>
+            </div>
+          </div>
+          <div className="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Email</th>
+                  <th>Business</th>
+                  <th>Message</th>
+                  <th>Submitted</th>
+                </tr>
+              </thead>
+              <tbody>
+                {leads.map((lead) => (
+                  <tr key={lead.id}>
+                    <td><strong>{lead.name}</strong></td>
+                    <td>{lead.email}</td>
+                    <td>{lead.organization.name}</td>
+                    <td>{lead.message ?? <span className="muted-text">—</span>}</td>
+                    <td>{new Date(lead.createdAt).toLocaleDateString()}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      ) : null}
       {scope.isSuperAdmin ? <p><Link href="/backoffice">Back to backoffice</Link></p> : null}
     </main>
   );

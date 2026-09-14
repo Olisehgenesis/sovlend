@@ -5,19 +5,35 @@ import { InvestorBoard } from "@/components/investor-board";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { loadInvestorBtcExposure } from "@/modules/btc/application/load-investor-btc-exposure";
+import { grantJumpStartAfricaAccess } from "@/modules/investments/application/grant-flagship-access";
 import { loadInvestorPortfolioSummary } from "@/modules/investments/application/load-investor-portfolio-summary";
 import { formatMinor } from "@/modules/reporting/application/dashboard";
 
 export default async function InvestorPage() {
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session) redirect("/investor/sign-in");
-  const investor = await prisma.investorProfile.findUnique({
+  let investor = await prisma.investorProfile.findUnique({
     where: { userId: session.user.id },
     include: {
       accesses: { include: { organization: { select: { name: true } } } },
       commitments: { include: { organization: { select: { name: true } } }, orderBy: { createdAt: "desc" }, take: 100 },
     },
   });
+  // A signed-in INVESTOR-role user should always have a profile -- self-heal instead of sending
+  // them to the orphaned pre-signup "request access" lead form (which doesn't create a profile
+  // or even know they're logged in). This recovers any account that ended up in this state, e.g.
+  // one created before self-service sign-up wired InvestorProfile creation in.
+  if (!investor && (session.user as { systemRole?: string }).systemRole === "INVESTOR") {
+    const created = await prisma.investorProfile.create({ data: { userId: session.user.id, displayName: session.user.name } });
+    await grantJumpStartAfricaAccess(prisma, created.id);
+    investor = await prisma.investorProfile.findUnique({
+      where: { userId: session.user.id },
+      include: {
+        accesses: { include: { organization: { select: { name: true } } } },
+        commitments: { include: { organization: { select: { name: true } } }, orderBy: { createdAt: "desc" }, take: 100 },
+      },
+    });
+  }
   if (!investor) redirect("/investor/request-access");
 
   const activeAccesses = investor.accesses.filter((access) => access.status === "ACTIVE");
