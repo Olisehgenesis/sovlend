@@ -8,7 +8,7 @@
 
 ## The picture in one paragraph
 
-SovLend is now live and running with Bitcoin as a real, working part of how the institution takes in investor capital and pays out loans — alongside cash, mobile money, and bank transfer. Investors fund the institution over the Lightning Network in seconds. Loans go out to clients through whichever channel fits — cash, mobile money, bank, or Bitcoin — chosen by the cashier at the counter. Every transaction, in every currency, sits on one accounting system: fully recorded, priced at the moment it happens, and never quietly edited afterward. This is the working phase of the system. It is deliberately built lean and safe first, with a clear, funded path to the fuller design — a treasury that no single person can move alone, self-service investor withdrawals, and Bitcoin savings for clients — as volume and trust grow.
+SovLend is now live and running with Bitcoin as a real, working part of how the institution takes in investor capital and pays out loans — alongside cash, mobile money, and bank transfer. Investors fund the institution over the Lightning Network in seconds. Loans go out to clients through whichever channel fits — cash, mobile money, bank, or Bitcoin — chosen by the cashier at the counter. Every transaction, in every currency, sits on one accounting system: fully recorded, priced at the moment it happens, and never quietly edited afterward. This is the working phase of the system. It is deliberately built lean and safe first, with a clear, funded path to the fuller design — a treasury that no single person can move alone, and Bitcoin savings for clients — as volume and trust grow.
 
 ---
 
@@ -53,10 +53,9 @@ This is the most important section of this briefing, because it is what makes So
 
 The system today is the first, deliberately lean phase of a larger design. The roadmap ahead, in the order we intend to build it:
 
-1. **Give investors self-service withdrawals** — request, review, approve, and pay out, mirroring the deposit flow that already works well.
-2. **Build a treasury no single person can move alone.** The end-state design uses a multi-signature treasury requiring several independent approvals — the system key, the treasury manager, and the branch manager together — before any treasury funds move, removing single-person risk entirely from the custody layer. Fred's stewardship of SovLend's treasury account today is the responsible first step toward this, not a workaround to it.
-3. **Let clients hold and grow Bitcoin savings directly**, and repay loans in Bitcoin as well as fiat — turning SovLend into a genuine Bitcoin circular economy for its client base, not just a funding channel for investors.
-4. **Give cashiers a dedicated, purpose-built dashboard** for the full range of channel choices and approvals they now handle.
+1. **Build a treasury no single person can move alone.** The end-state design uses a multi-signature treasury requiring several independent approvals — the system key, the treasury manager, and the branch manager together — before any treasury funds move, removing single-person risk entirely from the custody layer. Fred's stewardship of SovLend's treasury account today is the responsible first step toward this, not a workaround to it.
+2. **Let clients hold and grow Bitcoin savings directly**, and repay loans in Bitcoin as well as fiat — turning SovLend into a genuine Bitcoin circular economy for its client base, not just a funding channel for investors.
+3. **Give cashiers a dedicated, purpose-built dashboard** for the full range of channel choices and approvals they now handle.
 
 None of these are blockers to operating today — they are what makes the system stronger, more automated, and less dependent on any one individual as adoption grows.
 

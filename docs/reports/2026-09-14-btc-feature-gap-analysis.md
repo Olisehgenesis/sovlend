@@ -13,7 +13,7 @@ This report exists because features have been described in conversation, proposa
 | # | Proposed feature | Status | Evidence | What actually exists today |
 |---|---|---|---|---|
 | 1 | Investor Lightning/BTC deposit via Blink | ✅ **EXISTS** | `src/modules/investments/application/create-investment.ts`, `src/modules/investments/infrastructure/blink-gateway.ts`, `src/modules/investments/application/settle-lightning-invoice.ts`, `src/modules/investments/application/scan-pending-investment-settlements.ts` | Investor requests a Blink invoice, pays it, settlement confirmed via webhook + polling fallback, priced with a stored rate snapshot. **Live.** |
-| 2 | Investor withdrawal request → admin review → multisig approval → payout | ❌ **MISSING** | No route/module found under `src/app/api/investor/*` or `src/modules/investments/` handling withdrawals | Investors can fund; there is no way for an investor to request funds back out through the system today. |
+| 2 | Investor withdrawal request → admin review → multisig approval → payout | 🚫 **Not offered by design** | No route/module found under `src/app/api/investor/*` or `src/modules/investments/` handling withdrawals | Investor contributions are treated as capital committed to the institution, not a redeemable deposit — SovLend does not offer a self-service withdrawal path, and none is planned. |
 | 3 | 3-of-5 multisig treasury / cold storage vault | ⚠️ **PARTIAL** | `prisma/schema.prisma` — `SystemWallet` (`kind: COLD_MULTISIG`), `TransferProposal` | The data model anticipates a multisig wallet and a transfer-proposal/approval record, but there is no signing integration, no HSM/hardware-wallet connection, and no live multisig wallet. Today, BTC treasury movement is a manual step through Fred (see operations report §3). |
 | 4 | Allocation engine (admin earmarks pooled capital for a loan without moving wallet balances) | ❌ **MISSING** | No allocation-engine module found | Loans are funded through the existing ledger/journal flow directly; there is no separate reservation layer between investor pool capital and a specific loan. |
 | 5 | Hot wallet vs. cold vault separation with treasury supply reporting | ⚠️ **PARTIAL** | `prisma/schema.prisma` — `SystemWallet`; `src/modules/reporting/application/dashboard.ts` | A system-wallet model and a capital-position dashboard section exist, but there is no hot/cold split enforced operationally and no dedicated "company BTC treasury supply" report for admins. |
@@ -30,7 +30,7 @@ This report exists because features have been described in conversation, proposa
 
 **Fully live and real:** investors can fund SovLend in BTC over Lightning today, and that money is priced, recorded, and swept to Fred for treasury handling. Loan disbursement channel choice (cash/mobile money/bank/BTC-label) exists for cashiers.
 
-**Built on paper, not yet in code:** the multisig treasury, the allocation engine, investor withdrawals, and BTC loan repayment were all described in the original proposal and are part of the intended end-state, but none of them exist in the running system yet. Where they've been mentioned as available in status updates, that was ahead of the code — this report corrects that.
+**Built on paper, not yet in code:** the multisig treasury, the allocation engine, and BTC loan repayment were all described in the original proposal and are part of the intended end-state, but none of them exist in the running system yet. Where they've been mentioned as available in status updates, that was ahead of the code — this report corrects that. (Investor withdrawals were also in the original proposal but are intentionally not being built — see row 2.)
 
 **Policy standing in for a system control:** the $500/day BTC cap is real as a business rule Fred and the cashier team follow, but the software does not yet enforce it. This is flagged in the operations report as the top near-term hardening priority.
 
@@ -42,12 +42,13 @@ The following tracks the work needed to close the gaps above. Use this the same 
 |---|---|---|---|---|
 | 1 | System-enforced BTC daily cap | Add a BTC-specific daily transfer limit per cashier/role, enforced at the disbursement API layer (reject over-cap without manager approval, not just train around it) | **High — closes the biggest live risk** | ✅ Done |
 | 2 | Teller dashboard | Purpose-built cashier/teller view: today's disbursements, repayments to record, BTC vs. fiat channel picker, pending manager approvals | High | Not started |
-| 3 | Investor withdrawal workflow | Investor requests withdrawal → admin review → approval → payout, mirroring the deposit flow already built | Medium-high | Not started |
-| 4 | BTC treasury supply dashboard | Admin-facing view of company-owned BTC accumulated over time (separate from investor pool capital), sourced from `SystemWallet` | Medium | Not started |
-| 5 | Allocation engine | Ledger-level reservation of pooled investor capital against a specific loan or batch, before any wallet balance actually moves | Medium | Not started |
-| 6 | Multisig treasury integration | Wire up real signing (hardware wallet/HSM-backed) against the existing `SystemWallet`/`TransferProposal` schema; formalize the 3-of-5 signer flow described in `docs/btc-integration-plan.md` | Medium (deliberately after cap enforcement and volume justify the operational weight) | Design exists (`docs/btc-integration-plan.md`), no signing code yet |
-| 7 | Client BTC savings product | Turn `ClientBtcAccount` from a read-only balance into a real deposit/withdrawal-capable savings product | Lower | Not started |
-| 8 | BTC loan repayment | Allow a client to repay an active loan directly in BTC, settling into the operational hot wallet, with the same price-snapshot discipline as disbursement | Lower | Not started |
+| 3 | BTC treasury supply dashboard | Admin-facing view of company-owned BTC accumulated over time (separate from investor pool capital), sourced from `SystemWallet` | Medium | Not started |
+| 4 | Allocation engine | Ledger-level reservation of pooled investor capital against a specific loan or batch, before any wallet balance actually moves | Medium | Not started |
+| 5 | Multisig treasury integration | Wire up real signing (hardware wallet/HSM-backed) against the existing `SystemWallet`/`TransferProposal` schema; formalize the 3-of-5 signer flow described in `docs/btc-integration-plan.md` | Medium (deliberately after cap enforcement and volume justify the operational weight) | Design exists (`docs/btc-integration-plan.md`), no signing code yet |
+| 6 | Client BTC savings product | Turn `ClientBtcAccount` from a read-only balance into a real deposit/withdrawal-capable savings product | Lower | Not started |
+| 7 | BTC loan repayment | Allow a client to repay an active loan directly in BTC, settling into the operational hot wallet, with the same price-snapshot discipline as disbursement | Lower | Not started |
+
+Investor withdrawals are intentionally excluded from this backlog — see §2, row 2.
 
 ## 4. Related documents
 
