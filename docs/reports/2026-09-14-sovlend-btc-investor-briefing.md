@@ -38,9 +38,7 @@ Whichever channel is used, the loan itself — its terms, its interest, its repa
 Bitcoin moves faster and more irreversibly than mobile money, so it is held to a tighter standard from day one:
 
 - Cashiers may release **up to $500 per day** in Bitcoin on their own authority.
-- **Anything above that requires sign-off from the branch manager** before it goes out.
-
-This cap is upheld through manager oversight today, and is being wired directly into the disbursement system itself as an automatic limit — so the software, not just the process, stops any release beyond the cap without manager approval.
+- **Anything above that requires sign-off from the branch manager** before it goes out — the system itself now blocks any release beyond the cap unless a manager approves it, rather than relying on process alone.
 
 ## 5. The accounting behind it — this is the part that protects everyone
 
@@ -55,11 +53,10 @@ This is the most important section of this briefing, because it is what makes So
 
 The system today is the first, deliberately lean phase of a larger design. The roadmap ahead, in the order we intend to build it:
 
-1. **Make the $500/day Bitcoin limit a system rule**, not just a trained process — closing the single biggest gap between policy and software today.
-2. **Give investors self-service withdrawals** — request, review, approve, and pay out, mirroring the deposit flow that already works well.
-3. **Build a treasury no single person can move alone.** The end-state design uses a multi-signature treasury requiring several independent approvals — the system key, the treasury manager, and the branch manager together — before any treasury funds move, removing single-person risk entirely from the custody layer. Fred's stewardship of SovLend's treasury account today is the responsible first step toward this, not a workaround to it.
-4. **Let clients hold and grow Bitcoin savings directly**, and repay loans in Bitcoin as well as fiat — turning SovLend into a genuine Bitcoin circular economy for its client base, not just a funding channel for investors.
-5. **Give cashiers a dedicated, purpose-built dashboard** for the full range of channel choices and approvals they now handle.
+1. **Give investors self-service withdrawals** — request, review, approve, and pay out, mirroring the deposit flow that already works well.
+2. **Build a treasury no single person can move alone.** The end-state design uses a multi-signature treasury requiring several independent approvals — the system key, the treasury manager, and the branch manager together — before any treasury funds move, removing single-person risk entirely from the custody layer. Fred's stewardship of SovLend's treasury account today is the responsible first step toward this, not a workaround to it.
+3. **Let clients hold and grow Bitcoin savings directly**, and repay loans in Bitcoin as well as fiat — turning SovLend into a genuine Bitcoin circular economy for its client base, not just a funding channel for investors.
+4. **Give cashiers a dedicated, purpose-built dashboard** for the full range of channel choices and approvals they now handle.
 
 None of these are blockers to operating today — they are what makes the system stronger, more automated, and less dependent on any one individual as adoption grows.
 

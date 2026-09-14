@@ -49,7 +49,7 @@ Because BTC is new and moves faster and more irreversibly than mobile money, we 
 - **Cashier-level BTC transfers are capped at $500/day.**
 - **Anything above that requires the branch manager's approval before it goes out.**
 
-**Important — this is currently a manual/policy control, not yet a hard system limit.** The system does not yet block a cashier from exceeding $500 in BTC in a day on its own; the cap is enforced through training and manager sign-off today. Making this a system-enforced limit (so the software refuses the transaction rather than relying on the cashier following policy) is one of the concrete next steps in §8 and is tracked as a real gap in the companion feature-gap report.
+**This is now a system-enforced limit, not just policy.** The software tracks each cashier's cumulative same-day BTC disbursements and blocks anything that would push the total over $500 unless a branch manager (holding the override permission) approves it. This closes what had been the single largest gap between stated policy and actual system behavior, flagged in the companion feature-gap report.
 
 ## 6. Accounting: BTC is treated as a first-class channel, not an afterthought
 
@@ -76,7 +76,7 @@ This means an auditor looking at a loan's history sees BTC transactions in the s
 - **Ledger:** double-entry, append-only, and balance-checked per currency on every post. BTC transactions use the same ledger as cash/mobile-money/bank transactions — there is one ledger, not a BTC-only side ledger.
 - **Approvals:** existing maker-checker and office/permission scoping applies to BTC transactions exactly as it does to any other loan or disbursement action.
 - **Custody today:** BTC funds are held in SovLend's own treasury account, administered by Fred day to day. There is **no live multisig or cold-storage vault yet** — that is a planned phase, not a current control (see the gap report, item on treasury custody).
-- **Known limitation:** the $500/day BTC cashier cap is policy-enforced (training + manager approval), not yet code-enforced. This is the single most important near-term hardening item.
+- **BTC daily cap:** now code-enforced — the $500/day cashier limit is checked and blocked at the disbursement layer itself, with a manager-only override permission for exceptions, not just a trained process.
 
 ---
 
