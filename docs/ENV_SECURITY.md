@@ -76,6 +76,31 @@ values, and is meant to be committed so anyone can see what configuration exists
   delete `.env.keys` and re-run `encrypt` against a decrypted copy) generates a fresh keypair and
   re-encrypts every value -- the old `.env.keys` becomes useless afterward, which is the point.
 
+## Docker Compose deployments (important gotcha)
+
+`docker compose` does its own `.env` substitution (for `${VAR}` references in `compose.yaml`
+and for container `environment:` blocks) -- it does **not** know how to decrypt dotenvx
+ciphertext. If you run a bare `docker compose ...` against an encrypted `.env`, every variable
+gets passed through as the literal `encrypted:BAsdf...` string instead of its real value. This
+silently breaks anything that reads that variable directly (for example, the `postgres`
+container's `POSTGRES_USER`/`POSTGRES_PASSWORD`/`POSTGRES_DB`, or the healthcheck that runs
+`pg_isready -U $$POSTGRES_USER` inside that container) -- it can look fine at first because
+already-running containers keep their old (correct) environment until they're next recreated,
+then fail with confusing errors like `pg_isready: error: invalid connection option
+"encrypted:..."` the next time `up`/`run`/`--force-recreate` touches that service.
+
+**Always wrap Compose commands with `dotenvx run` so decrypted values are what Compose
+substitutes:**
+
+```bash
+dotenvx run -f .env -- docker compose build
+dotenvx run -f .env -- docker compose run --rm migrate
+dotenvx run -f .env -- docker compose up -d
+```
+
+A bare `docker compose ...` (no `dotenvx run` wrapper) should be treated as a deploy bug, not a
+convenience shortcut -- it will eventually recreate a container with ciphertext env vars.
+
 ## Current variables
 
 See `.env.example` for the full, documented list (database/cache, auth, price providers, the
