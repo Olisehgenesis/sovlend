@@ -5,6 +5,7 @@ export const permissions = {
   loanApply: "LOAN_APPLICATION_CREATE",
   loanApprove: "LOAN_APPROVE",
   loanDisburse: "LOAN_DISBURSE",
+  loanDisburseBtcOverCap: "LOAN_DISBURSE_BTC_OVER_CAP",
   loanRepayment: "LOAN_REPAYMENT_RECORD",
   loanClose: "LOAN_CLOSE",
   loanWriteOff: "LOAN_WRITE_OFF",

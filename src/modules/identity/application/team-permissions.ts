@@ -26,7 +26,7 @@ const permissionBlueprint: readonly PermissionBlueprintCategory[] = [
   {
     id: "loans",
     label: "Loans",
-    sections: [{ id: "loans-core", label: "Loan lifecycle", codes: [permissions.loanView, permissions.loanApply, permissions.loanApprove, permissions.loanDisburse, permissions.loanRepayment, permissions.loanClose, permissions.loanWriteOff, permissions.loanReverse] }],
+    sections: [{ id: "loans-core", label: "Loan lifecycle", codes: [permissions.loanView, permissions.loanApply, permissions.loanApprove, permissions.loanDisburse, permissions.loanDisburseBtcOverCap, permissions.loanRepayment, permissions.loanClose, permissions.loanWriteOff, permissions.loanReverse] }],
   },
   {
     id: "savings",

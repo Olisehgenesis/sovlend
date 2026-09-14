@@ -3,9 +3,27 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { assertBalancedJournal } from "@/modules/ledger/domain/journal";
 
+const authorizationState = vi.hoisted(() => ({
+  allowBtcOverCap: false,
+  seenContexts: [] as unknown[],
+}));
+
 vi.mock("@/modules/identity/application/authorization-service", () => ({
   AuthorizationService: class AuthorizationService {
     async assertAllowed() {}
+
+    async isAllowed(context: unknown) {
+      authorizationState.seenContexts.push(context);
+      if (
+        context &&
+        typeof context === "object" &&
+        "permission" in context &&
+        context.permission === "LOAN_DISBURSE_BTC_OVER_CAP"
+      ) {
+        return authorizationState.allowBtcOverCap;
+      }
+      return true;
+    }
   },
   PermissionDeniedError: class PermissionDeniedError extends Error {},
 }));
@@ -32,6 +50,13 @@ type MockOptions = Readonly<{
   principalMinor?: bigint;
   charges?: Array<{ id: string; amountMinor: bigint; name?: string }>;
   groupLoan?: boolean;
+  existingAuditEvents?: Array<{
+    action: string;
+    actorId: string | null;
+    entityType?: string;
+    occurredAt?: Date;
+    metadata: Record<string, unknown>;
+  }>;
   savingsAccounts?: Array<{
     id: string;
     accountNumber: string;
@@ -63,6 +88,12 @@ function buildPrismaMock(options: MockOptions = {}) {
     journalLines: [],
     savingsTransactionData: null,
     chargeUpdateArgs: null,
+    auditEvents: [] as Array<Record<string, unknown>>,
+  };
+  const auditEvents = [...(options.existingAuditEvents ?? [])];
+  const priceSnapshots = {
+    btcUsd: { id: "price-btc-usd-1", price: "60000" },
+    usdUgx: { id: "price-usd-ugx-1", price: "4000" },
   };
 
   const loan = {
@@ -181,13 +212,31 @@ function buildPrismaMock(options: MockOptions = {}) {
       }),
     },
     auditEvent: {
-      create: vi.fn(async () => ({})),
+      findMany: vi.fn(async () => auditEvents),
+      create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => {
+        auditEvents.push({
+          action: String(data.action),
+          actorId: (data.actorId as string | null | undefined) ?? null,
+          entityType: String(data.entityType),
+          occurredAt: new Date(),
+          metadata: (data.metadata as Record<string, unknown>) ?? {},
+        });
+        (captures.auditEvents as Array<Record<string, unknown>>).push(data);
+        return {};
+      }),
     },
     outboxEvent: {
       create: vi.fn(async () => ({})),
     },
     settlementAccount: {
       findFirst: vi.fn(async () => settlementAccount),
+    },
+    priceSnapshot: {
+      findFirst: vi.fn(async ({ where }: { where: { baseCode: string; quoteCode: string } }) => {
+        if (where.baseCode === "BTC" && where.quoteCode === "USD") return priceSnapshots.btcUsd;
+        if (where.baseCode === "USD" && where.quoteCode === "UGX") return priceSnapshots.usdUgx;
+        return null;
+      }),
     },
   };
 
@@ -200,6 +249,19 @@ function buildPrismaMock(options: MockOptions = {}) {
     },
     savingsAccount: {
       findMany: transaction.savingsAccount.findMany,
+    },
+    auditEvent: {
+      create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => {
+        auditEvents.push({
+          action: String(data.action),
+          actorId: (data.actorId as string | null | undefined) ?? null,
+          entityType: String(data.entityType),
+          occurredAt: new Date(),
+          metadata: (data.metadata as Record<string, unknown>) ?? {},
+        });
+        (captures.auditEvents as Array<Record<string, unknown>>).push(data);
+        return {};
+      }),
     },
     accountingClosure: { findFirst: vi.fn(async () => null) },
     $transaction: vi.fn(async (callback: (tx: typeof transaction) => unknown) => callback(transaction)),
@@ -226,6 +288,8 @@ function expectBalanced(lines: unknown[]) {
 describe("disburseLoan", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    authorizationState.allowBtcOverCap = false;
+    authorizationState.seenContexts = [];
   });
 
   it("credits the client's savings account with net proceeds and keeps the loan journal balanced", async () => {
@@ -501,5 +565,202 @@ describe("disburseLoan", () => {
         idempotencyKey: "1c9c2a3e-8f9a-4b6d-9c1a-2f3e4d5c6b7a",
       }),
     ).rejects.toThrow("closed on or before");
+  });
+
+  it("allows a cashier's first same-day BTC disbursement under the $500 cap", async () => {
+    const { prisma, captures } = buildPrismaMock({ principalMinor: 80_000_000n });
+
+    await disburseLoan(prisma, {
+      loanId: "loan-1",
+      actorUserId: "cashier-1",
+      businessDate: new Date("2026-09-14T00:00:00.000Z"),
+      idempotencyKey: "7b6a7d29-2152-4b1f-b0c2-f542ee8b25de",
+      payeeType: "BLINK",
+      payeeReference: "alice@blink",
+    });
+
+    expect(captures.loanTransactionData).toMatchObject({
+      settlementAmountMinor: 80_000_000n,
+      priceSnapshotId: "price-btc-usd-1",
+    });
+    expect(captures.auditEvents).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          action: "loan.disbursed",
+          metadata: expect.objectContaining({
+            businessDate: "2026-09-14",
+            payeeType: "BLINK",
+            btcUsdEquivalentMinor: "20000",
+            btcDailyCapUsdMinor: "50000",
+            btcUsdSnapshotId: "price-btc-usd-1",
+            usdUgxPrice: "4000",
+          }),
+        }),
+      ]),
+    );
+  });
+
+  it("rejects a BTC disbursement that would push the same cashier over the daily cap and records a blocked audit event", async () => {
+    const { prisma, captures } = buildPrismaMock({
+      principalMinor: 80_000_000n,
+      existingAuditEvents: [
+        {
+          action: "loan.disbursed",
+          actorId: "cashier-1",
+          entityType: "Loan",
+          metadata: {
+            businessDate: "2026-09-14",
+            payeeType: "BLINK",
+            btcUsdEquivalentMinor: "35000",
+          },
+        },
+      ],
+    });
+
+    await expect(
+      disburseLoan(prisma, {
+        loanId: "loan-1",
+        actorUserId: "cashier-1",
+        businessDate: new Date("2026-09-14T00:00:00.000Z"),
+        idempotencyKey: "27d48818-f825-4b26-a816-a2b1f8c6e150",
+        payeeType: "BLINK",
+        payeeReference: "alice@blink",
+      }),
+    ).rejects.toThrow("BTC disbursements above $500/day require branch-manager approval");
+
+    expect(captures.loanTransactionData).toBeNull();
+    expect(captures.auditEvents).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          action: "loan.disbursement.btc_cap_blocked",
+          metadata: expect.objectContaining({
+            businessDate: "2026-09-14",
+            currentDisbursementUsdMinor: "20000",
+            priorDisbursementUsdMinor: "35000",
+            attemptedDisbursementUsdMinor: "55000",
+            requiredPermission: "LOAN_DISBURSE_BTC_OVER_CAP",
+          }),
+        }),
+      ]),
+    );
+  });
+
+  it("lets a manager-authorized actor execute an over-cap BTC disbursement", async () => {
+    authorizationState.allowBtcOverCap = true;
+    const { prisma, captures } = buildPrismaMock({
+      principalMinor: 120_000_000n,
+      existingAuditEvents: [
+        {
+          action: "loan.disbursed",
+          actorId: "manager-1",
+          entityType: "Loan",
+          metadata: {
+            businessDate: "2026-09-14",
+            payeeType: "BLINK",
+            btcUsdEquivalentMinor: "30000",
+          },
+        },
+      ],
+    });
+
+    await disburseLoan(prisma, {
+      loanId: "loan-1",
+      actorUserId: "manager-1",
+      businessDate: new Date("2026-09-14T00:00:00.000Z"),
+      idempotencyKey: "d4ac7356-6629-490a-83bd-f6ef4d48eeca",
+      payeeType: "BLINK",
+      payeeReference: "manager@blink",
+    });
+
+    expect(captures.loanTransactionData).toMatchObject({
+      settlementAmountMinor: 120_000_000n,
+      priceSnapshotId: "price-btc-usd-1",
+    });
+    expect(captures.auditEvents).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ action: "loan.disbursement.btc_cap_blocked" })]),
+    );
+    expect(captures.auditEvents).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          action: "loan.disbursed",
+          metadata: expect.objectContaining({
+            payeeType: "BLINK",
+            btcUsdEquivalentMinor: "30000",
+            btcCapOverrideUsed: true,
+          }),
+        }),
+      ]),
+    );
+  });
+
+  it("resets the BTC cap on the next business day", async () => {
+    const { prisma, captures } = buildPrismaMock({
+      principalMinor: 120_000_000n,
+      existingAuditEvents: [
+        {
+          action: "loan.disbursed",
+          actorId: "cashier-1",
+          entityType: "Loan",
+          metadata: {
+            businessDate: "2026-09-13",
+            payeeType: "BLINK",
+            btcUsdEquivalentMinor: "45000",
+          },
+        },
+      ],
+    });
+
+    await disburseLoan(prisma, {
+      loanId: "loan-1",
+      actorUserId: "cashier-1",
+      businessDate: new Date("2026-09-14T00:00:00.000Z"),
+      idempotencyKey: "dbf28c83-b4fd-4143-8ebe-0a18e4c352c3",
+      payeeType: "BLINK",
+      payeeReference: "alice@blink",
+    });
+
+    expect(captures.loanTransactionData).toMatchObject({
+      settlementAmountMinor: 120_000_000n,
+      priceSnapshotId: "price-btc-usd-1",
+    });
+  });
+
+  it("accumulates multiple same-day BTC disbursements for the same cashier toward the cap", async () => {
+    const { prisma } = buildPrismaMock({
+      principalMinor: 60_000_000n,
+      existingAuditEvents: [
+        {
+          action: "loan.disbursed",
+          actorId: "cashier-1",
+          entityType: "Loan",
+          metadata: {
+            businessDate: "2026-09-14",
+            payeeType: "BLINK",
+            btcUsdEquivalentMinor: "15000",
+          },
+        },
+        {
+          action: "loan.disbursed",
+          actorId: "cashier-1",
+          entityType: "Loan",
+          metadata: {
+            businessDate: "2026-09-14",
+            payeeType: "BLINK",
+            btcUsdEquivalentMinor: "25000",
+          },
+        },
+      ],
+    });
+
+    await expect(
+      disburseLoan(prisma, {
+        loanId: "loan-1",
+        actorUserId: "cashier-1",
+        businessDate: new Date("2026-09-14T00:00:00.000Z"),
+        idempotencyKey: "f81a4d0e-7093-48a7-acbf-b6d0cba34083",
+        payeeType: "BLINK",
+        payeeReference: "alice@blink",
+      }),
+    ).rejects.toThrow("BTC disbursements above $500/day require branch-manager approval");
   });
 });

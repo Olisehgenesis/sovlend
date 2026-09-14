@@ -9,6 +9,7 @@ const descriptions: Record<string, string> = {
   [permissions.loanApply]: "Create and submit loan applications",
   [permissions.loanApprove]: "Approve loans within the assigned amount limit",
   [permissions.loanDisburse]: "Disburse approved loans",
+  [permissions.loanDisburseBtcOverCap]: "Approve or execute BTC loan disbursements above the cashier daily cap",
   [permissions.loanRepayment]: "Record loan repayments",
   [permissions.loanClose]: "Close fully settled loans",
   [permissions.loanWriteOff]: "Write off loans through controlled approval",

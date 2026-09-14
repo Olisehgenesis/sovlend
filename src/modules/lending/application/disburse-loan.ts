@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 
+import Decimal from "decimal.js";
 import type { PrismaClient } from "@prisma/client";
 import { z } from "zod";
 
@@ -22,6 +23,11 @@ import { generateRepaymentSchedule } from "../domain/repayment-schedule";
 // open. Duplicated here (rather than imported) to avoid coupling disburse-loan.ts to a private
 // constant in a sibling module.
 const OPEN_LOAN_STATUSES = ["ACTIVE", "IN_ARREARS", "OVERPAID"] as const;
+const BTC_DAILY_DISBURSEMENT_CAP_USD_MINOR = 50_000n;
+const BTC_PAYEE_TYPE: PayeeType = "BLINK";
+const CRYPTO_FRESH_WINDOW_MS = 60 * 60 * 1_000;
+const FIAT_FRESH_WINDOW_MS = 36 * 60 * 60 * 1_000;
+const DAY_IN_MS = 24 * 60 * 60 * 1_000;
 
 const termsSchema = z.object({
   annualRateBps: z.number().int().nonnegative(),
@@ -55,6 +61,29 @@ export type LoanDisbursementCommand = {
   payeeName?: string;
   payeeReference?: string;
 };
+
+type BtcDisbursementPricing = Readonly<{
+  btcUsdSnapshotId: string;
+  btcUsdPrice: string;
+  usdUgxPrice: string;
+}>;
+
+type BtcDailyCapExceeded = Readonly<{
+  businessDate: string;
+  currentDisbursementMinor: bigint;
+  currentDisbursementUsdMinor: bigint;
+  priorDisbursementUsdMinor: bigint;
+  attemptedDisbursementUsdMinor: bigint;
+  btcUsdSnapshotId: string;
+  btcUsdPrice: string;
+  usdUgxPrice: string;
+}>;
+
+export class BtcDisbursementApprovalRequiredError extends Error {
+  constructor(readonly details: BtcDailyCapExceeded) {
+    super("BTC disbursements above $500/day require branch-manager approval");
+  }
+}
 
 async function resolveSavingsDestination(
   prisma: Pick<PrismaClient, "savingsAccount">,
@@ -104,6 +133,173 @@ async function resolveSavingsDestination(
   if (defaultAccount) return defaultAccount;
   if (accounts.length === 1) return accounts[0];
   throw new Error("Select which savings account should receive the disbursement");
+}
+
+function isBtcDisbursement(command: LoanDisbursementCommand) {
+  // BTC payouts are currently identified by the recorded cash-out destination rather than by the
+  // settlement account picker, which remains informational-only and limited to the institution's
+  // own cash/bank/mobile-money accounts.
+  return command.payeeType === BTC_PAYEE_TYPE;
+}
+
+async function loadBtcDisbursementPricing(
+  prisma: Pick<PrismaClient, "priceSnapshot">,
+): Promise<BtcDisbursementPricing> {
+  const now = new Date();
+  const [btcUsdSnapshot, usdUgxSnapshot] = await Promise.all([
+    prisma.priceSnapshot.findFirst({
+      where: {
+        baseCode: "BTC",
+        quoteCode: "USD",
+        observedAt: { gt: new Date(now.getTime() - CRYPTO_FRESH_WINDOW_MS) },
+      },
+      orderBy: [{ observedAt: "desc" }, { createdAt: "desc" }],
+      select: { id: true, price: true },
+    }),
+    prisma.priceSnapshot.findFirst({
+      where: {
+        baseCode: "USD",
+        quoteCode: "UGX",
+        observedAt: { gt: new Date(now.getTime() - FIAT_FRESH_WINDOW_MS) },
+      },
+      orderBy: [{ observedAt: "desc" }, { createdAt: "desc" }],
+      select: { price: true },
+    }),
+  ]);
+
+  if (!btcUsdSnapshot || !usdUgxSnapshot) {
+    throw new Error("Fresh BTC/USD and USD/UGX price snapshots are required before a BTC disbursement can be released");
+  }
+
+  return {
+    btcUsdSnapshotId: btcUsdSnapshot.id,
+    btcUsdPrice: btcUsdSnapshot.price.toString(),
+    usdUgxPrice: usdUgxSnapshot.price.toString(),
+  };
+}
+
+function toBusinessDateString(date: Date) {
+  return date.toISOString().slice(0, 10);
+}
+
+function startOfUtcDay(date: Date) {
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+}
+
+function addUtcDays(date: Date, days: number) {
+  return new Date(startOfUtcDay(date).getTime() + days * DAY_IN_MS);
+}
+
+function ugxMinorToUsdMinor(amountMinor: bigint, usdUgxPrice: string) {
+  return BigInt(
+    new Decimal(amountMinor.toString())
+      .div(usdUgxPrice)
+      .toDecimalPlaces(0, Decimal.ROUND_HALF_UP)
+      .toFixed(0),
+  );
+}
+
+function readBigIntString(value: unknown): bigint | null {
+  if (typeof value === "string" && /^\d+$/.test(value)) return BigInt(value);
+  return null;
+}
+
+function eventBelongsToBusinessDate(metadata: unknown, occurredAt: Date, businessDate: string) {
+  if (metadata && typeof metadata === "object" && !Array.isArray(metadata) && "businessDate" in metadata) {
+    return (metadata as Record<string, unknown>).businessDate === businessDate;
+  }
+  return occurredAt.toISOString().slice(0, 10) === businessDate;
+}
+
+function readPriorBtcDisbursementUsdMinor(metadata: unknown, fallbackUsdUgxPrice: string) {
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) return 0n;
+  const fields = metadata as Record<string, unknown>;
+  const usdEquivalent = readBigIntString(fields.btcUsdEquivalentMinor);
+  if (usdEquivalent !== null) return usdEquivalent;
+  const netProceedsMinor = readBigIntString(fields.netProceedsMinor);
+  return netProceedsMinor === null ? 0n : ugxMinorToUsdMinor(netProceedsMinor, fallbackUsdUgxPrice);
+}
+
+async function loadPriorSameDayBtcDisbursementUsdMinor(
+  prisma: Pick<PrismaClient, "auditEvent">,
+  input: { actorUserId: string; businessDate: Date; usdUgxPrice: string },
+) {
+  const dayStart = startOfUtcDay(input.businessDate);
+  const nextDay = addUtcDays(input.businessDate, 1);
+  const businessDate = toBusinessDateString(input.businessDate);
+  const events = await prisma.auditEvent.findMany({
+    where: {
+      actorId: input.actorUserId,
+      action: "loan.disbursed",
+      entityType: "Loan",
+      AND: [
+        { metadata: { path: ["payeeType"], equals: BTC_PAYEE_TYPE } },
+        {
+          OR: [
+            { occurredAt: { gte: dayStart, lt: nextDay } },
+            { metadata: { path: ["businessDate"], equals: businessDate } },
+          ],
+        },
+      ],
+    },
+    select: { metadata: true, occurredAt: true },
+  });
+
+  return events
+    .filter((event) => eventBelongsToBusinessDate(event.metadata, event.occurredAt, businessDate))
+    .reduce(
+      (sum, event) =>
+        sum + readPriorBtcDisbursementUsdMinor(event.metadata, input.usdUgxPrice),
+      0n,
+    );
+}
+
+async function recordBtcCapBlockedAudit(
+  prisma: Pick<PrismaClient, "auditEvent">,
+  input: {
+    actorUserId: string;
+    loanId: string;
+    paymentMethodSettlementAccountId?: string;
+    externalReference?: string;
+    payeeName?: string;
+    payeeReference?: string;
+    details: BtcDailyCapExceeded;
+  },
+) {
+  const correlationId = randomUUID();
+  const metadata = {
+    loanId: input.loanId,
+    businessDate: input.details.businessDate,
+    payeeType: BTC_PAYEE_TYPE,
+    payeeName: input.payeeName?.trim() || null,
+    payeeReference: input.payeeReference?.trim() || null,
+    paymentMethodAccountId: input.paymentMethodSettlementAccountId ?? null,
+    externalReference: input.externalReference ?? null,
+    currentDisbursementMinor: input.details.currentDisbursementMinor.toString(),
+    currentDisbursementUsdMinor: input.details.currentDisbursementUsdMinor.toString(),
+    priorDisbursementUsdMinor: input.details.priorDisbursementUsdMinor.toString(),
+    attemptedDisbursementUsdMinor: input.details.attemptedDisbursementUsdMinor.toString(),
+    capUsdMinor: BTC_DAILY_DISBURSEMENT_CAP_USD_MINOR.toString(),
+    btcUsdSnapshotId: input.details.btcUsdSnapshotId,
+    btcUsdPrice: input.details.btcUsdPrice,
+    usdUgxPrice: input.details.usdUgxPrice,
+    requiredPermission: permissions.loanDisburseBtcOverCap,
+  };
+  const eventHash = createHash("sha256")
+    .update(JSON.stringify({ correlationId, action: "loan.disbursement.btc_cap_blocked", metadata }))
+    .digest("hex");
+
+  await prisma.auditEvent.create({
+    data: {
+      actorId: input.actorUserId,
+      action: "loan.disbursement.btc_cap_blocked",
+      entityType: "Loan",
+      entityId: input.loanId,
+      correlationId,
+      metadata,
+      eventHash,
+    },
+  });
 }
 
 export async function disburseLoan(
@@ -188,7 +384,9 @@ export async function disburseLoan(
 
   const terms = termsSchema.parse(loan.termsSnapshot);
 
-  await new AuthorizationService(prisma).assertAllowed({
+  const authorization = new AuthorizationService(prisma);
+
+  await authorization.assertAllowed({
     actorUserId: command.actorUserId,
     permission: permissions.loanDisburse,
     organizationId: loan.office.organizationId,
@@ -208,30 +406,77 @@ export async function disburseLoan(
     disbursedOn: command.businessDate,
   });
 
-  return prisma.$transaction(
-    async (transaction) => {
-      const changed = await transaction.loan.updateMany({
-        where: { id: loan.id, status: "APPROVED", disbursedOn: null },
-        data: {
-          status: "ACTIVE",
-          disbursedOn: command.businessDate,
-          maturesOn: schedule.at(-1)?.dueOn,
-          topUpOfLoanId: command.topUpOfLoanId ?? null,
-        },
-      });
-      if (changed.count !== 1) {
-        throw new Error("Loan was already disbursed by another operation");
-      }
+  try {
+    return await prisma.$transaction(
+      async (transaction) => {
+        const immediateCharges = await transaction.charge.findMany({
+          where: { loanId: loan.id, dueOn: null, status: "PENDING" },
+          select: { id: true, amountMinor: true, name: true },
+        });
+        const feesMinor = immediateCharges.reduce((sum, charge) => sum + charge.amountMinor, 0n);
+        const netProceedsMinor = loan.principalMinor - feesMinor;
+        if (netProceedsMinor < 0n) {
+          throw new Error("Disbursement fees exceed the approved principal");
+        }
 
-      const immediateCharges = await transaction.charge.findMany({
-        where: { loanId: loan.id, dueOn: null, status: "PENDING" },
-        select: { id: true, amountMinor: true, name: true },
-      });
-      const feesMinor = immediateCharges.reduce((sum, charge) => sum + charge.amountMinor, 0n);
-      const netProceedsMinor = loan.principalMinor - feesMinor;
-      if (netProceedsMinor < 0n) {
-        throw new Error("Disbursement fees exceed the approved principal");
-      }
+        let btcPricing: BtcDisbursementPricing | null = null;
+        let currentBtcUsdEquivalentMinor: bigint | null = null;
+        let priorBtcUsdEquivalentMinor: bigint | null = null;
+        let btcCapOverrideUsed = false;
+
+        if (isBtcDisbursement(command)) {
+          btcPricing = await loadBtcDisbursementPricing(transaction);
+          currentBtcUsdEquivalentMinor = ugxMinorToUsdMinor(
+            netProceedsMinor,
+            btcPricing.usdUgxPrice,
+          );
+          priorBtcUsdEquivalentMinor = await loadPriorSameDayBtcDisbursementUsdMinor(
+            transaction,
+            {
+              actorUserId: command.actorUserId,
+              businessDate: command.businessDate,
+              usdUgxPrice: btcPricing.usdUgxPrice,
+            },
+          );
+          const attemptedBtcUsdEquivalentMinor =
+            priorBtcUsdEquivalentMinor + currentBtcUsdEquivalentMinor;
+          if (attemptedBtcUsdEquivalentMinor > BTC_DAILY_DISBURSEMENT_CAP_USD_MINOR) {
+            const allowedOverCap = await authorization.isAllowed({
+              actorUserId: command.actorUserId,
+              permission: permissions.loanDisburseBtcOverCap,
+              organizationId: loan.office.organizationId,
+              officeId: loan.officeId,
+              amountMinor: attemptedBtcUsdEquivalentMinor,
+              currencyCode: "USD",
+            });
+            if (!allowedOverCap) {
+              throw new BtcDisbursementApprovalRequiredError({
+                businessDate: toBusinessDateString(command.businessDate),
+                currentDisbursementMinor: netProceedsMinor,
+                currentDisbursementUsdMinor: currentBtcUsdEquivalentMinor,
+                priorDisbursementUsdMinor: priorBtcUsdEquivalentMinor,
+                attemptedDisbursementUsdMinor: attemptedBtcUsdEquivalentMinor,
+                btcUsdSnapshotId: btcPricing.btcUsdSnapshotId,
+                btcUsdPrice: btcPricing.btcUsdPrice,
+                usdUgxPrice: btcPricing.usdUgxPrice,
+              });
+            }
+            btcCapOverrideUsed = true;
+          }
+        }
+
+        const changed = await transaction.loan.updateMany({
+          where: { id: loan.id, status: "APPROVED", disbursedOn: null },
+          data: {
+            status: "ACTIVE",
+            disbursedOn: command.businessDate,
+            maturesOn: schedule.at(-1)?.dueOn,
+            topUpOfLoanId: command.topUpOfLoanId ?? null,
+          },
+        });
+        if (changed.count !== 1) {
+          throw new Error("Loan was already disbursed by another operation");
+        }
 
       // Separates disbursement-time charges into distinct income accounts by charge name (see
       // Problem 2 in the accounting audit: admission fee, processing fee, and generic fees must
@@ -305,6 +550,7 @@ export async function disburseLoan(
           settlementAccountId: paymentMethodAccount?.id,
           settlementAmountMinor: netProceedsMinor,
           denominationAmountMinor: loan.principalMinor,
+          priceSnapshotId: btcPricing?.btcUsdSnapshotId ?? null,
           externalReference: command.externalReference,
           idempotencyKey: command.idempotencyKey,
           recordedByUserId: command.actorUserId,
@@ -394,9 +640,18 @@ export async function disburseLoan(
         netProceedsMinor: netProceedsMinor.toString(),
         externalReference: command.externalReference ?? null,
         topUpOfLoanId: command.topUpOfLoanId ?? null,
+        businessDate: toBusinessDateString(command.businessDate),
         payeeType: command.payeeType ?? null,
         payeeName: command.payeeName?.trim() || null,
         payeeReference: command.payeeReference?.trim() || null,
+        btcUsdEquivalentMinor: currentBtcUsdEquivalentMinor?.toString() ?? null,
+        btcDailyCapUsdMinor: isBtcDisbursement(command)
+          ? BTC_DAILY_DISBURSEMENT_CAP_USD_MINOR.toString()
+          : null,
+        btcCapOverrideUsed: btcCapOverrideUsed || null,
+        btcUsdSnapshotId: btcPricing?.btcUsdSnapshotId ?? null,
+        btcUsdPrice: btcPricing?.btcUsdPrice ?? null,
+        usdUgxPrice: btcPricing?.usdUgxPrice ?? null,
       };
       const eventHash = createHash("sha256")
         .update(JSON.stringify({ correlationId, action: "loan.disbursed", metadata }))
@@ -423,9 +678,23 @@ export async function disburseLoan(
       });
 
       return transactionRecord;
-    },
-    { isolationLevel: "Serializable" },
-  );
+      },
+      { isolationLevel: "Serializable" },
+    );
+  } catch (error) {
+    if (error instanceof BtcDisbursementApprovalRequiredError) {
+      await recordBtcCapBlockedAudit(prisma, {
+        actorUserId: command.actorUserId,
+        loanId: loan.id,
+        paymentMethodSettlementAccountId: paymentMethodAccount?.id,
+        externalReference: command.externalReference,
+        payeeName: command.payeeName,
+        payeeReference: command.payeeReference,
+        details: error.details,
+      });
+    }
+    throw error;
+  }
 }
 
 /**
