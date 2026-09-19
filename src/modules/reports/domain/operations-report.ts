@@ -11,7 +11,7 @@ import {
 import type { PermissionCode } from "@/modules/identity/domain/permissions";
 import { transactionTypeVariants } from "@/lib/loan-transaction-type-variants";
 import { rowsToCsv } from "@/modules/lending/domain/loan-export";
-import { installmentOutstandingMinor as totalInstallmentOutstandingMinor } from "@/modules/lending/domain/loan-outstanding";
+import { installmentOutstandingMinor as totalInstallmentOutstandingMinor, installmentsWithCharges } from "@/modules/lending/domain/loan-outstanding";
 import { loadPortfolioLoans, type AgingBucketKey, type BranchPortfolioBucketKey, branchPortfolioBucket, branchPortfolioBucketLabels, branchPortfolioBucketOrder } from "@/modules/reports/domain/risk-report";
 
 const reportableLoanStatuses: LoanStatus[] = ["ACTIVE", "IN_ARREARS"];
@@ -1359,32 +1359,34 @@ export async function loadOutstandingBalancesReport(
           monitoringFeeWaivedMinor: true,
         },
       },
+      charges: { select: { name: true, amountMinor: true, status: true, dueOn: true } },
     },
   });
 
   const rows = loans
     .map<OutstandingBalanceRow>((loan) => {
-      const principalOutstanding = loan.installments.reduce(
+      const installments = installmentsWithCharges(loan.installments, loan.charges);
+      const principalOutstanding = installments.reduce(
         (sum, installment) => sum + principalOutstandingMinor(installment),
         0n,
       );
-      const interestOutstanding = loan.installments.reduce(
+      const interestOutstanding = installments.reduce(
         (sum, installment) => sum + interestOutstandingMinor(installment),
         0n,
       );
-      const feesOutstanding = loan.installments.reduce(
+      const feesOutstanding = installments.reduce(
         (sum, installment) => sum + feesOutstandingMinor(installment),
         0n,
       );
-      const monitoringFeeOutstanding = loan.installments.reduce(
+      const monitoringFeeOutstanding = installments.reduce(
         (sum, installment) => sum + monitoringFeeOutstandingMinor(installment),
         0n,
       );
-      const penaltiesOutstanding = loan.installments.reduce(
+      const penaltiesOutstanding = installments.reduce(
         (sum, installment) => sum + penaltiesOutstandingMinor(installment),
         0n,
       );
-      const totalOutstanding = loan.installments.reduce(
+      const totalOutstanding = installments.reduce(
         (sum, installment) => sum + totalInstallmentOutstandingMinor(installment),
         0n,
       );

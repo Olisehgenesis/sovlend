@@ -5,6 +5,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { LiveSearchInput } from "@/components/live-search-input";
+import { TableRowLink } from "@/components/table-row-link";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { formatMinor } from "@/modules/reporting/application/dashboard";
@@ -16,6 +17,7 @@ import {
 import {
   installmentDueMinor,
   installmentPaidMinor,
+  installmentsWithCharges,
   isLoanSettledStatus,
   loanOutstandingMinor,
 } from "@/modules/lending/domain/loan-outstanding";
@@ -173,6 +175,7 @@ export default async function LoansPage({
       loanOfficer: { select: { name: true } },
       installments: {
         select: {
+          dueOn: true,
           principalDueMinor: true,
           interestDueMinor: true,
           feesDueMinor: true,
@@ -190,6 +193,7 @@ export default async function LoansPage({
           monitoringFeeWaivedMinor: true,
         },
       },
+      charges: { select: { name: true, amountMinor: true, status: true, dueOn: true } },
     },
     orderBy: { createdAt: "desc" },
     skip: (page - 1) * pageSize,
@@ -315,19 +319,20 @@ export default async function LoansPage({
                 </thead>
                 <tbody>
                   {loans.map((loan) => {
-                    const principalDueRaw = loan.installments.reduce(
+                    const schedule = installmentsWithCharges(loan.installments, loan.charges);
+                    const principalDueRaw = schedule.reduce(
                       (sum, item) => sum + item.principalDueMinor - item.principalPaidMinor - item.principalWaivedMinor,
                       0n,
                     ) - loan.principalWrittenOffMinor;
-                    const interestDueRaw = loan.installments.reduce(
+                    const interestDueRaw = schedule.reduce(
                       (sum, item) => sum + item.interestDueMinor - item.interestPaidMinor - item.interestWaivedMinor,
                       0n,
                     ) - loan.interestWrittenOffMinor;
-                    const feesDueRaw = loan.installments.reduce(
+                    const feesDueRaw = schedule.reduce(
                       (sum, item) => sum + item.feesDueMinor - item.feesPaidMinor - item.feesWaivedMinor,
                       0n,
                     ) - loan.feesWrittenOffMinor;
-                    const penaltiesDueRaw = loan.installments.reduce(
+                    const penaltiesDueRaw = schedule.reduce(
                       (sum, item) => sum + item.penaltiesDueMinor - item.penaltiesPaidMinor - item.penaltiesWaivedMinor,
                       0n,
                     ) - loan.penaltiesWrittenOffMinor;
@@ -336,7 +341,7 @@ export default async function LoansPage({
                     const feesDue = clampToZero(feesDueRaw);
                     const monitoringFeeDueRaw = isLoanSettledStatus(loan.status)
                       ? 0n
-                      : loan.installments.reduce(
+                      : schedule.reduce(
                           (sum, item) =>
                             sum +
                             (item.monitoringFeeDueMinor ?? 0n) -
@@ -346,12 +351,12 @@ export default async function LoansPage({
                         );
                     const monitoringFeeDue = clampToZero(monitoringFeeDueRaw);
                     const penaltiesDue = clampToZero(penaltiesDueRaw);
-                    const totalDue = loanOutstandingMinor(loan.installments, loan);
-                    const totalPaid = loan.installments.reduce(
+                    const totalDue = loanOutstandingMinor(schedule, loan);
+                    const totalPaid = schedule.reduce(
                       (sum, item) => sum + installmentPaidMinor(item),
                       0n,
                     );
-                    const totalExpectedRepayment = loan.installments.reduce(
+                    const totalExpectedRepayment = schedule.reduce(
                       (sum, item) => sum + installmentDueMinor(item),
                       0n,
                     );
@@ -359,35 +364,85 @@ export default async function LoansPage({
                     const borrower = loan.client
                       ? `${loan.client.firstName} ${loan.client.lastName}`
                       : `Group: ${loan.group?.name ?? "Unknown"}`;
+                    const loanHref = `/loans/${loan.id}`;
+                    const loanLabel = `Open loan ${loan.accountNumber}`;
 
                     return (
                       <tr key={loan.id}>
                         <td>
                           {borrower}
-                          <Link className="row-link" href={`/loans/${loan.id}`} aria-label={`Open ${loan.accountNumber}`} />
+                          <TableRowLink href={loanHref} label={loanLabel} primary />
                         </td>
-                        <td className="mono">{loan.accountNumber}</td>
-                        <td className="mono">{loan.client ? loan.client.accountNumber : (loan.group?.accountNumber ?? "")}</td>
-                        <td>{loan.product.name}</td>
+                        <td className="mono">
+                          {loan.accountNumber}
+                          <TableRowLink href={loanHref} label={loanLabel} />
+                        </td>
+                        <td className="mono">
+                          {loan.client ? loan.client.accountNumber : (loan.group?.accountNumber ?? "")}
+                          <TableRowLink href={loanHref} label={loanLabel} />
+                        </td>
+                        <td>
+                          {loan.product.name}
+                          <TableRowLink href={loanHref} label={loanLabel} />
+                        </td>
                         <td>
                           <span className={`status ${loanStatusTone(loan.status)}`}>
                             {loan.status.replaceAll("_", " ")}
                           </span>
+                          <TableRowLink href={loanHref} label={loanLabel} />
                         </td>
-                        <td>{formatMinor(loan.principalMinor, loan.denominationCurrency)}</td>
-                        {requestedStatus === "WRITTEN_OFF" ? <td>{loan.writtenOffByName ?? "—"}</td> : null}
-                        <td>{loan.loanOfficer?.name ?? "Unassigned"}</td>
-                        <td>{formatMinor(principalDue, loan.denominationCurrency)}</td>
-                        <td>{formatMinor(interestDue, loan.denominationCurrency)}</td>
-                        <td>{formatMinor(feesDue, loan.denominationCurrency)}</td>
-                        <td>{formatMinor(monitoringFeeDue, loan.denominationCurrency)}</td>
-                        <td>{formatMinor(penaltiesDue, loan.denominationCurrency)}</td>
-                        <td>{formatMinor(totalDue, loan.denominationCurrency)}</td>
-                        <td>{formatMinor(totalPaid, loan.denominationCurrency)}</td>
+                        <td>
+                          {formatMinor(loan.principalMinor, loan.denominationCurrency)}
+                          <TableRowLink href={loanHref} label={loanLabel} />
+                        </td>
+                        {requestedStatus === "WRITTEN_OFF" ? (
+                          <td>
+                            {loan.writtenOffByName ?? "—"}
+                            <TableRowLink href={loanHref} label={loanLabel} />
+                          </td>
+                        ) : null}
+                        <td>
+                          {loan.loanOfficer?.name ?? "Unassigned"}
+                          <TableRowLink href={loanHref} label={loanLabel} />
+                        </td>
+                        <td>
+                          {formatMinor(principalDue, loan.denominationCurrency)}
+                          <TableRowLink href={loanHref} label={loanLabel} />
+                        </td>
+                        <td>
+                          {formatMinor(interestDue, loan.denominationCurrency)}
+                          <TableRowLink href={loanHref} label={loanLabel} />
+                        </td>
+                        <td>
+                          {formatMinor(feesDue, loan.denominationCurrency)}
+                          <TableRowLink href={loanHref} label={loanLabel} />
+                        </td>
+                        <td>
+                          {formatMinor(monitoringFeeDue, loan.denominationCurrency)}
+                          <TableRowLink href={loanHref} label={loanLabel} />
+                        </td>
+                        <td>
+                          {formatMinor(penaltiesDue, loan.denominationCurrency)}
+                          <TableRowLink href={loanHref} label={loanLabel} />
+                        </td>
+                        <td>
+                          {formatMinor(totalDue, loan.denominationCurrency)}
+                          <TableRowLink href={loanHref} label={loanLabel} />
+                        </td>
+                        <td>
+                          {formatMinor(totalPaid, loan.denominationCurrency)}
+                          <TableRowLink href={loanHref} label={loanLabel} />
+                        </td>
                         {requestedStatus === "OVERPAID" ? (
                           <>
-                            <td>{formatMinor(overpaidBy, loan.denominationCurrency)}</td>
-                            <td>{formatMinor(totalExpectedRepayment, loan.denominationCurrency)}</td>
+                            <td>
+                              {formatMinor(overpaidBy, loan.denominationCurrency)}
+                              <TableRowLink href={loanHref} label={loanLabel} />
+                            </td>
+                            <td>
+                              {formatMinor(totalExpectedRepayment, loan.denominationCurrency)}
+                              <TableRowLink href={loanHref} label={loanLabel} />
+                            </td>
                           </>
                         ) : null}
                       </tr>
@@ -436,7 +491,7 @@ export default async function LoansPage({
             </div>
           ) : (
             <div className="table-scroll">
-              <table>
+              <table className="clickable-rows">
                 <thead>
                   <tr>
                     <th>Client</th>
@@ -447,32 +502,42 @@ export default async function LoansPage({
                   </tr>
                 </thead>
                 <tbody>
-                  {applications.map((application) => (
+                  {applications.map((application) => {
+                    const href = `/loans/applications/${application.id}`;
+                    const label = `Review ${application.product.name} application`;
+                    return (
                     <tr key={application.id}>
                       <td>
                         {application.client
                           ? `${application.client.firstName} ${application.client.lastName}`
                           : `Group: ${application.group?.name ?? "Unknown"}`}
+                        <TableRowLink href={href} label={label} primary />
                       </td>
-                      <td>{application.product.name}</td>
+                      <td>
+                        {application.product.name}
+                        <TableRowLink href={href} label={label} />
+                      </td>
                       <td>
                         {formatMinor(
                           application.approvedPrincipalMinor ?? application.proposedPrincipalMinor,
                           application.product.denominationCurrency,
                         )}
+                        <TableRowLink href={href} label={label} />
                       </td>
                       <td>
                         <span className={`status ${application.status === "SUBMITTED" ? "review" : "up-to-date"}`}>
                           {application.status.replaceAll("_", " ")}
                         </span>
+                        <TableRowLink href={href} label={label} />
                       </td>
                       <td>
-                        <Link className="green-link" href={`/loans/applications/${application.id}`}>
+                        <Link className="green-link" href={href}>
                           Review
                         </Link>
                       </td>
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

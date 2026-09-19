@@ -13,6 +13,7 @@ import {
   installmentOutstandingMinor as totalInstallmentOutstandingMinor,
   installmentPaidMinor,
   installmentWaivedMinor,
+  installmentsWithCharges,
   isLoanSettledStatus,
   loanOutstandingMinor,
 } from "./loan-outstanding";
@@ -226,6 +227,7 @@ export function buildLoanExportDatasets(records: readonly ExportLoanRecord[], as
   };
 
   for (const loan of records) {
+    const schedule = installmentsWithCharges(loan.installments, loan.charges);
     datasets.loans.push({
       loanId: loan.id,
       accountNumber: loan.accountNumber,
@@ -243,7 +245,7 @@ export function buildLoanExportDatasets(records: readonly ExportLoanRecord[], as
       createdAt: isoDateTime(loan.createdAt),
     });
 
-    const totals = loan.installments.reduce(
+    const totals = schedule.reduce(
       (sum, item) => ({
         principalDue: sum.principalDue + item.principalDueMinor,
         interestDue: sum.interestDue + item.interestDueMinor,
@@ -271,10 +273,10 @@ export function buildLoanExportDatasets(records: readonly ExportLoanRecord[], as
     // Keep the legacy per-component fee balance columns intact here: loan-level write-offs are not
     // split between generic fees and monitoring fee, so only the aggregate totals can safely add
     // monitoring fee without inventing a fake per-component write-off allocation.
-    const totalOriginal = loan.installments.reduce((sum, item) => sum + installmentDueMinor(item), 0n);
-    const totalPaid = loan.installments.reduce((sum, item) => sum + installmentPaidMinor(item), 0n);
-    const totalWaived = loan.installments.reduce((sum, item) => sum + installmentWaivedMinor(item), 0n);
-    const totalOutstanding = loanOutstandingMinor(loan.installments, loan);
+    const totalOriginal = schedule.reduce((sum, item) => sum + installmentDueMinor(item), 0n);
+    const totalPaid = schedule.reduce((sum, item) => sum + installmentPaidMinor(item), 0n);
+    const totalWaived = schedule.reduce((sum, item) => sum + installmentWaivedMinor(item), 0n);
+    const totalOutstanding = loanOutstandingMinor(schedule, loan);
     const components = [
       { key: "principal", due: totals.principalDue, paid: totals.principalPaid, waived: totals.principalWaived, writtenOff: loan.principalWrittenOffMinor },
       { key: "interest", due: totals.interestDue, paid: totals.interestPaid, waived: totals.interestWaived, writtenOff: loan.interestWrittenOffMinor },
@@ -300,7 +302,7 @@ export function buildLoanExportDatasets(records: readonly ExportLoanRecord[], as
     balanceRow.totalOverDue = money(totals.overdue);
     datasets.loan_balances.push(balanceRow);
 
-    for (const item of loan.installments) {
+    for (const item of schedule) {
       const outstanding = installmentOutstanding(item);
       datasets.loan_schedule.push({
         loanId: loan.id,

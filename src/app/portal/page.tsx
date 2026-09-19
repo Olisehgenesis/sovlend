@@ -46,8 +46,10 @@ export default async function PortalDashboardPage() {
             feesWaivedMinor: true,
             penaltiesWaivedMinor: true,
             monitoringFeeWaivedMinor: true,
+            dueOn: true,
           },
         },
+        charges: { select: { name: true, amountMinor: true, status: true, dueOn: true } },
       },
       orderBy: { createdAt: "desc" },
     }),
@@ -101,7 +103,7 @@ export default async function PortalDashboardPage() {
               </thead>
               <tbody>
                 {loans.map((loan) => {
-                  const outstanding = loanOutstandingMinor(loan.installments, loan);
+                  const outstanding = loanOutstandingMinor(loan.installments, loan, loan.charges);
                   return (
                     <tr key={loan.id}>
                       <td>

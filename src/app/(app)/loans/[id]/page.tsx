@@ -27,8 +27,10 @@ import {
   installmentOutstandingMinor,
   installmentPaidMinor,
   installmentWaivedMinor,
+  installmentsWithCharges,
   loanOutstandingMinor,
   loanWrittenOffMinor,
+  summarizeLoanBalance,
 } from "@/modules/lending/domain/loan-outstanding";
 
 // A loan's originating terms are locked in at approval time in `termsSnapshot` (see
@@ -50,6 +52,10 @@ function snapshotNumber(snapshot: Prisma.JsonValue | null, key: string) {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
+function formatMatrixAmount(amount: bigint, currencyCode: string) {
+  return formatMinor(amount, currencyCode).replace(`${currencyCode} `, "");
+}
+
 export default async function LoanPage({
   params,
   searchParams,
@@ -63,6 +69,8 @@ export default async function LoanPage({
   if (!scope) redirect("/");
   const tab = (await searchParams).tab;
   const activeTab =
+    tab === "overview" ||
+    tab === "details" ||
     tab === "schedule" ||
     tab === "payments" ||
     tab === "record-payment" ||
@@ -74,7 +82,7 @@ export default async function LoanPage({
     tab === "guarantors" ||
     tab === "servicing"
       ? tab
-      : "details";
+      : "overview";
   const loan = await prisma.loan.findFirst({
     where: {
       id: (await params).id,
@@ -134,7 +142,8 @@ export default async function LoanPage({
     0n,
   );
 
-  const totals = loan.installments.reduce(
+  const schedule = installmentsWithCharges(loan.installments, loan.charges);
+  const totals = schedule.reduce(
     (sum, item) => ({
       due:
         sum.due + installmentDueMinor(item),
@@ -145,7 +154,8 @@ export default async function LoanPage({
     { due: 0n, paid: 0n, waived: 0n },
   );
   const writtenOff = loanWrittenOffMinor(loan);
-  const outstanding = loanOutstandingMinor(loan.installments, loan);
+  const outstanding = loanOutstandingMinor(schedule, loan);
+  const balance = summarizeLoanBalance(schedule, loan, today);
   const settlementAccounts = await prisma.settlementAccount.findMany({
     where: { organizationId: scope.organizationId, currencyCode: loan.denominationCurrency, active: true },
     select: { id: true, name: true, type: true, provider: true, accountReference: true, currencyCode: true },
@@ -208,7 +218,8 @@ export default async function LoanPage({
           interestWrittenOffMinor: true,
           feesWrittenOffMinor: true,
           penaltiesWrittenOffMinor: true,
-          installments: { select: { principalDueMinor: true, interestDueMinor: true, feesDueMinor: true, penaltiesDueMinor: true, monitoringFeeDueMinor: true, principalPaidMinor: true, interestPaidMinor: true, feesPaidMinor: true, penaltiesPaidMinor: true, monitoringFeePaidMinor: true, principalWaivedMinor: true, interestWaivedMinor: true, feesWaivedMinor: true, penaltiesWaivedMinor: true, monitoringFeeWaivedMinor: true } },
+          installments: { select: { dueOn: true, principalDueMinor: true, interestDueMinor: true, feesDueMinor: true, penaltiesDueMinor: true, monitoringFeeDueMinor: true, principalPaidMinor: true, interestPaidMinor: true, feesPaidMinor: true, penaltiesPaidMinor: true, monitoringFeePaidMinor: true, principalWaivedMinor: true, interestWaivedMinor: true, feesWaivedMinor: true, penaltiesWaivedMinor: true, monitoringFeeWaivedMinor: true } },
+          charges: { select: { name: true, amountMinor: true, status: true, dueOn: true } },
         },
         orderBy: { createdAt: "desc" },
       })
@@ -218,7 +229,7 @@ export default async function LoanPage({
   const openLoanStatuses = ["ACTIVE", "IN_ARREARS", "OVERPAID"];
   const payoffLoanOptions = otherLoans
     .filter((item) => openLoanStatuses.includes(item.status) && item.denominationCurrency === loan.denominationCurrency)
-    .map((item) => ({ id: item.id, accountNumber: item.accountNumber, currencyCode: item.denominationCurrency, outstandingMinor: loanOutstandingMinor(item.installments, item).toString() }))
+    .map((item) => ({ id: item.id, accountNumber: item.accountNumber, currencyCode: item.denominationCurrency, outstandingMinor: loanOutstandingMinor(item.installments, item, item.charges).toString() }))
     .filter((item) => BigInt(item.outstandingMinor) > 0n);
   const clientSavingsAccounts = loan.clientId
     ? await prisma.savingsAccount.findMany({
@@ -254,7 +265,7 @@ export default async function LoanPage({
     loan.transactions.every((item) => item.transactionType === "DISBURSEMENT");
   const canDisburseFromHeader = loan.status === "APPROVED" && !loan.disbursedOn;
   const isOpenLoan = ["ACTIVE", "IN_ARREARS", "OVERPAID"].includes(loan.status);
-  const nextDueInstallment = [...loan.installments]
+  const nextDueInstallment = [...schedule]
     .sort((left, right) => left.dueOn.getTime() - right.dueOn.getTime() || left.installmentNumber - right.installmentNumber)
     .find((installment) => installmentOutstandingMinor(installment) > 0n);
   const nextDueAmountMinor = nextDueInstallment ? installmentOutstandingMinor(nextDueInstallment) : 0n;
@@ -360,7 +371,8 @@ export default async function LoanPage({
         </article>
       </section>
       <nav className="client-tabs" aria-label="Loan record sections">
-        <Link className={activeTab === "details" ? "active" : ""} href={`/loans/${loan.id}`}>Details</Link>
+        <Link className={activeTab === "overview" ? "active" : ""} href={`/loans/${loan.id}`}>Overview</Link>
+        <Link className={activeTab === "details" ? "active" : ""} href={`/loans/${loan.id}?tab=details`}>Details</Link>
         <Link className={activeTab === "schedule" ? "active" : ""} href={`/loans/${loan.id}?tab=schedule`}>Repayment Schedule</Link>
         <Link className={activeTab === "payments" ? "active" : ""} href={`/loans/${loan.id}?tab=payments`}>Payments</Link>
         {isOpenLoan ? (
@@ -381,6 +393,60 @@ export default async function LoanPage({
             settlementAccounts={settlementAccounts}
             defaultAmountMinor={nextDueAmountMinor.toString()}
           />
+        </section>
+      ) : null}
+      {activeTab === "overview" ? (
+        <section className="panel loan-overview">
+          <div className="panel-heading">
+            <div>
+              <h2>Overview</h2>
+              <p>Original, paid, waived, overdue, and outstanding · {loan.denominationCurrency}</p>
+            </div>
+          </div>
+          <div className="table-scroll">
+            <table className="loan-overview-table">
+              <thead>
+                <tr>
+                  <th scope="col"> </th>
+                  <th scope="col">Original</th>
+                  <th scope="col">Paid</th>
+                  <th scope="col">Waived</th>
+                  <th scope="col">Overdue</th>
+                  <th scope="col">Outstanding</th>
+                </tr>
+              </thead>
+              <tbody>
+                {balance.rows.map((row) => (
+                  <tr key={row.key}>
+                    <th scope="row">{row.label}</th>
+                    <td>{formatMatrixAmount(row.original, loan.denominationCurrency)}</td>
+                    <td>{formatMatrixAmount(row.paid, loan.denominationCurrency)}</td>
+                    <td>{formatMatrixAmount(row.waived, loan.denominationCurrency)}</td>
+                    <td className={row.overdue > 0n ? "is-overdue" : undefined}>
+                      {formatMatrixAmount(row.overdue, loan.denominationCurrency)}
+                    </td>
+                    <td className="is-outstanding">
+                      {formatMatrixAmount(row.outstanding, loan.denominationCurrency)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr>
+                  <th scope="row">{balance.totals.label}</th>
+                  <td>{formatMatrixAmount(balance.totals.original, loan.denominationCurrency)}</td>
+                  <td>{formatMatrixAmount(balance.totals.paid, loan.denominationCurrency)}</td>
+                  <td>{formatMatrixAmount(balance.totals.waived, loan.denominationCurrency)}</td>
+                  <td className={balance.totals.overdue > 0n ? "is-overdue" : undefined}>
+                    {formatMatrixAmount(balance.totals.overdue, loan.denominationCurrency)}
+                  </td>
+                  <td className="is-outstanding">
+                    {formatMatrixAmount(balance.totals.outstanding, loan.denominationCurrency)}
+                  </td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
         </section>
       ) : null}
       {activeTab === "details" ? (
@@ -871,12 +937,12 @@ export default async function LoanPage({
             <div>
               <h2>Repayment schedule</h2>
               <p>
-                {loan.installments.length} installments · matures{" "}
+                {schedule.length} installments · matures{" "}
                 {loan.maturesOn ? formatUgDate(loan.maturesOn) : "not set"}
               </p>
             </div>
           </div>
-          {loan.installments.length === 0 ? (
+          {schedule.length === 0 ? (
             <div className="empty-state">
               <CircleDollarSign size={28} />
               <strong>No schedule yet</strong>
@@ -899,7 +965,7 @@ export default async function LoanPage({
                   </tr>
                 </thead>
                 <tbody>
-                  {loan.installments.map((item) => {
+                  {schedule.map((item) => {
                     const paid = installmentPaidMinor(item);
                     const rowOutstanding = installmentOutstandingMinor(item);
                     // Paid = fully settled; overdue = still owed past its due date; upcoming =

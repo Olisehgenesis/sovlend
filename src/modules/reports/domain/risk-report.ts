@@ -2,7 +2,7 @@ import type { LoanStatus, PrismaClient } from "@prisma/client";
 
 import { loanScopeWhere, type UserDataScope } from "@/modules/identity/application/data-scope";
 import { rowsToCsv } from "@/modules/lending/domain/loan-export";
-import { installmentOutstandingMinor as totalInstallmentOutstandingMinor } from "@/modules/lending/domain/loan-outstanding";
+import { installmentOutstandingMinor as totalInstallmentOutstandingMinor, installmentsWithCharges } from "@/modules/lending/domain/loan-outstanding";
 
 export type RiskFilters = Readonly<{
   officeId?: string;
@@ -936,34 +936,36 @@ export async function loadPortfolioLoans(
         },
         orderBy: { dueOn: "asc" },
       },
+      charges: { select: { name: true, amountMinor: true, status: true, dueOn: true } },
     },
     orderBy: [{ disbursedOn: "desc" }, { createdAt: "desc" }],
   });
 
   return loans.map((loan) => {
-    const overdueInstallments = loan.installments.filter(
+    const installments = installmentsWithCharges(loan.installments, loan.charges);
+    const overdueInstallments = installments.filter(
       (installment) => startOfUtcDay(installment.dueOn) < today && outstandingTotalMinor(installment) > 0n,
     );
-    const overdueInstallment = loan.installments.find(
+    const overdueInstallment = installments.find(
       (installment) => startOfUtcDay(installment.dueOn) < today && outstandingTotalMinor(installment) > 0n,
     );
     const daysOverdue = overdueInstallment ? dayDiff(today, overdueInstallment.dueOn) : 0;
-    const loanOutstandingPrincipalMinor = sumBigInt(loan.installments.map(outstandingPrincipalMinor));
-    const loanOutstandingInterestMinor = sumBigInt(loan.installments.map(outstandingInterestMinor));
-    const loanOutstandingFeesMinor = sumBigInt(loan.installments.map(outstandingFeesMinor));
-    const loanOutstandingMonitoringFeeMinor = sumBigInt(loan.installments.map(outstandingMonitoringFeeMinor));
-    const loanOutstandingPenaltiesMinor = sumBigInt(loan.installments.map(outstandingPenaltiesMinor));
-    const loanOutstandingTotalMinor = sumBigInt(loan.installments.map(outstandingTotalMinor));
+    const loanOutstandingPrincipalMinor = sumBigInt(installments.map(outstandingPrincipalMinor));
+    const loanOutstandingInterestMinor = sumBigInt(installments.map(outstandingInterestMinor));
+    const loanOutstandingFeesMinor = sumBigInt(installments.map(outstandingFeesMinor));
+    const loanOutstandingMonitoringFeeMinor = sumBigInt(installments.map(outstandingMonitoringFeeMinor));
+    const loanOutstandingPenaltiesMinor = sumBigInt(installments.map(outstandingPenaltiesMinor));
+    const loanOutstandingTotalMinor = sumBigInt(installments.map(outstandingTotalMinor));
     const overduePrincipalMinor = sumBigInt(overdueInstallments.map(outstandingPrincipalMinor));
     const overdueInterestMinor = sumBigInt(overdueInstallments.map(outstandingInterestMinor));
     const overdueFeesMinor = sumBigInt(overdueInstallments.map(outstandingFeesMinor));
     const overdueMonitoringFeeMinor = sumBigInt(overdueInstallments.map(outstandingMonitoringFeeMinor));
     const overduePenaltiesMinor = sumBigInt(overdueInstallments.map(outstandingPenaltiesMinor));
-    const principalRepaidMinor = sumBigInt(loan.installments.map((installment) => installment.principalPaidMinor));
-    const interestRepaidMinor = sumBigInt(loan.installments.map((installment) => installment.interestPaidMinor));
-    const feesRepaidMinor = sumBigInt(loan.installments.map((installment) => installment.feesPaidMinor));
-    const monitoringFeeRepaidMinor = sumBigInt(loan.installments.map((installment) => installment.monitoringFeePaidMinor ?? 0n));
-    const penaltiesRepaidMinor = sumBigInt(loan.installments.map((installment) => installment.penaltiesPaidMinor));
+    const principalRepaidMinor = sumBigInt(installments.map((installment) => installment.principalPaidMinor));
+    const interestRepaidMinor = sumBigInt(installments.map((installment) => installment.interestPaidMinor));
+    const feesRepaidMinor = sumBigInt(installments.map((installment) => installment.feesPaidMinor));
+    const monitoringFeeRepaidMinor = sumBigInt(installments.map((installment) => installment.monitoringFeePaidMinor ?? 0n));
+    const penaltiesRepaidMinor = sumBigInt(installments.map((installment) => installment.penaltiesPaidMinor));
 
     return {
       id: loan.id,

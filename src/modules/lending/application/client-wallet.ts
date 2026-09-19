@@ -1,6 +1,6 @@
 import type { PrismaClient } from "@prisma/client";
 
-import { installmentDueMinor, installmentPaidMinor } from "../domain/loan-outstanding";
+import { loanOutstandingMinor as outstandingOnLoan } from "../domain/loan-outstanding";
 
 // A client's wallet is two sub-accounts: savings (asset the client holds) and loans
 // (asset the company holds, liability for the client). Net balance = savings - loans owed.
@@ -19,7 +19,13 @@ export const OPEN_LOAN_STATUSES = ["ACTIVE", "IN_ARREARS", "OVERPAID"] as const;
 export async function getClientWalletSummary(prisma: PrismaClient, clientId: string): Promise<ClientWalletSummary> {
   const [savingsAccounts, loans] = await Promise.all([
     prisma.savingsAccount.findMany({ where: { clientId }, include: { transactions: true } }),
-    prisma.loan.findMany({ where: { clientId, status: { in: [...OPEN_LOAN_STATUSES] } }, include: { installments: true } }),
+    prisma.loan.findMany({
+      where: { clientId, status: { in: [...OPEN_LOAN_STATUSES] } },
+      include: {
+        installments: true,
+        charges: { select: { name: true, amountMinor: true, status: true, dueOn: true } },
+      },
+    }),
   ]);
 
   const currencyCode = savingsAccounts[0]?.currencyCode ?? loans[0]?.denominationCurrency ?? "UGX";
@@ -29,13 +35,10 @@ export async function getClientWalletSummary(prisma: PrismaClient, clientId: str
     0n,
   );
 
-  const loanOutstandingMinor = loans.reduce((sum, loan) => {
-    const loanDue = loan.installments.reduce(
-      (accSum, installment) => accSum + installmentDueMinor(installment) - installmentPaidMinor(installment),
-      0n,
-    );
-    return sum + loanDue;
-  }, 0n);
+  const loanOutstandingMinor = loans.reduce(
+    (sum, loan) => sum + outstandingOnLoan(loan.installments, loan, loan.charges),
+    0n,
+  );
 
   return {
     currencyCode,

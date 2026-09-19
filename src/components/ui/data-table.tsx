@@ -1,5 +1,6 @@
-import Link from "next/link";
 import type { ReactNode } from "react";
+
+import { TableRowLink } from "@/components/table-row-link";
 
 /**
  * Shared table primitive for list/report pages.
@@ -66,8 +67,8 @@ export function DataTable<T>({
                 {columns.map((column, index) => (
                   <td className={column.cellClassName} key={column.key}>
                     {column.render(row)}
-                    {index === 0 && href ? (
-                      <Link aria-label={getRowAriaLabel?.(row) ?? "Open"} className="row-link" href={href} />
+                    {href ? (
+                      <TableRowLink href={href} label={getRowAriaLabel?.(row) ?? "Open"} primary={index === 0} />
                     ) : null}
                   </td>
                 ))}

@@ -9,6 +9,7 @@ import {
   installmentOutstandingMinor,
   installmentPaidMinor,
   installmentWaivedMinor,
+  installmentsWithCharges,
   loanOutstandingMinor,
   loanWrittenOffMinor,
 } from "@/modules/lending/domain/loan-outstanding";
@@ -46,12 +47,14 @@ export default async function PortalLoanPage({ params }: { params: Promise<{ id:
     include: {
       product: true,
       installments: { orderBy: { installmentNumber: "asc" } },
+      charges: { select: { name: true, amountMinor: true, status: true, dueOn: true } },
       transactions: { orderBy: { businessDate: "desc" }, take: 25 },
     },
   });
   if (!loan) notFound();
 
-  const totals = loan.installments.reduce(
+  const schedule = installmentsWithCharges(loan.installments, loan.charges);
+  const totals = schedule.reduce(
     (sum, item) => ({
       due: sum.due + installmentDueMinor(item),
       paid: sum.paid + installmentPaidMinor(item),
@@ -60,7 +63,7 @@ export default async function PortalLoanPage({ params }: { params: Promise<{ id:
     { due: 0n, paid: 0n, waived: 0n },
   );
   const writtenOff = loanWrittenOffMinor(loan);
-  const outstanding = loanOutstandingMinor(loan.installments, loan);
+  const outstanding = loanOutstandingMinor(schedule, loan);
 
   return (
     <div className="directory-page portal-page">
@@ -102,11 +105,11 @@ export default async function PortalLoanPage({ params }: { params: Promise<{ id:
           <div>
             <h2>Repayment schedule</h2>
             <p>
-              {loan.installments.length} installments · matures {loan.maturesOn ? formatPortalDate(loan.maturesOn) : "not set"}
+              {schedule.length} installments · matures {loan.maturesOn ? formatPortalDate(loan.maturesOn) : "not set"}
             </p>
           </div>
         </div>
-        {loan.installments.length === 0 ? (
+        {schedule.length === 0 ? (
           <div className="empty-state compact-empty">
             <CircleDollarSign size={26} />
             <strong>No schedule yet</strong>
@@ -129,7 +132,7 @@ export default async function PortalLoanPage({ params }: { params: Promise<{ id:
                 </tr>
               </thead>
               <tbody>
-                {loan.installments.map((item) => {
+                {schedule.map((item) => {
                   const paid = installmentPaidMinor(item);
                   const rowOutstanding = installmentOutstandingMinor(item);
                   return (
