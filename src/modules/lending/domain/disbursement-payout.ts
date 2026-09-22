@@ -156,7 +156,7 @@ export function disbursementOverviewRows(input: { principalMinor: bigint; disbur
   const lif = percentOfMinor(input.principalMinor, LIF_HOLD_BPS);
   const processing = percentOfMinor(input.principalMinor, PROCESSING_FEE_BPS);
   const paid = (amount: bigint) => (input.disbursed ? amount : 0n);
-  return [
+  const rows: DisbursementOverviewLine[] = [
     {
       key: "lif",
       label: "Loan insurance fund",
@@ -184,5 +184,6 @@ export function disbursementOverviewRows(input: { principalMinor: bigint; disbur
       overdue: 0n,
       outstanding: 0n,
     },
-  ].filter((row) => row.original > 0n);
+  ];
+  return rows.filter((row) => row.original > 0n);
 }
