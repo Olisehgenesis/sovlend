@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { auth } from "@/lib/auth";
+import { canManageProducts } from "@/lib/can-manage-products";
 import { prisma } from "@/lib/prisma";
 import { annualBpsFromMonthlyPercent } from "@/modules/lending/domain/monthly-rate";
 
@@ -23,11 +24,8 @@ const schema = z.object({
 export async function POST(request: Request) {
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  const allowedEmails = (process.env.SUPER_ADMIN_EMAILS ?? "").split(",").map((email) => email.trim().toLowerCase()).filter(Boolean);
-  if (session.user.role !== "admin" || !allowedEmails.includes(session.user.email.toLowerCase())) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-
-  const user = await prisma.user.findUnique({ where: { id: session.user.id }, select: { organizationId: true } });
-  if (!user?.organizationId) return NextResponse.json({ error: "Super administrator requires an organization" }, { status: 400 });
+  const { allowed, organizationId } = await canManageProducts(session);
+  if (!allowed || !organizationId) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const parsed = schema.safeParse(await request.json());
   if (!parsed.success) return NextResponse.json({ error: parsed.error.issues[0]?.message ?? "Invalid loan product" }, { status: 400 });
@@ -35,7 +33,7 @@ export async function POST(request: Request) {
 
   const product = await prisma.loanProduct.create({
     data: {
-      organizationId: user.organizationId,
+      organizationId,
       name: parsed.data.name,
       shortName: parsed.data.shortName,
       denominationCurrency: parsed.data.denominationCurrency,

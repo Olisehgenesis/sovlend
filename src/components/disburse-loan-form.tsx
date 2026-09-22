@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 
+import { DisbursementPayoutPreview, type DisbursementPayoutContext } from "@/components/disbursement-payout-preview";
 import { BrandActionButton } from "@/components/ui/brand-action-button";
 import { LoanPreviewPanel, type LoanPreviewInput } from "@/components/loan-preview-panel";
 import { PAYEE_TYPE_LABELS, PAYEE_TYPES, payeeReferencePlaceholder, type PayeeType } from "@/modules/ledger/domain/journal";
@@ -36,6 +37,7 @@ export function DisburseLoanForm({
   savingsAccounts = [],
   payoffLoanOptions = [],
   preview,
+  payout,
   onSuccess,
 }: {
   loanId: string;
@@ -43,11 +45,13 @@ export function DisburseLoanForm({
   savingsAccounts?: SavingsAccountOption[];
   payoffLoanOptions?: PayoffLoanOption[];
   preview?: LoanPreviewInput;
+  payout?: DisbursementPayoutContext;
   onSuccess?: () => void;
 }) {
   const router = useRouter();
   const [pending, setPending] = useState(false);
   const [payOffPrevious, setPayOffPrevious] = useState(false);
+  const [selectedTopUpLoanId, setSelectedTopUpLoanId] = useState(payoffLoanOptions[0]?.id ?? "");
   const [payeeType, setPayeeType] = useState<PayeeType | "">("");
   const defaultSavingsAccountId = useMemo(
     () => savingsAccounts.find((account) => account.isDefault)?.id ?? savingsAccounts[0]?.id ?? "",
@@ -65,11 +69,6 @@ export function DisburseLoanForm({
     const savingsAccountId = String(formData.get("savingsAccountId") || defaultSavingsAccountId || "");
     const paymentMethodSettlementAccountId = String(formData.get("paymentMethodSettlementAccountId") || "");
     const topUpOfLoanId = payOffPrevious ? String(formData.get("topUpOfLoanId") || "") : "";
-
-    if (!savingsAccountId) {
-      toast.error("Client has no active savings account to credit");
-      return;
-    }
 
     setPending(true);
     const response = await fetch(`/api/loans/${loanId}/disburse`, {
@@ -95,18 +94,26 @@ export function DisburseLoanForm({
     }
     toast.success(
       topUpOfLoanId
-        ? "Loan disbursed — previous loan paid off from the proceeds"
+        ? "Loan disbursed — previous loan liquidated from the proceeds"
         : "Loan disbursed and repayment schedule created",
     );
     router.refresh();
     onSuccess?.();
   }
 
-  const canUseSavings = savingsAccounts.length > 0;
-  const submitDisabled = pending || !canUseSavings;
+  const submitDisabled = pending;
 
   return (
     <form action={disburse} className="entity-form compact-mapping">
+      {payout ? (
+        <fieldset>
+          <legend>Disbursement preview</legend>
+          <DisbursementPayoutPreview
+            context={payout}
+            liquidateLoanId={payOffPrevious ? selectedTopUpLoanId || payoffLoanOptions[0]?.id : null}
+          />
+        </fieldset>
+      ) : null}
       {preview ? (
         <fieldset>
           <legend>Repayment preview</legend>
@@ -115,28 +122,6 @@ export function DisburseLoanForm({
       ) : null}
       <fieldset>
         <legend>Loan payout</legend>
-        {canUseSavings ? (
-          <label>
-            Borrower&apos;s savings account
-            <select defaultValue={defaultSavingsAccountId} name="savingsAccountId" required>
-              {savingsAccounts.map((account) => (
-                <option key={account.id} value={account.id}>
-                  {account.accountNumber}
-                  {account.productName ? ` · ${account.productName}` : ""}
-                  {account.isDefault ? " · default" : ""}
-                </option>
-              ))}
-            </select>
-          </label>
-        ) : (
-          <aside className="configuration-note">
-            <strong>Savings account required</strong>
-            <span>
-              The borrower needs an active savings account before this loan can be disbursed —
-              disbursement always credits the borrower&apos;s savings account, net of fees.
-            </span>
-          </aside>
-        )}
         {settlementAccounts.length > 0 ? (
           <label>
             Payment method
@@ -196,29 +181,34 @@ export function DisburseLoanForm({
       </fieldset>
       {payoffLoanOptions.length > 0 ? (
         <fieldset>
-          <legend>Top up</legend>
+          <legend>Existing loan</legend>
           <label className="check-row">
             <input
               checked={payOffPrevious}
               onChange={(event) => setPayOffPrevious(event.target.checked)}
               type="checkbox"
             />
-            Pay off a previous loan from these proceeds
+            Liquidate a previous loan from these proceeds
           </label>
+          <p className="field-hint">
+            Leave this unchecked to keep both loans. LIF then holds 15% of each active loan. If you
+            liquidate, surplus LIF moves to loan security payable.
+          </p>
           {payOffPrevious ? (
             <label>
-              Loan to pay off
-              <select defaultValue={payoffLoanOptions[0]?.id} name="topUpOfLoanId" required>
+              Loan to liquidate
+              <select
+                name="topUpOfLoanId"
+                onChange={(event) => setSelectedTopUpLoanId(event.target.value)}
+                required
+                value={selectedTopUpLoanId || payoffLoanOptions[0]?.id}
+              >
                 {payoffLoanOptions.map((option) => (
                   <option key={option.id} value={option.id}>
                     {option.accountNumber} · outstanding {formatMinor(BigInt(option.outstandingMinor), option.currencyCode)}
                   </option>
                 ))}
               </select>
-              <span className="field-hint">
-                Proceeds first pay this loan off in full (or as much as the proceeds cover); the
-                client receives whatever remains.
-              </span>
             </label>
           ) : null}
         </fieldset>

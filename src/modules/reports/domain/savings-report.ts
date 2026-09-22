@@ -2,6 +2,7 @@ import type { PrismaClient } from "@prisma/client";
 
 import { clientScopeWhere, groupScopeWhere, officeWhere, type UserDataScope } from "@/modules/identity/application/data-scope";
 import { rowsToCsv } from "@/modules/lending/domain/loan-export";
+import { displaySavingsProductName } from "@/modules/savings/domain/savings-product-label";
 
 /**
  * iLend has no canned Savings reports at all — this whole module is SovLend-original,
@@ -140,7 +141,7 @@ export async function loadSavingsAccountListingReport(
       ownerAccountNumber: owner?.accountNumber ?? null,
       officeId: owner?.officeId ?? null,
       officeName: owner?.officeName ?? "—",
-      productName: account.product?.name ?? "Unlinked product",
+      productName: displaySavingsProductName(account.product?.name),
       accountType: account.accountType,
       status: account.status,
       currencyCode: account.currencyCode,
@@ -282,7 +283,7 @@ export async function loadSavingsTransactionsReport(
       accountNumber: account.accountNumber,
       ownerName,
       officeName,
-      productName: account.product?.name ?? "Unlinked product",
+      productName: displaySavingsProductName(account.product?.name),
       transactionType: transaction.transactionType,
       amountMinor: transaction.amountMinor,
       currencyCode: account.currencyCode,

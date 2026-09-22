@@ -4,6 +4,7 @@ import { CreateLedgerAccountForm, OpeningBalanceDefaultsForm, ProductMappingForm
 import { Breadcrumbs } from "@/components/breadcrumbs";
 import { prisma } from "@/lib/prisma";
 import { requireSuperAdmin } from "@/lib/require-super-admin";
+import { displaySavingsProductName } from "@/modules/savings/domain/savings-product-label";
 
 export default async function AccountingSetupPage() {
   const session = await requireSuperAdmin();
@@ -18,7 +19,7 @@ export default async function AccountingSetupPage() {
     prisma.openingBalanceAccountingDefaults.findUnique({ where: { organizationId: user.organizationId } }),
     prisma.currency.findMany({ where: { active: true }, select: { code: true }, orderBy: { code: "asc" } }),
   ]);
-  const accountOptions = accounts.map((account) => ({ id: account.id, label: `${account.code} · ${account.name}`, type: account.type }));
+  const accountOptions = accounts.map((account) => ({ id: account.id, label: `${account.code} · ${displaySavingsProductName(account.name)}`, type: account.type }));
   const configuredProducts = products.filter((product) => product.accountingMapping).length;
   const activeSettlementAccounts = settlementAccounts.filter((account) => account.active).length;
   const savingsDefaultConfigured = Boolean(savingsDefaults?.savingsLiabilityAccountId);

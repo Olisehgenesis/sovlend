@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import { Dialog, type DialogHandle } from "@/components/ui/dialog";
 import { BrandActionButton } from "@/components/ui/brand-action-button";
 import { formatMinor } from "@/modules/money/domain/format-minor";
+import { displaySavingsProductName } from "@/modules/savings/domain/savings-product-label";
 
 type SavingsProductOption = Readonly<{ id: string; name: string; shortName: string; currencyCode: string; nominalAnnualRateBps: number; minOpeningBalanceMinor: string }>;
 type OfficerOption = Readonly<{ id: string; name: string }>;
@@ -86,7 +87,7 @@ export function NewSavingsAccountWizard({ clientId, products, officers, charges 
 
           {step === 0 ? (
             <div className="savings-wizard-body">
-              <label>Product *<select onChange={(event) => setProductId(event.target.value)} required value={productId}><option value="">Select savings product</option>{products.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+              <label>Product *<select onChange={(event) => setProductId(event.target.value)} required value={productId}><option value="">Select savings product</option>{products.map((item) => <option key={item.id} value={item.id}>{displaySavingsProductName(item.name)}</option>)}</select></label>
               <div className="form-row">
                 <label>Submitted on<input onChange={(event) => setSubmittedOn(event.target.value)} type="date" value={submittedOn} /></label>
                 <label>Field officer<select onChange={(event) => setFieldOfficerId(event.target.value)} value={fieldOfficerId}><option value="">Unassigned</option>{officers.map((officer) => <option key={officer.id} value={officer.id}>{officer.name}</option>)}</select></label>
@@ -122,7 +123,7 @@ export function NewSavingsAccountWizard({ clientId, products, officers, charges 
           {step === 3 ? (
             <div className="savings-wizard-body">
               <dl className="detail-grid">
-                <div><dt>Product</dt><dd>{product?.name ?? "Not selected"}</dd></div>
+                <div><dt>Product</dt><dd>{product ? displaySavingsProductName(product.name) : "Not selected"}</dd></div>
                 <div><dt>Submitted on</dt><dd>{submittedOn}</dd></div>
                 <div><dt>Field officer</dt><dd>{officers.find((officer) => officer.id === fieldOfficerId)?.name ?? "Unassigned"}</dd></div>
                 <div><dt>External ID</dt><dd>{externalId || "\u2014"}</dd></div>

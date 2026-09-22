@@ -18,6 +18,7 @@ import {
 } from "@/modules/lending/domain/loan-product-catalog";
 import { formatMonthlyPercent } from "@/modules/lending/domain/monthly-rate";
 import { formatMinor } from "@/modules/money/domain/format-minor";
+import { displaySavingsProductName } from "@/modules/savings/domain/savings-product-label";
 
 export default async function ProductsPage({
   searchParams,
@@ -201,9 +202,9 @@ export default async function ProductsPage({
                 {savingsProducts.map((product) => (
                   <tr key={product.id}>
                     <td>
-                      <strong>{product.name}</strong>
+                      <strong>{displaySavingsProductName(product.name)}</strong>
                       <small>{product.shortName}</small>
-                      <Link aria-label={`Open savings product ${product.name}`} className="row-link" href={`/backoffice/products/savings/${product.id}`} />
+                      <Link aria-label={`Open savings product ${displaySavingsProductName(product.name)}`} className="row-link" href={`/backoffice/products/savings/${product.id}`} />
                     </td>
                     <td>{product.currencyCode}</td>
                     <td>{(product.nominalAnnualRateBps / 100).toFixed(2)}%</td>

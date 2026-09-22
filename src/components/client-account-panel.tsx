@@ -21,7 +21,7 @@ export type SavingsDepositTarget = Readonly<{
   id: string;
   accountNumber: string;
   currencyCode: string;
-  // The savings product name (e.g. "Member Savings Account", "Compulsory savings") -- shown
+  // The savings product name (e.g. "Member contribution", "Loan security payable") -- shown
   // ahead of the account number in every picker so an operator can tell at a glance which kind
   // of account they're about to move money into, instead of scanning bare account numbers.
   productName: string;
@@ -225,7 +225,7 @@ export function DepositWithdrawForm({
         {selectableOptions.length > 1 ? <label>{lockTarget ? "Savings account" : "Deposit target"}<select onChange={(event) => setTargetKey(event.target.value)} value={selectedTarget?.key ?? ""}>{selectableOptions.map((option) => <option key={option.key} value={option.key}>{option.label}</option>)}</select></label> : <label>Account<input disabled readOnly value={selectedTarget?.label ?? ""} /></label>}
         <label>Recorded by<input disabled readOnly value={currentUserName} /></label>
       </div>
-      <label>Reason / note<input maxLength={200} onChange={(event) => setReason(event.target.value)} placeholder="Member savings top-up" value={reason} /></label>
+      <label>Reason / note<input maxLength={200} onChange={(event) => setReason(event.target.value)} placeholder="Member contribution top-up" value={reason} /></label>
       {selectedTarget ? <p className="field-help">{selectedTarget.hint}</p> : null}
       {compatibleSettlementAccounts.length === 0 && selectedTarget ? <aside className="configuration-note"><strong>Settlement setup required</strong><span>Add an active {selectedTarget.currencyCode} settlement account in Backoffice → Accounting mappings before recording this transaction.</span></aside> : null}
       <div className="account-card-actions">
@@ -240,7 +240,7 @@ export type TransferSourceAccount = Readonly<{
   id: string;
   accountNumber: string;
   currencyCode: string;
-  // The savings product name (e.g. "Member Savings Account") -- shown ahead of the account
+  // The savings product name (e.g. "Member contribution") -- shown ahead of the account
   // number so an operator picks the right kind of account, not just a bare number.
   productName: string;
   balanceMinor: string;

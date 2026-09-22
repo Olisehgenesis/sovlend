@@ -3,6 +3,7 @@ import Link from "next/link";
 
 import { prisma } from "@/lib/prisma";
 import { formatMinor } from "@/modules/money/domain/format-minor";
+import { displaySavingsProductName } from "@/modules/savings/domain/savings-product-label";
 import { loanOutstandingMinor } from "@/modules/lending/domain/loan-outstanding";
 
 import { getPortalClient } from "./_lib/portal-context";
@@ -159,7 +160,7 @@ export default async function PortalDashboardPage() {
                         <strong className="mono">{account.accountNumber}</strong>
                         <Link className="row-link" href={`/portal/savings/${account.accountNumber}`} aria-label={`Open savings account ${account.accountNumber}`} />
                       </td>
-                      <td>{account.product?.name ?? "—"}</td>
+                      <td>{displaySavingsProductName(account.product?.name, "—")}</td>
                       <td>
                         <span className={`status ${account.status === "ACTIVE" ? "up-to-date" : "review"}`}>{account.status.replaceAll("_", " ")}</span>
                       </td>

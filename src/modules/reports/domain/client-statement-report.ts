@@ -3,6 +3,7 @@ import type { Client, ClientStatus, LoanStatus, PrismaClient } from "@prisma/cli
 import { clientScopeWhere, type UserDataScope } from "@/modules/identity/application/data-scope";
 import { getClientWalletSummary } from "@/modules/lending/application/client-wallet";
 import { installmentDueMinor, installmentPaidMinor } from "@/modules/lending/domain/loan-outstanding";
+import { displaySavingsProductName } from "@/modules/savings/domain/savings-product-label";
 
 export type ClientStatementSearchRow = Readonly<{
   id: string;
@@ -207,7 +208,7 @@ export async function loadClientStatement(
   const savingsAccounts: ClientStatementSavingsRow[] = client.savingsAccounts.map((account) => ({
     id: account.id,
     accountNumber: account.accountNumber,
-    productName: account.product?.name ?? "—",
+    productName: displaySavingsProductName(account.product?.name, "—"),
     status: account.status,
     currencyCode: account.currencyCode,
     balanceMinor: account.transactions.reduce((sum, transaction) => sum + transaction.amountMinor, 0n),

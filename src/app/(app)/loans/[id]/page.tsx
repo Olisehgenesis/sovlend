@@ -23,8 +23,10 @@ import { AuthorizationService } from "@/modules/identity/application/authorizati
 import { getUserDataScope } from "@/modules/identity/application/data-scope";
 import { permissions } from "@/modules/identity/domain/permissions";
 import { STAFF_SYSTEM_ROLES } from "@/modules/identity/domain/staff-roles";
+import { isStatutoryDisbursementCharge, LIF_SAVINGS_SHORT_NAME, SECURITY_SAVINGS_SHORT_NAME } from "@/modules/lending/domain/disbursement-payout";
 import { formatMonthlyPercent } from "@/modules/lending/domain/monthly-rate";
 import { formatMinor } from "@/modules/money/domain/format-minor";
+import { displaySavingsProductName } from "@/modules/savings/domain/savings-product-label";
 import {
   installmentDueMinor,
   installmentOutstandingMinor,
@@ -197,7 +199,8 @@ export default async function LoanPage({
           accountNumber: true,
           isDefault: true,
           accountType: true,
-          product: { select: { name: true } },
+          product: { select: { name: true, shortName: true } },
+          transactions: { select: { amountMinor: true } },
         },
         orderBy: [{ isDefault: "desc" }, { createdAt: "asc" }],
       })
@@ -209,7 +212,7 @@ export default async function LoanPage({
   // discriminator, so it must not be used to filter here — the query above already scopes this
   // list to ACTIVE savings accounts.
   const savingsTargets = loan.clientId
-    ? savingsAccounts.map((account) => ({ id: account.id, accountNumber: account.accountNumber, currencyCode: loan.denominationCurrency, productName: account.product?.name ?? account.accountType.replaceAll("_", " "), isDefault: account.isDefault }))
+    ? savingsAccounts.map((account) => ({ id: account.id, accountNumber: account.accountNumber, currencyCode: loan.denominationCurrency, productName: displaySavingsProductName(account.product?.name ?? account.accountType.replaceAll("_", " ")), isDefault: account.isDefault }))
     : [];
   // Surfaces this client's other accounts from the loan detail page, mirroring how
   // savings-accounts/[accountNumber]/page.tsx links back to its owning client/group.
@@ -301,6 +304,31 @@ export default async function LoanPage({
         : undefined,
     officerName: loan.loanOfficer?.name ?? undefined,
   };
+  const lifAccount = savingsAccounts.find((account) => account.product?.shortName === LIF_SAVINGS_SHORT_NAME);
+  const securityAccount = savingsAccounts.find((account) => account.product?.shortName === SECURITY_SAVINGS_SHORT_NAME);
+  const pendingDisbursementCharges = loan.charges.filter(
+    (charge) => charge.status === "PENDING" && charge.dueOn == null && !isStatutoryDisbursementCharge(charge.name),
+  );
+  const disbursementPayout = {
+    principalMinor: loan.principalMinor.toString(),
+    currency: loan.denominationCurrency,
+    existingLifMinor: (lifAccount?.transactions.reduce((sum, item) => sum + item.amountMinor, 0n) ?? 0n).toString(),
+    extraCharges: pendingDisbursementCharges.map((charge) => ({
+      name: charge.name,
+      amountMinor: charge.amountMinor.toString(),
+    })),
+    otherLoans: payoffLoanOptions.map((option) => {
+      const source = otherLoans.find((item) => item.id === option.id);
+      return {
+        id: option.id,
+        accountNumber: option.accountNumber,
+        principalMinor: (source?.principalMinor ?? 0n).toString(),
+        outstandingMinor: option.outstandingMinor,
+      };
+    }),
+    lifAccountNumber: lifAccount?.accountNumber,
+    securityAccountNumber: securityAccount?.accountNumber,
+  };
   const isOpenLoan = ["ACTIVE", "IN_ARREARS", "OVERPAID"].includes(loan.status);
   const nextDueInstallment = [...schedule]
     .sort((left, right) => left.dueOn.getTime() - right.dueOn.getTime() || left.installmentNumber - right.installmentNumber)
@@ -363,12 +391,13 @@ export default async function LoanPage({
             <DisburseLoanButton
               loanId={loan.id}
               payoffLoanOptions={payoffLoanOptions}
+              payout={disbursementPayout}
               preview={disbursePreview}
               savingsAccounts={savingsAccounts.map((account) => ({
                 id: account.id,
                 accountNumber: account.accountNumber,
                 isDefault: account.isDefault,
-                productName: account.product?.name ?? null,
+                productName: displaySavingsProductName(account.product?.name),
               }))}
               settlementAccounts={settlementAccounts}
             />
@@ -724,7 +753,7 @@ export default async function LoanPage({
                       {clientSavingsAccounts.map((account) => (
                         <tr key={account.id}>
                           <td className="mono">{account.accountNumber}</td>
-                          <td>{account.product?.name ?? "\u2014"}</td>
+                          <td>{displaySavingsProductName(account.product?.name, "\u2014")}</td>
                           <td>
                             <span className={`status ${account.status === "ACTIVE" ? "up-to-date" : "review"}`}>
                               {account.status.replaceAll("_", " ")}

@@ -71,7 +71,7 @@ function buildPrismaMock(options: MockOptions) {
     accountNumber: "LN-0002",
     status: "APPROVED",
     disbursedOn: null,
-    principalMinor: options.netProceedsMinor,
+    principalMinor: 70_000_000n,
     denominationCurrency: "UGX",
     termsSnapshot: {
       annualRateBps: 1_200,
@@ -90,6 +90,8 @@ function buildPrismaMock(options: MockOptions) {
       },
     },
     office: { organizationId: "org-1" },
+    client: { id: "client-1", accountNumber: "000000001" },
+    group: null,
   };
 
   const targetLoan = {
@@ -102,26 +104,60 @@ function buildPrismaMock(options: MockOptions) {
     installments: [installment({ principalDueMinor: options.targetLoanOutstandingMinor })],
   };
 
-  const savingsAccount = { id: "savings-1", accountNumber: "SV-0001", isDefault: true, product: { id: "sp-1", shortName: "MSA" } };
+  const lifAccount = { id: "savings-lif", accountNumber: "SV-LIF", isDefault: false, product: { id: "sp-lif", shortName: "LAS" } };
+  const securityAccount = { id: "savings-security", accountNumber: "SV-SEC", isDefault: true, product: { id: "sp-cs", shortName: "cs" } };
+  const savingsAccounts = [lifAccount, securityAccount];
 
   const transaction = {
-    loan: { updateMany: vi.fn(async () => ({ count: 1 })) },
+    loan: {
+      updateMany: vi.fn(async () => ({ count: 1 })),
+      findMany: vi.fn(async () => []),
+    },
     charge: { findMany: vi.fn(async () => []), updateMany: vi.fn(async () => ({ count: 0 })) },
     savingsAccount: {
-      findMany: vi.fn(async () => [savingsAccount]),
-      findUniqueOrThrow: vi.fn(async () => ({
-        id: savingsAccount.id,
-        accountNumber: savingsAccount.accountNumber,
-        clientId: "client-1",
-        groupId: null,
-        currencyCode: "UGX",
-        status: "ACTIVE",
-        client: { organizationId: "org-1" },
-        group: null,
-        transactions: [{ amountMinor: 0n }],
-      })),
+      findMany: vi.fn(async () => savingsAccounts),
+      findFirst: vi.fn(async ({ where }: { where?: { product?: { shortName?: string } } }) => {
+        const account = savingsAccounts.find((item) => item.product.shortName === where?.product?.shortName);
+        if (!account) return null;
+        return {
+          id: account.id,
+          accountNumber: account.accountNumber,
+          productId: account.product.id,
+          product: account.product,
+          transactions: [{ amountMinor: 0n }],
+        };
+      }),
+      count: vi.fn(async () => savingsAccounts.length),
+      create: vi.fn(async () => {
+        throw new Error("Unexpected savings account create");
+      }),
+      findUniqueOrThrow: vi.fn(async ({ where }: { where: { id: string } }) => {
+        const account = savingsAccounts.find((item) => item.id === where.id) ?? securityAccount;
+        return {
+          id: account.id,
+          accountNumber: account.accountNumber,
+          clientId: "client-1",
+          groupId: null,
+          currencyCode: "UGX",
+          status: "ACTIVE",
+          productId: account.product.id,
+          client: { organizationId: "org-1", officeId: "office-1" },
+          group: null,
+          product: account.product,
+          transactions: [{ amountMinor: 0n }],
+        };
+      }),
     },
-    ledgerAccount: { findFirst: vi.fn(async () => ({ id: "ledger-savings-liability" })) },
+    savingsProduct: { findFirst: vi.fn(async () => null) },
+    ledgerAccount: {
+      findFirst: vi.fn(async ({ where }: { where: { code: string } }) => {
+        if (where.code === "CA-005") return { id: "ledger-lif" };
+        if (where.code === "CA-004") return { id: "ledger-security" };
+        if (where.code === "202020") return { id: "ledger-crb-income" };
+        if (where.code === "202021") return { id: "ledger-crb-payable" };
+        return { id: "ledger-savings-liability" };
+      }),
+    },
     savingsProductAccountingMapping: { findUnique: vi.fn(async () => null) },
     savingsAccountingDefaults: { findUnique: vi.fn(async () => null) },
     loanInstallment: { createMany: vi.fn(async ({ data }: { data: unknown[] }) => ({ count: data.length })) },
@@ -145,7 +181,7 @@ function buildPrismaMock(options: MockOptions) {
     user: { findUnique: vi.fn(async () => ({ systemRole: "LOAN_OFFICER" })) },
     savingsAccount: { findMany: transaction.savingsAccount.findMany },
     savingsTransaction: {
-      findUnique: vi.fn(async () => ({ savingsAccountId: savingsAccount.id })),
+      findUnique: vi.fn(async () => ({ savingsAccountId: securityAccount.id })),
     },
     $transaction: vi.fn(async (callback: (tx: typeof transaction) => unknown) => callback(transaction)),
     accountingClosure: { findFirst: vi.fn(async () => null) },
@@ -187,13 +223,13 @@ describe("disburseLoanAndPayOffPrevious", () => {
     expect(transferSavingsToLoan).toHaveBeenCalledTimes(1);
     expect(transferSavingsToLoan).toHaveBeenCalledWith(
       prisma,
-      expect.objectContaining({ loanId: "loan-old", amountMinor: 50_000n, savingsAccountId: "savings-1" }),
+      expect.objectContaining({ loanId: "loan-old", amountMinor: 50_000n, savingsAccountId: "savings-security" }),
     );
     expect(result.payoff?.settlementAmountMinor).toBe(50_000n);
   });
 
   it("caps the payoff at the net proceeds when the old loan owes more than was disbursed", async () => {
-    const { prisma } = buildPrismaMock({ targetLoanOutstandingMinor: 500_000n, netProceedsMinor: 120_000n });
+    const { prisma } = buildPrismaMock({ targetLoanOutstandingMinor: 80_000_000n, netProceedsMinor: 120_000n });
 
     const result = await disburseLoanAndPayOffPrevious(prisma, {
       loanId: "loan-new",
@@ -205,9 +241,9 @@ describe("disburseLoanAndPayOffPrevious", () => {
 
     expect(transferSavingsToLoan).toHaveBeenCalledWith(
       prisma,
-      expect.objectContaining({ loanId: "loan-old", amountMinor: 120_000n }),
+      expect.objectContaining({ loanId: "loan-old", amountMinor: 56_600_000n }),
     );
-    expect(result.payoff?.settlementAmountMinor).toBe(120_000n);
+    expect(result.payoff?.settlementAmountMinor).toBe(56_600_000n);
   });
 
   it("skips the payoff transfer when the selected loan has nothing outstanding", async () => {

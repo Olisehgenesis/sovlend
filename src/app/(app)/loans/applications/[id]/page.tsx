@@ -19,8 +19,11 @@ import { STAFF_SYSTEM_ROLES } from "@/modules/identity/domain/staff-roles";
 import { canEditSubmittedLoanApplication, canSelfApproveLoanApplication } from "@/modules/lending/application/loan-application-access";
 import { isLoanApplicationExpired } from "@/modules/lending/application/loan-application-expiry";
 import { readChargeSnapshot, readCollateralSnapshot, readTermsSnapshot } from "@/modules/lending/application/loan-application-payload";
+import { isStatutoryDisbursementCharge, LIF_SAVINGS_SHORT_NAME, SECURITY_SAVINGS_SHORT_NAME } from "@/modules/lending/domain/disbursement-payout";
+import { loanOutstandingMinor } from "@/modules/lending/domain/loan-outstanding";
 import { formatMonthlyPercent } from "@/modules/lending/domain/monthly-rate";
 import { formatMinor } from "@/modules/money/domain/format-minor";
+import { displaySavingsProductName } from "@/modules/savings/domain/savings-product-label";
 
 function toDateInput(value: Date | null) {
   return value ? value.toISOString().slice(0, 10) : "";
@@ -92,7 +95,7 @@ export default async function LoanApplicationPage({
   });
   if (!application || (scope.officeIds && !scope.officeIds.includes(application.officeId))) notFound();
 
-  const [settlementAccounts, savingsAccounts, actor, actorHasLoanApplyPermission] = await Promise.all([
+  const [settlementAccounts, savingsAccounts, actor, actorHasLoanApplyPermission, otherClientLoans] = await Promise.all([
     prisma.settlementAccount.findMany({
       where: { organizationId: scope.organizationId, currencyCode: application.product.denominationCurrency, active: true },
       select: { id: true, name: true, type: true },
@@ -109,7 +112,8 @@ export default async function LoanApplicationPage({
             id: true,
             accountNumber: true,
             isDefault: true,
-            product: { select: { name: true } },
+            product: { select: { name: true, shortName: true } },
+            transactions: { select: { amountMinor: true } },
           },
           orderBy: [{ isDefault: "desc" }, { createdAt: "asc" }],
         })
@@ -124,6 +128,27 @@ export default async function LoanApplicationPage({
       organizationId: scope.organizationId,
       officeId: application.officeId,
     }),
+    application.clientId && application.loan
+      ? prisma.loan.findMany({
+          where: {
+            clientId: application.clientId,
+            id: { not: application.loan.id },
+            status: { in: ["ACTIVE", "IN_ARREARS"] },
+            denominationCurrency: application.product.denominationCurrency,
+          },
+          select: {
+            id: true,
+            accountNumber: true,
+            principalMinor: true,
+            principalWrittenOffMinor: true,
+            interestWrittenOffMinor: true,
+            feesWrittenOffMinor: true,
+            penaltiesWrittenOffMinor: true,
+            installments: true,
+            charges: { select: { name: true, amountMinor: true, status: true, dueOn: true } },
+          },
+        })
+      : Promise.resolve([]),
   ]);
 
   const proposed = formatMinor(application.proposedPrincipalMinor, application.product.denominationCurrency);
@@ -235,19 +260,43 @@ export default async function LoanApplicationPage({
     officerName: application.loanOfficer?.name ?? undefined,
     purpose: application.purpose ?? undefined,
   };
+  const lifAccount = savingsAccounts.find((account) => account.product?.shortName === LIF_SAVINGS_SHORT_NAME);
+  const securityAccount = savingsAccounts.find((account) => account.product?.shortName === SECURITY_SAVINGS_SHORT_NAME);
+  const payoffLoanOptions = otherClientLoans
+    .map((item) => ({
+      id: item.id,
+      accountNumber: item.accountNumber,
+      currencyCode: application.product.denominationCurrency,
+      outstandingMinor: loanOutstandingMinor(item.installments, item, item.charges).toString(),
+      principalMinor: item.principalMinor.toString(),
+    }))
+    .filter((item) => BigInt(item.outstandingMinor) > 0n);
+  const disbursementPayout = {
+    principalMinor: (application.loan?.principalMinor ?? application.proposedPrincipalMinor).toString(),
+    currency: application.product.denominationCurrency,
+    existingLifMinor: (lifAccount?.transactions.reduce((sum, item) => sum + item.amountMinor, 0n) ?? 0n).toString(),
+    extraCharges: chargeSelections
+      .filter((charge) => !isStatutoryDisbursementCharge(charge.name))
+      .map((charge) => ({ name: charge.name, amountMinor: charge.amountMinor })),
+    otherLoans: payoffLoanOptions.map((option) => ({
+      id: option.id,
+      accountNumber: option.accountNumber,
+      principalMinor: option.principalMinor,
+      outstandingMinor: option.outstandingMinor,
+    })),
+    lifAccountNumber: lifAccount?.accountNumber,
+    securityAccountNumber: securityAccount?.accountNumber,
+  };
 
   const actionPanel =
-    application.status === "SUBMITTED" && applicationExpired ? (
-      <article className="panel separation-note">
-        <ShieldCheck size={26} />
-        <strong>Application expired</strong>
-        <p>
-          This application expired on {application.applicationExpiresOn?.toLocaleDateString()}. It cannot be approved unless an authorized editor updates the expiry date.
-        </p>
-      </article>
-    ) : application.status === "SUBMITTED" &&
+    application.status === "SUBMITTED" &&
     (application.submittedById !== session.user.id || actorCanSelfApprove) ? (
       <article className="panel">
+        {applicationExpired ? (
+          <p className="field-help">
+            This application expired on {application.applicationExpiresOn?.toLocaleDateString()}. The submitter can still edit it, and it can still be reviewed and approved.
+          </p>
+        ) : null}
         <ApproveLoanForm applicationId={application.id} proposedAmount={proposedInput} />
       </article>
     ) : application.status === "SUBMITTED" ? (
@@ -255,7 +304,10 @@ export default async function LoanApplicationPage({
         <ShieldCheck size={26} />
         <strong>Independent approval required</strong>
         <p>
-          The person who submitted this application cannot approve it. Ask another authorized manager to review it.
+          The person who submitted this application cannot approve it. Ask another authorized manager to review it
+          {applicationExpired
+            ? `. The expiry date of ${application.applicationExpiresOn?.toLocaleDateString()} has passed; you can still edit this application.`
+            : "."}
         </p>
       </article>
     ) : application.status === "APPROVED" &&
@@ -265,12 +317,14 @@ export default async function LoanApplicationPage({
       <article className="panel">
         <DisburseLoanForm
           loanId={application.loan.id}
+          payoffLoanOptions={payoffLoanOptions}
+          payout={disbursementPayout}
           preview={loanPreview}
           savingsAccounts={savingsAccounts.map((account) => ({
             id: account.id,
             accountNumber: account.accountNumber,
             isDefault: account.isDefault,
-            productName: account.product?.name ?? null,
+            productName: displaySavingsProductName(account.product?.name),
           }))}
           settlementAccounts={settlementAccounts}
         />

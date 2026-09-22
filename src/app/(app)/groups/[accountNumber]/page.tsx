@@ -15,6 +15,7 @@ import { permissions } from "@/modules/identity/domain/permissions";
 import { STAFF_SYSTEM_ROLES } from "@/modules/identity/domain/staff-roles";
 import { installmentOutstandingMinor } from "@/modules/lending/domain/loan-outstanding";
 import { formatMinor } from "@/modules/money/domain/format-minor";
+import { displaySavingsProductName } from "@/modules/savings/domain/savings-product-label";
 
 const tabs = [
   { key: "general", label: "General", icon: CircleUserRound },
@@ -610,7 +611,7 @@ export default async function GroupDetailPage({ params, searchParams }: { params
                             {account.accountNumber}
                             <Link className="row-link" href={`/savings-accounts/${account.accountNumber}`} aria-label={`Open savings account ${account.accountNumber}`} />
                           </td>
-                          <td>{account.product?.name ?? "Unlinked product"}</td>
+                          <td>{displaySavingsProductName(account.product?.name)}</td>
                           <td>{savingsAccountTypeLabel(account.accountType)}</td>
                           <td>
                             <span className={`status ${savingsStatusTone(account.status)}`}>{savingsStatusLabel(account.status)}</span>

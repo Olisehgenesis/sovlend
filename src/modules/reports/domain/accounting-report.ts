@@ -2,6 +2,7 @@ import type { AccountType, EntryDirection, Prisma, PrismaClient } from "@prisma/
 
 import { officeWhere, type UserDataScope } from "@/modules/identity/application/data-scope";
 import { rowsToCsv } from "@/modules/lending/domain/loan-export";
+import { displaySavingsProductName } from "@/modules/savings/domain/savings-product-label";
 
 export const reportDateFormatter = new Intl.DateTimeFormat("en-UG", { dateStyle: "medium" });
 
@@ -239,7 +240,7 @@ export async function listAccountingReportAccounts(
   db: ReportPrisma,
   types?: readonly AccountType[],
 ): Promise<ReportAccount[]> {
-  return db.ledgerAccount.findMany({
+  const accounts = await db.ledgerAccount.findMany({
     where: {
       ...DETAIL_ACCOUNT_WHERE,
       ...(types ? { type: { in: [...types] } } : {}),
@@ -247,6 +248,7 @@ export async function listAccountingReportAccounts(
     select: { id: true, code: true, name: true, type: true, currencyCode: true },
     orderBy: [{ type: "asc" }, { code: "asc" }],
   });
+  return accounts.map((account) => ({ ...account, name: displaySavingsProductName(account.name) }));
 }
 
 export function formatDateInputValue(date: Date) {

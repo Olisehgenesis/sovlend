@@ -9,6 +9,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { clientScopeWhere, getUserDataScope, groupScopeWhere } from "@/modules/identity/application/data-scope";
 import { formatMinor } from "@/modules/money/domain/format-minor";
+import { displaySavingsProductName } from "@/modules/savings/domain/savings-product-label";
 
 const dateFormatter = new Intl.DateTimeFormat("en-UG", { dateStyle: "medium" });
 const dateTimeFormatter = new Intl.DateTimeFormat("en-UG", {
@@ -145,7 +146,7 @@ export default async function SavingsAccountDetailPage({
         }
       : notFound();
 
-  const productName = account.product?.name ?? snapshotString(account.termsSnapshot, "name") ?? "Unlinked product";
+  const productName = displaySavingsProductName(account.product?.name ?? snapshotString(account.termsSnapshot, "name"));
   const productCode = account.product?.shortName ?? snapshotString(account.termsSnapshot, "shortName");
   const nominalAnnualRateBps = account.product?.nominalAnnualRateBps ?? snapshotNumber(account.termsSnapshot, "nominalAnnualRateBps");
   const minimumOpeningBalanceMinor =

@@ -4,7 +4,6 @@ import { createHash, randomUUID } from "node:crypto";
 import { AuthorizationService } from "@/modules/identity/application/authorization-service";
 import { permissions } from "@/modules/identity/domain/permissions";
 import { canSelfApproveLoanApplication } from "@/modules/lending/application/loan-application-access";
-import { isLoanApplicationExpired } from "@/modules/lending/application/loan-application-expiry";
 import { readChargeSnapshot, readCollateralSnapshot } from "@/modules/lending/application/loan-application-payload";
 import { nextSubAccountNumber } from "@/modules/lending/domain/sub-account-numbering";
 
@@ -23,9 +22,6 @@ export async function approveLoanApplication(
   });
   if (!application) throw new Error("Loan application not found");
   if (application.status !== "SUBMITTED") throw new Error("Only submitted applications can be approved");
-  if (isLoanApplicationExpired(application.applicationExpiresOn)) {
-    throw new Error(`This application expired on ${application.applicationExpiresOn!.toISOString().slice(0, 10)} and can no longer be approved`);
-  }
   if (application.submittedById === command.actorUserId) {
     const actor = await prisma.user.findUnique({ where: { id: command.actorUserId }, select: { systemRole: true } });
     const canSelfApprove = canSelfApproveLoanApplication(actor?.systemRole);

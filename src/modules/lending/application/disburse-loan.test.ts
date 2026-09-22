@@ -65,6 +65,8 @@ type MockOptions = Readonly<{
     productShortName?: string | null;
     openingBalanceMinor?: bigint;
   }>;
+  existingLifMinor?: bigint;
+  otherActiveLoans?: Array<{ id: string; principalMinor: bigint }>;
 }>;
 
 function buildPrismaMock(options: MockOptions = {}) {
@@ -76,10 +78,17 @@ function buildPrismaMock(options: MockOptions = {}) {
   const charges = options.charges ?? [];
   const savingsAccounts = options.savingsAccounts ?? [
     {
-      id: "savings-1",
-      accountNumber: "SV-0001",
+      id: "savings-lif",
+      accountNumber: "SV-LIF",
+      isDefault: false,
+      productShortName: "LAS",
+      openingBalanceMinor: options.existingLifMinor ?? 0n,
+    },
+    {
+      id: "savings-security",
+      accountNumber: "SV-SEC",
       isDefault: true,
-      productShortName: "MSA",
+      productShortName: "cs",
       openingBalanceMinor: 0n,
     },
   ];
@@ -88,7 +97,9 @@ function buildPrismaMock(options: MockOptions = {}) {
     loanTransactionData: null,
     journalLines: [],
     savingsTransactionData: null,
+    savingsTransactions: [] as Array<Record<string, unknown>>,
     savingsFindManyWhere: null,
+    savingsFindFirstWhere: null,
     chargeUpdateArgs: null,
     auditEvents: [] as Array<Record<string, unknown>>,
   };
@@ -106,7 +117,7 @@ function buildPrismaMock(options: MockOptions = {}) {
     accountNumber: "LN-0001",
     status: "APPROVED",
     disbursedOn: null,
-    principalMinor: options.principalMinor ?? 1_000_000n,
+    principalMinor: options.principalMinor ?? 70_000_000n,
     denominationCurrency: "UGX",
     termsSnapshot: {
       annualRateBps: 1_200,
@@ -133,11 +144,25 @@ function buildPrismaMock(options: MockOptions = {}) {
     office: {
       organizationId: "org-1",
     },
+    client: options.groupLoan ? null : { id: "client-1", accountNumber: "000000001" },
+    group: options.groupLoan || options.memberGroupLoan ? { id: "group-1", accountNumber: "G-0001" } : null,
   };
 
   const transaction = {
     loan: {
       updateMany: vi.fn(async () => ({ count: 1 })),
+      findMany: vi.fn(async () =>
+        (options.otherActiveLoans ?? []).map((item) => ({
+          id: item.id,
+          principalMinor: item.principalMinor,
+          principalWrittenOffMinor: 0n,
+          interestWrittenOffMinor: 0n,
+          feesWrittenOffMinor: 0n,
+          penaltiesWrittenOffMinor: 0n,
+          installments: [],
+          charges: [],
+        })),
+      ),
     },
     charge: {
       findMany: vi.fn(async () =>
@@ -158,6 +183,23 @@ function buildPrismaMock(options: MockOptions = {}) {
           product: { id: `${account.id}-product`, shortName: account.productShortName ?? null },
         }));
       }),
+      findFirst: vi.fn(async ({ where }: { where?: Record<string, unknown> & { product?: { shortName?: string } } }) => {
+        captures.savingsFindFirstWhere = where ?? null;
+        const shortName = where?.product?.shortName;
+        const account = savingsAccounts.find((item) => item.productShortName === shortName);
+        if (!account) return null;
+        return {
+          id: account.id,
+          accountNumber: account.accountNumber,
+          productId: `${account.id}-product`,
+          product: { id: `${account.id}-product`, shortName: account.productShortName ?? null },
+          transactions: [{ amountMinor: account.openingBalanceMinor ?? 0n }],
+        };
+      }),
+      count: vi.fn(async () => savingsAccounts.length),
+      create: vi.fn(async () => {
+        throw new Error("Unexpected savings account create");
+      }),
       findUniqueOrThrow: vi.fn(async ({ where }: { where: { id: string } }) => {
         const account = savingsAccounts.find((item) => item.id === where.id);
         if (!account) throw new Error("Savings account not found");
@@ -165,17 +207,26 @@ function buildPrismaMock(options: MockOptions = {}) {
           id: account.id,
           accountNumber: account.accountNumber,
           clientId: options.groupLoan ? null : "client-1",
-          groupId: options.groupLoan ? "group-1" : null,
+          groupId: options.groupLoan || options.memberGroupLoan ? "group-1" : null,
           currencyCode: "UGX",
           status: "ACTIVE",
-          client: options.groupLoan ? null : { organizationId: "org-1" },
-          group: options.groupLoan ? { organizationId: "org-1" } : null,
+          productId: `${account.id}-product`,
+          client: options.groupLoan ? null : { organizationId: "org-1", officeId: "office-1" },
+          group: options.groupLoan ? { organizationId: "org-1", officeId: "office-1" } : options.memberGroupLoan ? { organizationId: "org-1", officeId: "office-1" } : null,
+          product: { shortName: account.productShortName ?? null },
           transactions: [{ amountMinor: account.openingBalanceMinor ?? 0n }],
         };
       }),
     },
+    savingsProduct: {
+      findFirst: vi.fn(async () => null),
+    },
     ledgerAccount: {
       findFirst: vi.fn(async ({ where }: { where: { code: string } }) => {
+        if (where.code === "CA-005") return { id: "ledger-lif" };
+        if (where.code === "CA-004") return { id: "ledger-security" };
+        if (where.code === "202020") return { id: "ledger-crb-income" };
+        if (where.code === "202021") return { id: "ledger-crb-payable" };
         if (where.code === "ML-001") return { id: "ledger-savings-liability" };
         if (where.code === "20004") return { id: "ledger-savings-liability-fallback" };
         return null;
@@ -201,7 +252,8 @@ function buildPrismaMock(options: MockOptions = {}) {
       findUnique: vi.fn(async () => null),
       create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => {
         captures.savingsTransactionData = data;
-        return { id: "savings-tx-1", ...data };
+        (captures.savingsTransactions as Array<Record<string, unknown>>).push(data);
+        return { id: `savings-tx-${(captures.savingsTransactions as unknown[]).length}`, ...data };
       }),
     },
     journal: {
@@ -295,7 +347,7 @@ describe("disburseLoan", () => {
     authorizationState.seenContexts = [];
   });
 
-  it("credits the client's savings account with net proceeds and keeps the loan journal balanced", async () => {
+  it("credits loan security payable net of LIF, processing, and CRB, and keeps the journal balanced", async () => {
     const { prisma, captures } = buildPrismaMock({ charges: [] });
 
     await disburseLoan(prisma, {
@@ -307,32 +359,33 @@ describe("disburseLoan", () => {
     });
 
     expect(captures.loanTransactionData).toMatchObject({
-      settlementChannel: "Savings SV-0001",
+      settlementChannel: "Savings SV-SEC",
       settlementAccountId: undefined,
-      settlementAmountMinor: 1_000_000n,
-      denominationAmountMinor: 1_000_000n,
+      settlementAmountMinor: 56_600_000n,
+      denominationAmountMinor: 70_000_000n,
     });
-    expect(captures.savingsTransactionData).toMatchObject({
-      savingsAccountId: "savings-1",
-      transactionType: "DEPOSIT",
-      amountMinor: 1_000_000n,
-      reason: "Loan disbursement",
-    });
+    expect(captures.savingsTransactions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          savingsAccountId: "savings-lif",
+          transactionType: "DEPOSIT",
+          amountMinor: 10_500_000n,
+        }),
+        expect.objectContaining({
+          savingsAccountId: "savings-security",
+          transactionType: "DEPOSIT",
+          amountMinor: 56_600_000n,
+          reason: "Loan disbursement",
+        }),
+      ]),
+    );
     expect(captures.journalLines).toEqual([
-      {
-        journalId: "journal-1",
-        accountId: "ledger-principal",
-        direction: "DEBIT",
-        amountMinor: 1_000_000n,
-        memo: "LN-0001",
-      },
-      {
-        journalId: "journal-1",
-        accountId: "ledger-savings-liability",
-        direction: "CREDIT",
-        amountMinor: 1_000_000n,
-        memo: "SV-0001",
-      },
+      { journalId: "journal-1", accountId: "ledger-principal", direction: "DEBIT", amountMinor: 70_000_000n, memo: "LN-0001" },
+      { journalId: "journal-1", accountId: "ledger-fee-income", direction: "CREDIT", amountMinor: 1_400_000n, memo: "Loan processing fee" },
+      { journalId: "journal-1", accountId: "ledger-crb-income", direction: "CREDIT", amountMinor: 500_000n, memo: "CRB income" },
+      { journalId: "journal-1", accountId: "ledger-crb-payable", direction: "CREDIT", amountMinor: 1_000_000n, memo: "CRB payable" },
+      { journalId: "journal-1", accountId: "ledger-lif", direction: "CREDIT", amountMinor: 10_500_000n, memo: "SV-LIF" },
+      { journalId: "journal-1", accountId: "ledger-security", direction: "CREDIT", amountMinor: 56_600_000n, memo: "SV-SEC" },
     ]);
     expect(captures.chargeUpdateArgs).toBeNull();
     expectBalanced(captures.journalLines as unknown[]);
@@ -354,31 +407,16 @@ describe("disburseLoan", () => {
     });
 
     expect(captures.loanTransactionData).toMatchObject({
-      settlementAmountMinor: 850_000n,
-      denominationAmountMinor: 1_000_000n,
+      settlementAmountMinor: 56_450_000n,
+      denominationAmountMinor: 70_000_000n,
     });
     expect(captures.journalLines).toEqual([
-      {
-        journalId: "journal-1",
-        accountId: "ledger-principal",
-        direction: "DEBIT",
-        amountMinor: 1_000_000n,
-        memo: "LN-0001",
-      },
-      {
-        journalId: "journal-1",
-        accountId: "ledger-fee-income",
-        direction: "CREDIT",
-        amountMinor: 150_000n,
-        memo: "Disbursement fees",
-      },
-      {
-        journalId: "journal-1",
-        accountId: "ledger-savings-liability",
-        direction: "CREDIT",
-        amountMinor: 850_000n,
-        memo: "SV-0001",
-      },
+      { journalId: "journal-1", accountId: "ledger-principal", direction: "DEBIT", amountMinor: 70_000_000n, memo: "LN-0001" },
+      { journalId: "journal-1", accountId: "ledger-fee-income", direction: "CREDIT", amountMinor: 1_550_000n, memo: "Disbursement fees" },
+      { journalId: "journal-1", accountId: "ledger-crb-income", direction: "CREDIT", amountMinor: 500_000n, memo: "CRB income" },
+      { journalId: "journal-1", accountId: "ledger-crb-payable", direction: "CREDIT", amountMinor: 1_000_000n, memo: "CRB payable" },
+      { journalId: "journal-1", accountId: "ledger-lif", direction: "CREDIT", amountMinor: 10_500_000n, memo: "SV-LIF" },
+      { journalId: "journal-1", accountId: "ledger-security", direction: "CREDIT", amountMinor: 56_450_000n, memo: "SV-SEC" },
     ]);
     expect(captures.chargeUpdateArgs).toMatchObject({
       where: { id: { in: ["charge-1", "charge-2"] } },
@@ -401,26 +439,19 @@ describe("disburseLoan", () => {
     expect(captures.loanTransactionData).toMatchObject({
       settlementChannel: "Main till",
       settlementAccountId: "settlement-1",
-      settlementAmountMinor: 1_000_000n,
+      settlementAmountMinor: 56_600_000n,
     });
-    // Even with a payment method recorded, the journal still credits the savings
-    // liability account — never the settlement account's own ledger account.
     expect(captures.journalLines).toEqual([
-      {
-        journalId: "journal-1",
-        accountId: "ledger-principal",
-        direction: "DEBIT",
-        amountMinor: 1_000_000n,
-        memo: "LN-0001",
-      },
-      {
-        journalId: "journal-1",
-        accountId: "ledger-savings-liability",
-        direction: "CREDIT",
-        amountMinor: 1_000_000n,
-        memo: "SV-0001",
-      },
+      { journalId: "journal-1", accountId: "ledger-principal", direction: "DEBIT", amountMinor: 70_000_000n, memo: "LN-0001" },
+      { journalId: "journal-1", accountId: "ledger-fee-income", direction: "CREDIT", amountMinor: 1_400_000n, memo: "Loan processing fee" },
+      { journalId: "journal-1", accountId: "ledger-crb-income", direction: "CREDIT", amountMinor: 500_000n, memo: "CRB income" },
+      { journalId: "journal-1", accountId: "ledger-crb-payable", direction: "CREDIT", amountMinor: 1_000_000n, memo: "CRB payable" },
+      { journalId: "journal-1", accountId: "ledger-lif", direction: "CREDIT", amountMinor: 10_500_000n, memo: "SV-LIF" },
+      { journalId: "journal-1", accountId: "ledger-security", direction: "CREDIT", amountMinor: 56_600_000n, memo: "SV-SEC" },
     ]);
+    expect(captures.journalLines).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ accountId: "ledger-cash" })]),
+    );
     expectBalanced(captures.journalLines as unknown[]);
   });
 
@@ -435,26 +466,15 @@ describe("disburseLoan", () => {
     });
 
     expect(captures.savingsTransactionData).toMatchObject({
-      savingsAccountId: "savings-1",
+      savingsAccountId: "savings-security",
       transactionType: "DEPOSIT",
-      amountMinor: 1_000_000n,
+      amountMinor: 56_600_000n,
     });
-    expect(captures.journalLines).toEqual([
-      {
-        journalId: "journal-1",
-        accountId: "ledger-principal",
-        direction: "DEBIT",
-        amountMinor: 1_000_000n,
-        memo: "LN-0001",
-      },
-      {
-        journalId: "journal-1",
-        accountId: "ledger-savings-liability",
-        direction: "CREDIT",
-        amountMinor: 1_000_000n,
-        memo: "SV-0001",
-      },
-    ]);
+    expect(captures.journalLines).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ accountId: "ledger-security", amountMinor: 56_600_000n, memo: "SV-SEC" }),
+      ]),
+    );
     expectBalanced(captures.journalLines as unknown[]);
   });
 
@@ -468,12 +488,12 @@ describe("disburseLoan", () => {
       idempotencyKey: "1a4e8c3b-2d7f-4b11-9c55-6e8f0a1b2c3d",
     });
 
-    expect(captures.savingsFindManyWhere).toMatchObject({ clientId: "client-1" });
-    expect(captures.savingsFindManyWhere).not.toMatchObject({ groupId: "group-1" });
+    expect(captures.savingsFindFirstWhere).toMatchObject({ clientId: "client-1" });
+    expect(captures.savingsFindFirstWhere).not.toMatchObject({ groupId: "group-1" });
     expect(captures.savingsTransactionData).toMatchObject({
-      savingsAccountId: "savings-1",
+      savingsAccountId: "savings-security",
       transactionType: "DEPOSIT",
-      amountMinor: 1_000_000n,
+      amountMinor: 56_600_000n,
     });
   });
 
@@ -490,7 +510,7 @@ describe("disburseLoan", () => {
         businessDate: new Date("2026-09-08T00:00:00.000Z"),
         idempotencyKey: "7256e9dd-84d4-4749-91f3-a26fa9260915",
       }),
-    ).rejects.toThrow("Disbursement fees exceed the approved principal");
+    ).rejects.toThrow("Disbursement deductions exceed the approved principal");
   });
 
   it("rejects disbursement when fee income mapping is missing for pending fees", async () => {
@@ -506,7 +526,7 @@ describe("disburseLoan", () => {
         businessDate: new Date("2026-09-08T00:00:00.000Z"),
         idempotencyKey: "8e04245f-a4ca-44ef-a36f-2ff4d93da0dc",
       }),
-    ).rejects.toThrow("Fee income account is not configured for this loan product");
+    ).rejects.toThrow("Processing fee income account is not configured for this loan product");
   });
 
   it("rejects disbursement when there is no active savings account to credit", async () => {
@@ -519,7 +539,7 @@ describe("disburseLoan", () => {
         businessDate: new Date("2026-09-08T00:00:00.000Z"),
         idempotencyKey: "1a2b3c4d-5e6f-4a1b-8c9d-0e1f2a3b4c5d",
       }),
-    ).rejects.toThrow("Client has no active savings account available for loan disbursement");
+    ).rejects.toThrow("Loan insurance fund savings product is not configured");
   });
 
   it("splits admission and processing fees into their own income accounts, keeping the journal balanced", async () => {
@@ -541,11 +561,14 @@ describe("disburseLoan", () => {
     });
 
     expect(captures.journalLines).toEqual([
-      { journalId: "journal-1", accountId: "ledger-principal", direction: "DEBIT", amountMinor: 1_000_000n, memo: "LN-0001" },
+      { journalId: "journal-1", accountId: "ledger-principal", direction: "DEBIT", amountMinor: 70_000_000n, memo: "LN-0001" },
+      { journalId: "journal-1", accountId: "ledger-processing-income", direction: "CREDIT", amountMinor: 1_400_000n, memo: "Loan processing fee" },
       { journalId: "journal-1", accountId: "ledger-admission-income", direction: "CREDIT", amountMinor: 40_000n, memo: "Admission fee" },
-      { journalId: "journal-1", accountId: "ledger-processing-income", direction: "CREDIT", amountMinor: 25_000n, memo: "Processing fee" },
       { journalId: "journal-1", accountId: "ledger-fee-income", direction: "CREDIT", amountMinor: 10_000n, memo: "Disbursement fees" },
-      { journalId: "journal-1", accountId: "ledger-savings-liability", direction: "CREDIT", amountMinor: 925_000n, memo: "SV-0001" },
+      { journalId: "journal-1", accountId: "ledger-crb-income", direction: "CREDIT", amountMinor: 500_000n, memo: "CRB income" },
+      { journalId: "journal-1", accountId: "ledger-crb-payable", direction: "CREDIT", amountMinor: 1_000_000n, memo: "CRB payable" },
+      { journalId: "journal-1", accountId: "ledger-lif", direction: "CREDIT", amountMinor: 10_500_000n, memo: "SV-LIF" },
+      { journalId: "journal-1", accountId: "ledger-security", direction: "CREDIT", amountMinor: 56_550_000n, memo: "SV-SEC" },
     ]);
     expectBalanced(captures.journalLines as unknown[]);
   });
@@ -568,9 +591,12 @@ describe("disburseLoan", () => {
     // Both charges fall back to the same legacy feeIncomeAccountId and merge into a single line,
     // identical to today's behavior when the new mapping fields are not configured.
     expect(captures.journalLines).toEqual([
-      { journalId: "journal-1", accountId: "ledger-principal", direction: "DEBIT", amountMinor: 1_000_000n, memo: "LN-0001" },
-      { journalId: "journal-1", accountId: "ledger-fee-income", direction: "CREDIT", amountMinor: 65_000n, memo: "Disbursement fees" },
-      { journalId: "journal-1", accountId: "ledger-savings-liability", direction: "CREDIT", amountMinor: 935_000n, memo: "SV-0001" },
+      { journalId: "journal-1", accountId: "ledger-principal", direction: "DEBIT", amountMinor: 70_000_000n, memo: "LN-0001" },
+      { journalId: "journal-1", accountId: "ledger-fee-income", direction: "CREDIT", amountMinor: 1_440_000n, memo: "Disbursement fees" },
+      { journalId: "journal-1", accountId: "ledger-crb-income", direction: "CREDIT", amountMinor: 500_000n, memo: "CRB income" },
+      { journalId: "journal-1", accountId: "ledger-crb-payable", direction: "CREDIT", amountMinor: 1_000_000n, memo: "CRB payable" },
+      { journalId: "journal-1", accountId: "ledger-lif", direction: "CREDIT", amountMinor: 10_500_000n, memo: "SV-LIF" },
+      { journalId: "journal-1", accountId: "ledger-security", direction: "CREDIT", amountMinor: 56_560_000n, memo: "SV-SEC" },
     ]);
     expectBalanced(captures.journalLines as unknown[]);
   });
@@ -602,7 +628,7 @@ describe("disburseLoan", () => {
     });
 
     expect(captures.loanTransactionData).toMatchObject({
-      settlementAmountMinor: 80_000_000n,
+      settlementAmountMinor: 64_900_000n,
       priceSnapshotId: "price-btc-usd-1",
     });
     expect(captures.auditEvents).toEqual(
@@ -612,7 +638,7 @@ describe("disburseLoan", () => {
           metadata: expect.objectContaining({
             businessDate: "2026-09-14",
             payeeType: "BLINK",
-            btcUsdEquivalentMinor: "20000",
+            btcUsdEquivalentMinor: "16225",
             btcDailyCapUsdMinor: "50000",
             btcUsdSnapshotId: "price-btc-usd-1",
             usdUgxPrice: "4000",
@@ -657,9 +683,9 @@ describe("disburseLoan", () => {
           action: "loan.disbursement.btc_cap_blocked",
           metadata: expect.objectContaining({
             businessDate: "2026-09-14",
-            currentDisbursementUsdMinor: "20000",
+            currentDisbursementUsdMinor: "16225",
             priorDisbursementUsdMinor: "35000",
-            attemptedDisbursementUsdMinor: "55000",
+            attemptedDisbursementUsdMinor: "51225",
             requiredPermission: "LOAN_DISBURSE_BTC_OVER_CAP",
           }),
         }),
@@ -695,7 +721,7 @@ describe("disburseLoan", () => {
     });
 
     expect(captures.loanTransactionData).toMatchObject({
-      settlementAmountMinor: 120_000_000n,
+      settlementAmountMinor: 98_100_000n,
       priceSnapshotId: "price-btc-usd-1",
     });
     expect(captures.auditEvents).not.toEqual(
@@ -707,7 +733,7 @@ describe("disburseLoan", () => {
           action: "loan.disbursed",
           metadata: expect.objectContaining({
             payeeType: "BLINK",
-            btcUsdEquivalentMinor: "30000",
+            btcUsdEquivalentMinor: "24525",
             btcCapOverrideUsed: true,
           }),
         }),
@@ -742,7 +768,7 @@ describe("disburseLoan", () => {
     });
 
     expect(captures.loanTransactionData).toMatchObject({
-      settlementAmountMinor: 120_000_000n,
+      settlementAmountMinor: 98_100_000n,
       priceSnapshotId: "price-btc-usd-1",
     });
   });
@@ -784,5 +810,41 @@ describe("disburseLoan", () => {
         payeeReference: "alice@blink",
       }),
     ).rejects.toThrow("BTC disbursements above $500/day require branch-manager approval");
+  });
+
+  it("releases surplus LIF into loan security payable when the new 15% hold is smaller", async () => {
+    const { prisma, captures } = buildPrismaMock({
+      principalMinor: 40_000_000n,
+      existingLifMinor: 10_500_000n,
+    });
+
+    await disburseLoan(prisma, {
+      loanId: "loan-1",
+      actorUserId: "operator-1",
+      businessDate: new Date("2026-09-08T00:00:00.000Z"),
+      idempotencyKey: "aa11bb22-cc33-4dd4-8ee5-ff6677889900",
+    });
+
+    expect(captures.savingsTransactions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          savingsAccountId: "savings-lif",
+          transactionType: "WITHDRAWAL",
+          amountMinor: -4_500_000n,
+        }),
+        expect.objectContaining({
+          savingsAccountId: "savings-security",
+          transactionType: "DEPOSIT",
+          amountMinor: 42_200_000n,
+        }),
+      ]),
+    );
+    expect(captures.journalLines).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ accountId: "ledger-lif", direction: "DEBIT", amountMinor: 4_500_000n }),
+        expect.objectContaining({ accountId: "ledger-security", direction: "CREDIT", amountMinor: 42_200_000n }),
+      ]),
+    );
+    expectBalanced(captures.journalLines as unknown[]);
   });
 });

@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { formatMinor } from "@/modules/money/domain/format-minor";
+import { displaySavingsProductName } from "@/modules/savings/domain/savings-product-label";
 
 import { getPortalClient } from "../../_lib/portal-context";
 
@@ -41,7 +42,7 @@ export default async function PortalSavingsAccountPage({ params }: { params: Pro
         <div>
           <p className="eyebrow">Savings account</p>
           <h1>{account.accountNumber}</h1>
-          <p>{account.product?.name ?? account.accountType.replaceAll("_", " ")}</p>
+          <p>{displaySavingsProductName(account.product?.name ?? account.accountType.replaceAll("_", " "))}</p>
         </div>
         <div className="header-actions">
           <span className={`status status-prominent ${savingsStatusTone(account.status)}`}>{account.status.replaceAll("_", " ")}</span>
@@ -58,7 +59,7 @@ export default async function PortalSavingsAccountPage({ params }: { params: Pro
         </article>
         <article>
           <span>Product</span>
-          <strong>{account.product?.name ?? account.accountType.replaceAll("_", " ")}</strong>
+          <strong>{displaySavingsProductName(account.product?.name ?? account.accountType.replaceAll("_", " "))}</strong>
         </article>
         <article>
           <span>Currency</span>

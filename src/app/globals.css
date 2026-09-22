@@ -620,7 +620,16 @@ strong.negative { color: #a44831; }
 .report-toggle-label { color: #445048; font-size: 12px; font-weight: 650; }
 
 .app-modal { width: min(560px, calc(100vw - 32px)); max-height: calc(100vh - 64px); margin: auto; padding: 0; overflow: auto; background: white; border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 24px 48px rgba(10, 30, 20, 0.22); }
-.app-modal.loan-preview-modal { width: min(920px, calc(100vw - 32px)); }
+.loan-preview-metrics.disbursement-payout-metrics { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+.disbursement-payout { display: grid; gap: 12px; }
+.disbursement-payout-table { width: 100%; border-collapse: collapse; }
+.disbursement-payout-table th, .disbursement-payout-table td { padding: 10px 0; border-bottom: 1px solid var(--line); vertical-align: top; }
+.disbursement-payout-table th { font-weight: 650; text-align: left; }
+.disbursement-payout-table .field-hint { margin: 4px 0 0; font-weight: 500; }
+.disbursement-payout-total th, .disbursement-payout-total td { border-bottom: 0; font-size: 15px; }
+@media (max-width: 760px) {
+  .loan-preview-metrics.disbursement-payout-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
 .loan-preview { padding: 0; display: grid; gap: 16px; }
 .app-modal > .loan-preview { padding: 16px 20px 20px; }
 .loan-preview-metrics { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; margin: 0; }

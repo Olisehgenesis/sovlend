@@ -10,6 +10,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { clientScopeWhere, getUserDataScope, groupScopeWhere } from "@/modules/identity/application/data-scope";
 import { formatMinor } from "@/modules/money/domain/format-minor";
+import { displaySavingsProductName, storedSavingsProductNamesMatching } from "@/modules/savings/domain/savings-product-label";
 
 const pageSize = 25;
 const supportedStatusFilters = ["SUBMITTED", "APPROVED", "ACTIVE", "INACTIVE", "BLOCKED", "CLOSED", "REJECTED"] as const;
@@ -175,6 +176,9 @@ export default async function SavingsAccountsPage({
     searchFilters.push({ group: { is: { office: { is: { name: { contains: query, mode: "insensitive" } } } } } });
     searchFilters.push({ product: { is: { name: { contains: query, mode: "insensitive" } } } });
     searchFilters.push({ product: { is: { shortName: { contains: query, mode: "insensitive" } } } });
+    for (const storedName of storedSavingsProductNamesMatching(query)) {
+      searchFilters.push({ product: { is: { name: { equals: storedName, mode: "insensitive" } } } });
+    }
     searchFilters.push({ fieldOfficer: { is: { name: { contains: query, mode: "insensitive" } } } });
   }
 
@@ -366,8 +370,9 @@ export default async function SavingsAccountsPage({
                   (sum, transaction) => sum + transaction.amountMinor,
                   0n,
                 );
-                const productName =
-                  account.product?.name ?? snapshotString(account.termsSnapshot, "name") ?? "Unlinked product";
+                const productName = displaySavingsProductName(
+                  account.product?.name ?? snapshotString(account.termsSnapshot, "name"),
+                );
                 return (
                   <tr key={account.id}>
                     <td className="row-index mono muted-text">{(page - 1) * pageSize + index + 1}</td>

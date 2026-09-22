@@ -160,7 +160,7 @@ describe("approveLoanApplication", () => {
     ).rejects.toThrow("Maker-checker violation: submitter cannot approve this application");
   });
 
-  it("blocks approval after the application expiry date passes", async () => {
+  it("still lets an authorized reviewer approve after the application expiry date", async () => {
     const { prisma, loanApplicationFindUnique } = buildPrismaMock({
       actorSystemRole: "BRANCH_MANAGER",
       actorUserId: "branch-manager-1",
@@ -204,6 +204,6 @@ describe("approveLoanApplication", () => {
         actorUserId: "branch-manager-1",
         approvedPrincipalMinor: 450_000n,
       }),
-    ).rejects.toThrow("expired on 2026-09-07");
+    ).resolves.toEqual({ id: "8e60336a-4498-4cf7-9f8f-5f80b4e79357", status: "APPROVED" });
   });
 });

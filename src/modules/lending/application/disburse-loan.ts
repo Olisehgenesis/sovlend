@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 
 import Decimal from "decimal.js";
-import type { PrismaClient } from "@prisma/client";
+import type { Prisma, PrismaClient } from "@prisma/client";
 import { z } from "zod";
 
 import { AuthorizationService } from "@/modules/identity/application/authorization-service";
@@ -16,8 +16,17 @@ import {
   resolveSavingsLiabilityAccountId,
 } from "@/modules/savings/application/savings-ledger";
 
+import {
+  LIF_SAVINGS_SHORT_NAME,
+  SECURITY_SAVINGS_SHORT_NAME,
+  buildDisbursementPayoutChoice,
+  extraDisbursementChargesMinor,
+  isStatutoryDisbursementCharge,
+  type OpenLoanForPayout,
+} from "../domain/disbursement-payout";
 import { loanOutstandingMinor } from "../domain/loan-outstanding";
 import { generateRepaymentSchedule } from "../domain/repayment-schedule";
+import { nextSubAccountNumber } from "../domain/sub-account-numbering";
 
 // Mirrors OPEN_LOAN_STATUSES in post-repayment.ts -- a loan can only be paid off if it's still
 // open. Duplicated here (rather than imported) to avoid coupling disburse-loan.ts to a private
@@ -135,6 +144,89 @@ async function resolveSavingsDestination(
   if (defaultAccount) return defaultAccount;
   if (accounts.length === 1) return accounts[0];
   throw new Error("Select which savings account should receive the disbursement");
+}
+
+function savingsBalanceMinor(transactions: readonly { amountMinor: bigint }[]) {
+  return transactions.reduce((sum, item) => sum + item.amountMinor, 0n);
+}
+
+async function resolveLedgerAccountIdByCode(
+  transaction: Prisma.TransactionClient,
+  code: string,
+  missingLabel: string,
+) {
+  const account = await transaction.ledgerAccount.findFirst({
+    where: { code, active: true },
+    select: { id: true },
+  });
+  if (!account) throw new Error(`${missingLabel} (${code}) is not on the chart of accounts`);
+  return account.id;
+}
+
+async function ensureProductSavingsAccount(
+  transaction: Prisma.TransactionClient,
+  input: {
+    clientId: string | null;
+    groupId: string | null;
+    organizationId: string;
+    currencyCode: string;
+    ownerAccountNumber: string;
+    shortName: string;
+    missingLabel: string;
+  },
+) {
+  const existing = await transaction.savingsAccount.findFirst({
+    where: {
+      ...(input.clientId ? { clientId: input.clientId } : { groupId: input.groupId }),
+      status: "ACTIVE",
+      currencyCode: input.currencyCode,
+      product: { shortName: input.shortName },
+    },
+    select: {
+      id: true,
+      accountNumber: true,
+      productId: true,
+      product: { select: { id: true, shortName: true } },
+      transactions: { select: { amountMinor: true } },
+    },
+  });
+  if (existing) return existing;
+
+  const product = await transaction.savingsProduct.findFirst({
+    where: { organizationId: input.organizationId, shortName: input.shortName, active: true },
+    select: { id: true, name: true, shortName: true, nominalAnnualRateBps: true, minOpeningBalanceMinor: true },
+  });
+  if (!product) {
+    throw new Error(`${input.missingLabel} savings product is not configured`);
+  }
+
+  const existingCount = await transaction.savingsAccount.count({
+    where: input.clientId ? { clientId: input.clientId } : { groupId: input.groupId! },
+  });
+  return transaction.savingsAccount.create({
+    data: {
+      clientId: input.clientId,
+      groupId: input.clientId ? null : input.groupId,
+      productId: product.id,
+      accountNumber: nextSubAccountNumber(input.ownerAccountNumber, "S", existingCount),
+      currencyCode: input.currencyCode,
+      status: "ACTIVE",
+      termsSnapshot: {
+        productId: product.id,
+        name: product.name,
+        shortName: product.shortName,
+        nominalAnnualRateBps: product.nominalAnnualRateBps,
+        minOpeningBalanceMinor: product.minOpeningBalanceMinor.toString(),
+      },
+    },
+    select: {
+      id: true,
+      accountNumber: true,
+      productId: true,
+      product: { select: { id: true, shortName: true } },
+      transactions: { select: { amountMinor: true } },
+    },
+  });
 }
 
 function isBtcDisbursement(command: LoanDisbursementCommand) {
@@ -319,6 +411,8 @@ export async function disburseLoan(
       application: { include: { approvals: true } },
       product: { include: { accountingMapping: true } },
       office: true,
+      client: { select: { id: true, accountNumber: true } },
+      group: { select: { id: true, accountNumber: true } },
     },
   });
   if (!loan) throw new Error("Loan not found");
@@ -416,11 +510,89 @@ export async function disburseLoan(
           where: { loanId: loan.id, dueOn: null, status: "PENDING" },
           select: { id: true, amountMinor: true, name: true },
         });
-        const feesMinor = immediateCharges.reduce((sum, charge) => sum + charge.amountMinor, 0n);
-        const netProceedsMinor = loan.principalMinor - feesMinor;
-        if (netProceedsMinor < 0n) {
-          throw new Error("Disbursement fees exceed the approved principal");
+        const extraCharges = immediateCharges.filter((charge) => !isStatutoryDisbursementCharge(charge.name));
+        const extraChargesMinor = extraDisbursementChargesMinor(immediateCharges);
+        const ownerAccountNumber = loan.client?.accountNumber ?? loan.group?.accountNumber;
+        if (!ownerAccountNumber) {
+          throw new Error("Borrower account number is required before disbursement");
         }
+        const lifAccount = await ensureProductSavingsAccount(transaction, {
+          clientId: loan.clientId,
+          groupId: loan.groupId,
+          organizationId: loan.office.organizationId,
+          currencyCode: loan.denominationCurrency,
+          ownerAccountNumber,
+          shortName: LIF_SAVINGS_SHORT_NAME,
+          missingLabel: "Loan insurance fund",
+        });
+        const securityAccount = await ensureProductSavingsAccount(transaction, {
+          clientId: loan.clientId,
+          groupId: loan.groupId,
+          organizationId: loan.office.organizationId,
+          currencyCode: loan.denominationCurrency,
+          ownerAccountNumber,
+          shortName: SECURITY_SAVINGS_SHORT_NAME,
+          missingLabel: "Loan security payable",
+        });
+        const otherLoans = (loan.clientId || loan.groupId)
+          ? await transaction.loan.findMany({
+              where: {
+                id: { not: loan.id },
+                status: { in: ["ACTIVE", "IN_ARREARS"] },
+                ...(loan.clientId ? { clientId: loan.clientId } : { groupId: loan.groupId }),
+              },
+              select: {
+                id: true,
+                principalMinor: true,
+                principalWrittenOffMinor: true,
+                interestWrittenOffMinor: true,
+                feesWrittenOffMinor: true,
+                penaltiesWrittenOffMinor: true,
+                installments: true,
+                charges: { select: { name: true, amountMinor: true, status: true, dueOn: true } },
+              },
+            })
+          : [];
+        const otherLoanPayouts: OpenLoanForPayout[] = otherLoans.map((item) => ({
+          id: item.id,
+          principalMinor: item.principalMinor,
+          outstandingMinor: loanOutstandingMinor(item.installments, item, item.charges),
+        }));
+        const choice = buildDisbursementPayoutChoice({
+          principalMinor: loan.principalMinor,
+          existingLifMinor: savingsBalanceMinor(lifAccount.transactions),
+          extraChargesMinor,
+          otherLoans: otherLoanPayouts,
+          liquidateLoanId: command.topUpOfLoanId,
+        });
+        const payout = choice.payout;
+        const netProceedsMinor = payout.withdrawableMinor;
+
+        const processingIncomeAccountId =
+          productMapping.processingFeeIncomeAccountId ?? productMapping.feeIncomeAccountId;
+        if (!processingIncomeAccountId) {
+          throw new Error("Processing fee income account is not configured for this loan product");
+        }
+        const crbIncomeAccountId = await resolveLedgerAccountIdByCode(
+          transaction,
+          "202020",
+          "CRB income account",
+        );
+        const crbPayableAccountId = await resolveLedgerAccountIdByCode(
+          transaction,
+          "202021",
+          "CRB payable account",
+        );
+        const lifLiabilityAccountId = await resolveSavingsLiabilityAccountId(transaction, {
+          organizationId: loan.office.organizationId,
+          savingsProductId: lifAccount.product?.id ?? lifAccount.productId,
+          savingsProductShortName: lifAccount.product?.shortName ?? LIF_SAVINGS_SHORT_NAME,
+        });
+        const securityLiabilityAccountId = await resolveSavingsLiabilityAccountId(transaction, {
+          organizationId: loan.office.organizationId,
+          savingsProductId: securityAccount.product?.id ?? securityAccount.productId,
+          savingsProductShortName: securityAccount.product?.shortName ?? SECURITY_SAVINGS_SHORT_NAME,
+        });
 
         let btcPricing: BtcDisbursementPricing | null = null;
         let currentBtcUsdEquivalentMinor: bigint | null = null;
@@ -487,34 +659,29 @@ export async function disburseLoan(
       // dedicated mapping isn't configured, so organizations that haven't set up the new fields
       // keep exactly today's single merged "Disbursement fees" line and error message.
       const feeBuckets = new Map<string, { amountMinor: bigint; labels: Set<string> }>();
-      for (const charge of immediateCharges) {
-        const nameLower = charge.name.toLowerCase();
-        const { accountId, label, missingLabel } = nameLower.includes("admission")
-          ? {
-              accountId: productMapping.admissionFeeIncomeAccountId ?? productMapping.feeIncomeAccountId,
-              label: "Admission fee",
-              missingLabel: "Admission fee income account",
-            }
-          : nameLower.includes("processing")
-            ? {
-                accountId: productMapping.processingFeeIncomeAccountId ?? productMapping.feeIncomeAccountId,
-                label: "Processing fee",
-                missingLabel: "Processing fee income account",
-              }
-            : {
-                accountId: productMapping.feeIncomeAccountId,
-                label: "Disbursement fees",
-                missingLabel: "Fee income account",
-              };
-        if (!accountId) {
-          throw new Error(`${missingLabel} is not configured for this loan product`);
-        }
+      const addFeeLine = (accountId: string | null, amountMinor: bigint, label: string, missingLabel: string) => {
+        if (amountMinor <= 0n) return;
+        if (!accountId) throw new Error(`${missingLabel} is not configured for this loan product`);
         const bucket = feeBuckets.get(accountId);
         if (bucket) {
-          bucket.amountMinor += charge.amountMinor;
+          bucket.amountMinor += amountMinor;
           bucket.labels.add(label);
         } else {
-          feeBuckets.set(accountId, { amountMinor: charge.amountMinor, labels: new Set([label]) });
+          feeBuckets.set(accountId, { amountMinor, labels: new Set([label]) });
+        }
+      };
+      addFeeLine(processingIncomeAccountId, payout.processingFeeMinor, "Loan processing fee", "Processing fee income account");
+      for (const charge of extraCharges) {
+        const nameLower = charge.name.toLowerCase();
+        if (nameLower.includes("admission")) {
+          addFeeLine(
+            productMapping.admissionFeeIncomeAccountId ?? productMapping.feeIncomeAccountId,
+            charge.amountMinor,
+            "Admission fee",
+            "Admission fee income account",
+          );
+        } else {
+          addFeeLine(productMapping.feeIncomeAccountId, charge.amountMinor, "Disbursement fees", "Fee income account");
         }
       }
       const feeJournalLines = [...feeBuckets.entries()].map(([accountId, bucket]) => ({
@@ -524,20 +691,6 @@ export async function disburseLoan(
         amountMinor: bucket.amountMinor,
         memo: bucket.labels.size === 1 ? [...bucket.labels][0] : "Disbursement fees",
       }));
-
-      // Disbursement always credits the borrower's savings account, net of any due-at-
-      // disbursement charges — there is no "pay out via settlement account" path anymore.
-      const savingsDestination = await resolveSavingsDestination(transaction, {
-        clientId: loan.clientId,
-        groupId: loan.groupId,
-        currencyCode: loan.denominationCurrency,
-        requestedSavingsAccountId: command.savingsAccountId,
-      });
-      const savingsLiabilityAccountId = await resolveSavingsLiabilityAccountId(transaction, {
-        organizationId: loan.office.organizationId,
-        savingsProductId: savingsDestination.product?.id ?? null,
-        savingsProductShortName: savingsDestination.product?.shortName ?? null,
-      });
 
       await transaction.loanInstallment.createMany({
         data: schedule.map((item) => ({ loanId: loan.id, ...item })),
@@ -549,7 +702,7 @@ export async function disburseLoan(
           transactionType: "DISBURSEMENT",
           businessDate: command.businessDate,
           settlementCurrency: loan.denominationCurrency,
-          settlementChannel: paymentMethodAccount?.name ?? `Savings ${savingsDestination.accountNumber}`,
+          settlementChannel: paymentMethodAccount?.name ?? `Savings ${securityAccount.accountNumber}`,
           settlementAccountId: paymentMethodAccount?.id,
           settlementAmountMinor: netProceedsMinor,
           denominationAmountMinor: loan.principalMinor,
@@ -560,9 +713,33 @@ export async function disburseLoan(
         },
       });
 
+      if (payout.lifHeldFromProceedsMinor > 0n) {
+        await recordSavingsTransactionInTransaction(transaction, {
+          savingsAccountId: lifAccount.id,
+          actorUserId: command.actorUserId,
+          transactionType: "DEPOSIT",
+          amountMinor: payout.lifHeldFromProceedsMinor,
+          reason: "Loan insurance fund hold",
+          externalReference: command.externalReference ?? `LIF hold ${loan.accountNumber}`,
+          idempotencyKey: `loan-disbursement:${transactionRecord.id}:lif-hold`,
+          postJournal: false,
+        });
+      }
+      if (payout.lifReleasedToSecurityMinor > 0n) {
+        await recordSavingsTransactionInTransaction(transaction, {
+          savingsAccountId: lifAccount.id,
+          actorUserId: command.actorUserId,
+          transactionType: "WITHDRAWAL",
+          amountMinor: payout.lifReleasedToSecurityMinor,
+          reason: "Loan insurance fund release",
+          externalReference: command.externalReference ?? `LIF release ${loan.accountNumber}`,
+          idempotencyKey: `loan-disbursement:${transactionRecord.id}:lif-release`,
+          postJournal: false,
+        });
+      }
       if (netProceedsMinor > 0n) {
         await recordSavingsTransactionInTransaction(transaction, {
-          savingsAccountId: savingsDestination.id,
+          savingsAccountId: securityAccount.id,
           actorUserId: command.actorUserId,
           transactionType: "DEPOSIT",
           amountMinor: netProceedsMinor,
@@ -573,6 +750,7 @@ export async function disburseLoan(
             transactionRecord.id,
             "credit",
           ),
+          postJournal: false,
         });
       }
 
@@ -591,15 +769,55 @@ export async function disburseLoan(
           amountMinor: loan.principalMinor,
           memo: loan.accountNumber,
         },
+        ...(payout.lifReleasedToSecurityMinor > 0n
+          ? [
+              {
+                accountId: lifLiabilityAccountId,
+                currencyCode: loan.denominationCurrency,
+                direction: "DEBIT" as const,
+                amountMinor: payout.lifReleasedToSecurityMinor,
+                memo: lifAccount.accountNumber,
+              },
+            ]
+          : []),
         ...feeJournalLines,
+        ...(payout.processingFeeMinor > 0n || payout.crbIncomeMinor > 0n
+          ? [
+              {
+                accountId: crbIncomeAccountId,
+                currencyCode: loan.denominationCurrency,
+                direction: "CREDIT" as const,
+                amountMinor: payout.crbIncomeMinor,
+                memo: "CRB income",
+              },
+              {
+                accountId: crbPayableAccountId,
+                currencyCode: loan.denominationCurrency,
+                direction: "CREDIT" as const,
+                amountMinor: payout.crbPayableMinor,
+                memo: "CRB payable",
+              },
+            ]
+          : []),
+        ...(payout.lifHeldFromProceedsMinor > 0n
+          ? [
+              {
+                accountId: lifLiabilityAccountId,
+                currencyCode: loan.denominationCurrency,
+                direction: "CREDIT" as const,
+                amountMinor: payout.lifHeldFromProceedsMinor,
+                memo: lifAccount.accountNumber,
+              },
+            ]
+          : []),
         ...(netProceedsMinor > 0n
           ? [
               {
-                accountId: savingsLiabilityAccountId,
+                accountId: securityLiabilityAccountId,
                 currencyCode: loan.denominationCurrency,
                 direction: "CREDIT" as const,
                 amountMinor: netProceedsMinor,
-                memo: savingsDestination.accountNumber,
+                memo: securityAccount.accountNumber,
               },
             ]
           : []),
@@ -636,11 +854,15 @@ export async function disburseLoan(
         transactionId: transactionRecord.id,
         paymentMethodAccountId: paymentMethodAccount?.id ?? null,
         paymentMethodAccount: paymentMethodAccount?.name ?? null,
-        savingsAccountId: savingsDestination.id,
-        savingsAccountNumber: savingsDestination.accountNumber,
+        savingsAccountId: securityAccount.id,
+        savingsAccountNumber: securityAccount.accountNumber,
         principalMinor: loan.principalMinor.toString(),
-        feesMinor: feesMinor.toString(),
+        feesMinor: extraChargesMinor.toString(),
         netProceedsMinor: netProceedsMinor.toString(),
+        lifHeldMinor: payout.lifHeldFromProceedsMinor.toString(),
+        lifReleasedMinor: payout.lifReleasedToSecurityMinor.toString(),
+        processingFeeMinor: payout.processingFeeMinor.toString(),
+        crbTotalMinor: payout.crbTotalMinor.toString(),
         externalReference: command.externalReference ?? null,
         topUpOfLoanId: command.topUpOfLoanId ?? null,
         businessDate: toBusinessDateString(command.businessDate),

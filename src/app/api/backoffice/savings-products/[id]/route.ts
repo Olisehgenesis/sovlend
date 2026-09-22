@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { auth } from "@/lib/auth";
+import { canManageProducts } from "@/lib/can-manage-products";
 import { prisma } from "@/lib/prisma";
 
 const archiveSchema = z.object({ active: z.boolean() });
@@ -19,15 +20,12 @@ const updateSchema = z.object({
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  const allowedEmails = (process.env.SUPER_ADMIN_EMAILS ?? "").split(",").map((email) => email.trim().toLowerCase()).filter(Boolean);
-  if (session.user.role !== "admin" || !allowedEmails.includes(session.user.email.toLowerCase())) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-
-  const user = await prisma.user.findUnique({ where: { id: session.user.id }, select: { organizationId: true } });
-  if (!user?.organizationId) return NextResponse.json({ error: "Super administrator requires an organization" }, { status: 400 });
+  const { allowed, organizationId } = await canManageProducts(session);
+  if (!allowed || !organizationId) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const payload = await request.json();
   const { id } = await params;
-  const product = await prisma.savingsProduct.findFirst({ where: { id, organizationId: user.organizationId } });
+  const product = await prisma.savingsProduct.findFirst({ where: { id, organizationId } });
   if (!product) return NextResponse.json({ error: "Savings product not found" }, { status: 404 });
 
   const parsedArchive = archiveSchema.safeParse(payload);
