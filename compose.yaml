@@ -138,7 +138,7 @@ services:
     build: ./infra/backup
     restart: unless-stopped
     environment:
-      TZ: UTC
+      TZ: Africa/Kampala
       PGHOST: postgres
       PGPORT: 5432
       PGUSER: ${POSTGRES_USER}
@@ -149,7 +149,6 @@ services:
       B2_BUCKET: ${B2_BUCKET:-jumpstart-v2}
       BACKUP_PREFIX: ${BACKUP_PREFIX:-postgres}
       BACKUP_KEEP_DAILY: ${BACKUP_KEEP_DAILY:-21}
-      BACKUP_KEEP_MONTHLY: ${BACKUP_KEEP_MONTHLY:-12}
     depends_on:
       postgres: { condition: service_healthy }
     networks: [backend, egress]

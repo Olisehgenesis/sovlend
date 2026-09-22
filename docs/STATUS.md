@@ -20,7 +20,7 @@ Verified on 1 September 2026.
 - Arrears: daily BullMQ classification, cure and automatic closure when no balance remains.
 - Accounting setup: manager-controlled product and settlement mappings; disbursement and repayment fail closed until mappings exist.
 - Data integrity: append-only price, audit, loan and savings transactions; posted journals are immutable and must balance per currency.
-- Backup: Docker backup container dumps gzipped SQL to Backblaze B2 daily (21 dailies + 12 monthlies).
+- Backup: Docker backup container dumps gzipped SQL to Backblaze B2 at midnight Africa/Kampala and keeps 21 days.
 
 ## Not Yet A Complete Lending Product
 
