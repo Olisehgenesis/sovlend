@@ -141,3 +141,48 @@ export function buildDisbursementPayoutChoice(input: {
     fullyClosesPrevious: canFullyClose,
   };
 }
+
+export type DisbursementOverviewLine = Readonly<{
+  key: "lif" | "processing" | "crb";
+  label: string;
+  original: bigint;
+  paid: bigint;
+  waived: bigint;
+  overdue: bigint;
+  outstanding: bigint;
+}>;
+
+export function disbursementOverviewRows(input: { principalMinor: bigint; disbursed: boolean }): DisbursementOverviewLine[] {
+  const lif = percentOfMinor(input.principalMinor, LIF_HOLD_BPS);
+  const processing = percentOfMinor(input.principalMinor, PROCESSING_FEE_BPS);
+  const paid = (amount: bigint) => (input.disbursed ? amount : 0n);
+  return [
+    {
+      key: "lif",
+      label: "Loan insurance fund",
+      original: lif,
+      paid: paid(lif),
+      waived: 0n,
+      overdue: 0n,
+      outstanding: 0n,
+    },
+    {
+      key: "processing",
+      label: "Processing fee",
+      original: processing,
+      paid: paid(processing),
+      waived: 0n,
+      overdue: 0n,
+      outstanding: 0n,
+    },
+    {
+      key: "crb",
+      label: "CRB",
+      original: CRB_TOTAL_MINOR,
+      paid: paid(CRB_TOTAL_MINOR),
+      waived: 0n,
+      overdue: 0n,
+      outstanding: 0n,
+    },
+  ].filter((row) => row.original > 0n);
+}

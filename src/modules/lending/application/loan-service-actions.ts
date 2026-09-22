@@ -164,11 +164,17 @@ async function executeUndoDisbursal(tx: Tx, loanId: string, payload: UndoDisburs
   const businessDate = new Date(`${payload.businessDate}T00:00:00.000Z`);
   const idempotencyKey = `service:${requestId}`;
   await assertPeriodOpen(tx, { officeId: current.officeId, businessDate });
-  const savingsMirror = await tx.savingsTransaction.findUnique({
+  const savingsMirrors = await tx.savingsTransaction.findMany({
     where: {
-      idempotencyKey: buildLoanDisbursementSavingsIdempotencyKey(disbursement.id, "credit"),
+      idempotencyKey: {
+        in: [
+          buildLoanDisbursementSavingsIdempotencyKey(disbursement.id, "credit"),
+          `loan-disbursement:${disbursement.id}:lif-hold`,
+          `loan-disbursement:${disbursement.id}:lif-release`,
+        ],
+      },
     },
-    select: { id: true, savingsAccountId: true, amountMinor: true },
+    select: { id: true, savingsAccountId: true, amountMinor: true, transactionType: true, idempotencyKey: true },
   });
 
   const reversal = await tx.loanTransaction.create({
@@ -185,16 +191,21 @@ async function executeUndoDisbursal(tx: Tx, loanId: string, payload: UndoDisburs
   // allocation has ever referenced these installments.
   await tx.loanInstallment.deleteMany({ where: { loanId: current.id } });
 
-  if (savingsMirror && savingsMirror.amountMinor > 0n) {
-    await recordSavingsTransactionInTransaction(tx, {
-      savingsAccountId: savingsMirror.savingsAccountId,
-      actorUserId,
-      transactionType: "WITHDRAWAL",
-      amountMinor: savingsMirror.amountMinor,
-      reason: "Undo disbursal",
-      externalReference: `Undo disbursal ${current.accountNumber}`,
-      idempotencyKey: buildLoanDisbursementSavingsIdempotencyKey(disbursement.id, "undo"),
-    });
+  if (savingsMirrors.length > 0) {
+    for (const savingsMirror of savingsMirrors) {
+      const amountMinor = savingsMirror.amountMinor < 0n ? -savingsMirror.amountMinor : savingsMirror.amountMinor;
+      if (amountMinor <= 0n) continue;
+      await recordSavingsTransactionInTransaction(tx, {
+        savingsAccountId: savingsMirror.savingsAccountId,
+        actorUserId,
+        transactionType: savingsMirror.transactionType === "WITHDRAWAL" ? "DEPOSIT" : "WITHDRAWAL",
+        amountMinor,
+        reason: "Undo disbursal",
+        externalReference: `Undo disbursal ${current.accountNumber}`,
+        idempotencyKey: `${savingsMirror.idempotencyKey}:undo`,
+        postJournal: false,
+      });
+    }
   }
 
   await tx.charge.updateMany({
@@ -219,6 +230,24 @@ async function executeUndoDisbursal(tx: Tx, loanId: string, payload: UndoDisburs
 
   await recordServiceAudit(tx, { loanId: current.id, actorUserId, action: "loan.disbursement.undone", metadata: { loanId: current.id, requestId, reversalTransactionId: reversal.id } });
   return reversal.id;
+}
+
+export async function undoLoanDisbursalNow(
+  prisma: PrismaClient,
+  command: { loanId: string; actorUserId: string; businessDate: string },
+) {
+  const requestId = randomUUID();
+  return prisma.$transaction(
+    async (tx) =>
+      executeUndoDisbursal(
+        tx,
+        command.loanId,
+        { businessDate: command.businessDate },
+        requestId,
+        command.actorUserId,
+      ),
+    { isolationLevel: "Serializable" },
+  );
 }
 
 async function executeFullSettlement(tx: Tx, loanId: string, payload: PrepayPayload | ForeclosurePayload, requestId: string, transactionType: "PREPAYMENT" | "FORECLOSURE", actorUserId: string) {

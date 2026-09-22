@@ -23,8 +23,14 @@ import { AuthorizationService } from "@/modules/identity/application/authorizati
 import { getUserDataScope } from "@/modules/identity/application/data-scope";
 import { permissions } from "@/modules/identity/domain/permissions";
 import { STAFF_SYSTEM_ROLES } from "@/modules/identity/domain/staff-roles";
-import { isStatutoryDisbursementCharge, LIF_SAVINGS_SHORT_NAME, SECURITY_SAVINGS_SHORT_NAME } from "@/modules/lending/domain/disbursement-payout";
+import {
+  disbursementOverviewRows,
+  isStatutoryDisbursementCharge,
+  LIF_SAVINGS_SHORT_NAME,
+  SECURITY_SAVINGS_SHORT_NAME,
+} from "@/modules/lending/domain/disbursement-payout";
 import { formatMonthlyPercent } from "@/modules/lending/domain/monthly-rate";
+import { generateRepaymentSchedule, readInterestDayCount } from "@/modules/lending/domain/repayment-schedule";
 import { formatMinor } from "@/modules/money/domain/format-minor";
 import { displaySavingsProductName } from "@/modules/savings/domain/savings-product-label";
 import {
@@ -160,7 +166,45 @@ export default async function LoanPage({
   );
   const writtenOff = loanWrittenOffMinor(loan);
   const outstanding = loanOutstandingMinor(schedule, loan);
-  const balance = summarizeLoanBalance(schedule, loan, today);
+  const overviewSchedule =
+    schedule.length > 0
+      ? schedule
+      : (() => {
+          try {
+            return generateRepaymentSchedule({
+              principalMinor: loan.principalMinor,
+              annualRateBps: snapshotNumber(loan.termsSnapshot, "annualRateBps") ?? loan.product.annualRateBps,
+              monitoringFeeAnnualRateBps:
+                snapshotNumber(loan.termsSnapshot, "monitoringFeeAnnualRateBps") ?? loan.product.monitoringFeeAnnualRateBps,
+              repaymentCount: snapshotNumber(loan.termsSnapshot, "repaymentCount") ?? loan.product.repaymentCount,
+              repaymentFrequency: snapshotString(loan.termsSnapshot, "repaymentFrequency") ?? loan.product.repaymentFrequency,
+              interestMethod: snapshotString(loan.termsSnapshot, "interestMethod") ?? loan.product.interestMethod,
+              interestDayCount: readInterestDayCount(snapshotString(loan.termsSnapshot, "interestDayCount")),
+              disbursedOn: today,
+            }).map((item) => ({
+              ...item,
+              penaltiesDueMinor: 0n,
+              principalPaidMinor: 0n,
+              interestPaidMinor: 0n,
+              feesPaidMinor: 0n,
+              penaltiesPaidMinor: 0n,
+            }));
+          } catch {
+            return schedule;
+          }
+        })();
+  const rawBalance = summarizeLoanBalance(overviewSchedule, loan, today);
+  const hideOwed = !loan.disbursedOn;
+  const hideOwedRow = <T extends { paid: bigint; waived: bigint; overdue: bigint; outstanding: bigint }>(row: T): T =>
+    hideOwed ? { ...row, paid: 0n, waived: 0n, overdue: 0n, outstanding: 0n } : row;
+  const balance = {
+    rows: rawBalance.rows.map(hideOwedRow),
+    totals: hideOwedRow(rawBalance.totals),
+  };
+  const overviewChargeRows = disbursementOverviewRows({
+    principalMinor: loan.principalMinor,
+    disbursed: Boolean(loan.disbursedOn),
+  });
   const settlementAccounts = await prisma.settlementAccount.findMany({
     where: { organizationId: scope.organizationId, currencyCode: loan.denominationCurrency, active: true },
     select: { id: true, name: true, type: true, provider: true, accountReference: true, currencyCode: true },
@@ -476,7 +520,7 @@ export default async function LoanPage({
           <div className="panel-heading">
             <div>
               <h2>Overview</h2>
-              <p>Original, paid, waived, overdue, and outstanding · {loan.denominationCurrency}</p>
+              <p>Original, paid, waived, overdue, and outstanding · {loan.denominationCurrency}. Insurance, processing, and CRB are taken at disbursement and are not part of the repayment total.</p>
             </div>
           </div>
           <div className="table-scroll">
@@ -504,6 +548,16 @@ export default async function LoanPage({
                     <td className="is-outstanding">
                       {formatMatrixAmount(row.outstanding, loan.denominationCurrency)}
                     </td>
+                  </tr>
+                ))}
+                {overviewChargeRows.map((row) => (
+                  <tr key={row.key}>
+                    <th scope="row">{row.label}</th>
+                    <td>{formatMatrixAmount(row.original, loan.denominationCurrency)}</td>
+                    <td>{formatMatrixAmount(row.paid, loan.denominationCurrency)}</td>
+                    <td>{formatMatrixAmount(row.waived, loan.denominationCurrency)}</td>
+                    <td>{formatMatrixAmount(row.overdue, loan.denominationCurrency)}</td>
+                    <td>{formatMatrixAmount(row.outstanding, loan.denominationCurrency)}</td>
                   </tr>
                 ))}
               </tbody>

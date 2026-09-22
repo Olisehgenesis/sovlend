@@ -5,6 +5,7 @@ import {
   buildDisbursementPayoutChoice,
   extraDisbursementChargesMinor,
   percentOfMinor,
+  disbursementOverviewRows,
 } from "./disbursement-payout";
 
 describe("disbursement payout", () => {
@@ -108,5 +109,15 @@ describe("disbursement payout", () => {
   it("uses integer basis-point math", () => {
     expect(percentOfMinor(70_000_000n, 1_500)).toBe(10_500_000n);
     expect(percentOfMinor(70_000_000n, 200)).toBe(1_400_000n);
+  });
+
+  it("shows LIF, processing, and CRB on the loan overview without adding them to outstanding", () => {
+    const disbursed = disbursementOverviewRows({ principalMinor: 70_000_000n, disbursed: true });
+    expect(disbursed).toEqual([
+      { key: "lif", label: "Loan insurance fund", original: 10_500_000n, paid: 10_500_000n, waived: 0n, overdue: 0n, outstanding: 0n },
+      { key: "processing", label: "Processing fee", original: 1_400_000n, paid: 1_400_000n, waived: 0n, overdue: 0n, outstanding: 0n },
+      { key: "crb", label: "CRB", original: 1_500_000n, paid: 1_500_000n, waived: 0n, overdue: 0n, outstanding: 0n },
+    ]);
+    expect(disbursementOverviewRows({ principalMinor: 70_000_000n, disbursed: false }).every((row) => row.paid === 0n)).toBe(true);
   });
 });
