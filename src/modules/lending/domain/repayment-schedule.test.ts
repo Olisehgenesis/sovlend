@@ -57,7 +57,15 @@ describe("repayment schedule", () => {
   });
 
   it("rejects unsupported frequencies", () => {
-    expect(() => parseRepaymentFrequency("fortnightly")).toThrow("Unsupported repayment frequency");
+    expect(() => parseRepaymentFrequency("yearly")).toThrow("Unsupported repayment frequency");
+  });
+
+  it("accepts weekly, monthly, and daily as every-one-period aliases", () => {
+    expect(parseRepaymentFrequency("weekly")).toEqual({ every: 1, unit: "WEEKS" });
+    expect(parseRepaymentFrequency("WEEKLY")).toEqual({ every: 1, unit: "WEEKS" });
+    expect(parseRepaymentFrequency("every week")).toEqual({ every: 1, unit: "WEEKS" });
+    expect(parseRepaymentFrequency("monthly")).toEqual({ every: 1, unit: "MONTHS" });
+    expect(parseRepaymentFrequency("daily")).toEqual({ every: 1, unit: "DAYS" });
   });
 
   it("describes weekly collections as every 7 days", () => {

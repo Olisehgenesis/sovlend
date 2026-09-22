@@ -46,6 +46,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     });
   } catch (error) {
     if (error instanceof PermissionDeniedError) return NextResponse.json({ error: "You do not have permission to disburse this loan" }, { status: 403 });
+    console.error("Disbursement failed", error);
     return NextResponse.json({ error: error instanceof Error ? error.message : "Disbursement failed" }, { status: 400 });
   }
 }

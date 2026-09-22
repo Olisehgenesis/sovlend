@@ -59,7 +59,28 @@ export function generateRepaymentSchedule(terms: ScheduleTerms): ScheduledInstal
 }
 
 export function parseRepaymentFrequency(value: string): RepaymentFrequency {
-  const match = value.trim().toUpperCase().match(/^(\d+)\s+(DAY|DAYS|WEEK|WEEKS|MONTH|MONTHS)$/);
+  const normalized = value
+    .trim()
+    .toUpperCase()
+    .replace(/[_-]+/g, " ")
+    .replace(/\bEVERY\b/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  const aliases: Record<string, RepaymentFrequency> = {
+    DAILY: { every: 1, unit: "DAYS" },
+    DAY: { every: 1, unit: "DAYS" },
+    DAYS: { every: 1, unit: "DAYS" },
+    WEEKLY: { every: 1, unit: "WEEKS" },
+    WEEK: { every: 1, unit: "WEEKS" },
+    WEEKS: { every: 1, unit: "WEEKS" },
+    MONTHLY: { every: 1, unit: "MONTHS" },
+    MONTH: { every: 1, unit: "MONTHS" },
+    MONTHS: { every: 1, unit: "MONTHS" },
+  };
+  if (aliases[normalized]) return aliases[normalized];
+
+  const match = normalized.match(/^(\d+)\s+(DAY|DAYS|WEEK|WEEKS|MONTH|MONTHS)$/);
   if (!match) throw new Error(`Unsupported repayment frequency: ${value}`);
   const every = Number.parseInt(match[1], 10);
   if (every <= 0) throw new Error("Repayment frequency must be positive");
