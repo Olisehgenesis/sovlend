@@ -93,7 +93,7 @@ export default async function GroupDetailPage({ params, searchParams }: { params
         },
       },
       notes: { orderBy: { createdAt: "desc" }, include: { author: { select: { name: true } } } },
-      loans: { orderBy: { createdAt: "desc" }, include: { product: true, installments: { select: { principalDueMinor: true, principalPaidMinor: true, principalWaivedMinor: true } } } },
+      loans: { where: { clientId: null }, orderBy: { createdAt: "desc" }, include: { product: true, installments: { select: { principalDueMinor: true, principalPaidMinor: true, principalWaivedMinor: true } } } },
       savingsAccounts: {
         orderBy: { createdAt: "desc" },
         include: {
@@ -101,12 +101,14 @@ export default async function GroupDetailPage({ params, searchParams }: { params
           transactions: { select: { amountMinor: true } },
         },
       },
-      loanApplications: { where: { status: { in: ["SUBMITTED", "APPROVED"] } }, orderBy: { createdAt: "desc" }, include: { product: true } },
+      loanApplications: { where: { status: { in: ["SUBMITTED", "APPROVED"] } }, orderBy: { createdAt: "desc" }, include: { product: true, client: { select: { firstName: true, middleName: true, lastName: true, accountNumber: true } } } },
     },
   });
   if (!group) notFound();
 
   const memberClientIds = group.members.map((member) => member.clientId);
+  const pendingMemberApplications = group.loanApplications.filter((application) => application.clientId);
+  const pendingGroupApplications = group.loanApplications.filter((application) => !application.clientId);
   const [memberLoans, memberSavingsAccounts] = await Promise.all([
     prisma.loan.findMany({
       where: { clientId: { in: memberClientIds } },
@@ -444,7 +446,7 @@ export default async function GroupDetailPage({ params, searchParams }: { params
             </Link>
           </div>
 
-          {memberLoans.length === 0 && group.loans.length === 0 && group.loanApplications.length === 0 ? (
+          {memberLoans.length === 0 && pendingMemberApplications.length === 0 && group.loans.length === 0 && pendingGroupApplications.length === 0 ? (
             <div className="empty-state compact-empty">
               <CircleDollarSign size={26} />
               <strong>No loans yet</strong>
@@ -500,6 +502,44 @@ export default async function GroupDetailPage({ params, searchParams }: { params
                 </div>
               )}
 
+              {pendingMemberApplications.length > 0 ? (
+                <>
+                  <div className="panel-heading">
+                    <div>
+                      <h2>Pending member applications</h2>
+                      <p>Group-originated applications still awaiting approval or disbursement for a selected member.</p>
+                    </div>
+                  </div>
+                  <div className="table-scroll">
+                    <table className="clickable-rows">
+                      <thead>
+                        <tr>
+                          <th>Member</th>
+                          <th>Client #</th>
+                          <th>Status</th>
+                          <th>Product</th>
+                          <th>Principal</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {pendingMemberApplications.map((application) => (
+                          <tr key={application.id}>
+                            <td>
+                              <strong>{application.client ? fullName(application.client) : "Member"}</strong>
+                              <Link className="row-link" href={`/loans/applications/${application.id}`} aria-label={`Open ${application.product.name} application`} />
+                            </td>
+                            <td className="mono">{application.client?.accountNumber ?? "—"}</td>
+                            <td>{application.status}</td>
+                            <td>{application.product.name}</td>
+                            <td>{formatMinor(application.proposedPrincipalMinor, application.product.denominationCurrency)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              ) : null}
+
               {group.loans.length > 0 ? (
                 <>
                   <div className="panel-heading">
@@ -536,7 +576,7 @@ export default async function GroupDetailPage({ params, searchParams }: { params
                 </>
               ) : null}
 
-              {group.loanApplications.length > 0 ? (
+              {pendingGroupApplications.length > 0 ? (
                 <>
                   <div className="panel-heading">
                     <div>
@@ -554,7 +594,7 @@ export default async function GroupDetailPage({ params, searchParams }: { params
                         </tr>
                       </thead>
                       <tbody>
-                        {group.loanApplications.map((application) => (
+                        {pendingGroupApplications.map((application) => (
                           <tr key={application.id}>
                             <td className="mono">
                               {application.status}

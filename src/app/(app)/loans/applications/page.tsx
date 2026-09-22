@@ -145,7 +145,9 @@ export default async function LoanApplicationsPage({
   const pages = Math.max(1, Math.ceil(total / pageSize));
   const borrowerLabel = (application: (typeof applications)[number]) =>
     application.client
-      ? `${application.client.firstName} ${application.client.lastName}`
+      ? application.group
+        ? `${application.client.firstName} ${application.client.lastName} · ${application.group.name}`
+        : `${application.client.firstName} ${application.client.lastName}`
       : `Group: ${application.group?.name ?? "Unknown"}`;
   const borrowerAccount = (application: (typeof applications)[number]) =>
     application.client?.accountNumber ?? application.group?.accountNumber ?? "—";

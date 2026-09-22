@@ -117,7 +117,7 @@ export function DisburseLoanForm({
         <legend>Loan payout</legend>
         {canUseSavings ? (
           <label>
-            Client&apos;s savings account
+            Borrower&apos;s savings account
             <select defaultValue={defaultSavingsAccountId} name="savingsAccountId" required>
               {savingsAccounts.map((account) => (
                 <option key={account.id} value={account.id}>

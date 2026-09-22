@@ -687,7 +687,9 @@ model Fund {
 model LoanApplication {
   id                     String                    @id @default(uuid()) @db.Uuid
   submittedById          String?
+  // Individual borrower. Required for new applications; group-member loans also set groupId.
   clientId               String?                   @db.Uuid
+  // Optional group context. Set together with clientId when the loan is issued to a member.
   groupId                String?                   @db.Uuid
   officeId               String                    @db.Uuid
   productId              String                    @db.Uuid
@@ -836,6 +838,7 @@ model Approval {
 model Loan {
   id                       String               @id @default(uuid()) @db.Uuid
   applicationId            String               @unique @db.Uuid
+  // Individual borrower. Group-member loans also set groupId as context.
   clientId                 String?              @db.Uuid
   groupId                  String?              @db.Uuid
   productId                String               @db.Uuid

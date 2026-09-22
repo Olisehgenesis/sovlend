@@ -15,7 +15,7 @@ import {
 } from "@/modules/lending/domain/repayment-schedule";
 import { formatMinor } from "@/modules/money/domain/format-minor";
 
-export type LoanPreviewCharge = Readonly<{ name: string; amountLabel: string }>;
+export type LoanPreviewCharge = Readonly<{ name: string; amountLabel: string; amountMinor: string }>;
 
 export type LoanPreviewInput = Readonly<{
   borrowerLabel: string;
@@ -80,12 +80,21 @@ export function LoanPreviewPanel({ input }: { input: LoanPreviewInput }) {
       const totalInterest = shifted.reduce((sum, item) => sum + item.interestDueMinor, 0n);
       const totalMonitoring = shifted.reduce((sum, item) => sum + item.monitoringFeeDueMinor, 0n);
       const totalPrincipal = shifted.reduce((sum, item) => sum + item.principalDueMinor, 0n);
+      const totalCharges = (input.charges ?? []).reduce((sum, charge) => {
+        try {
+          return sum + BigInt(charge.amountMinor || 0);
+        } catch {
+          return sum;
+        }
+      }, 0n);
       const first = shifted[0];
       return {
         schedule: shifted,
         totalInterest,
         totalMonitoring,
         totalPrincipal,
+        totalCharges,
+        totalFees: totalMonitoring + totalCharges,
         totalPayable: totalPrincipal + totalInterest + totalMonitoring,
         installmentDue: first.principalDueMinor + first.interestDueMinor + first.monitoringFeeDueMinor,
         cadence: describeRepaymentCadence(parseRepaymentFrequency(input.repaymentFrequency)),
@@ -116,6 +125,10 @@ export function LoanPreviewPanel({ input }: { input: LoanPreviewInput }) {
         <div>
           <dt>Maintenance</dt>
           <dd>{money(preview.totalMonitoring)}</dd>
+        </div>
+        <div>
+          <dt>Total fees</dt>
+          <dd>{money(preview.totalFees)}</dd>
         </div>
         <div>
           <dt>Total payable</dt>
@@ -169,6 +182,15 @@ export function LoanPreviewPanel({ input }: { input: LoanPreviewInput }) {
         <div>
           <dt>Amortization</dt>
           <dd>{input.amortizationMethod || "Product default"}</dd>
+        </div>
+        <div>
+          <dt>Total fees</dt>
+          <dd>
+            {money(preview.totalFees)}
+            {preview.totalCharges > 0n
+              ? ` · maintenance ${money(preview.totalMonitoring)} + charges ${money(preview.totalCharges)}`
+              : ""}
+          </dd>
         </div>
         <div>
           <dt>Charges</dt>

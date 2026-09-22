@@ -40,7 +40,7 @@ export const collateralItemSchema = z.object({
 
 export const createLoanApplicationSchema = z
   .object({
-    clientId: z.string().uuid().optional(),
+    clientId: z.string().uuid(),
     groupId: z.string().uuid().optional(),
     productId: z.string().uuid(),
     // User.id is a plain string (better-auth generated), not a UUID — do not validate as uuid().
@@ -54,8 +54,7 @@ export const createLoanApplicationSchema = z
     charges: z.array(chargeSelectionSchema).max(50).optional(),
     collateral: z.array(collateralItemSchema).max(50).optional(),
   })
-  .strict()
-  .refine((value) => Boolean(value.clientId) !== Boolean(value.groupId), { message: "Provide exactly one of clientId or groupId" });
+  .strict();
 
 const optionalNullableTrimmedString = (max: number) =>
   z.preprocess(

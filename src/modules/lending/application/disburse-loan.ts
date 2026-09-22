@@ -101,6 +101,7 @@ async function resolveSavingsDestination(
 
   const accounts = await prisma.savingsAccount.findMany({
     where: {
+      // Member-issued group loans carry both ids; proceeds always go to the individual.
       ...(input.clientId ? { clientId: input.clientId } : { groupId: input.groupId }),
       status: "ACTIVE",
       currencyCode: input.currencyCode,

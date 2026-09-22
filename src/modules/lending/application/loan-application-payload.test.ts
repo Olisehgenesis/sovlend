@@ -38,6 +38,8 @@ describe("loan application payload helpers", () => {
     };
 
     expect(createLoanApplicationSchema.safeParse(basePayload).success).toBe(true);
+    expect(createLoanApplicationSchema.safeParse({ ...basePayload, groupId: "7c2a0d4e-9b11-4f0c-8a77-2e1d6c4b9a01" }).success).toBe(true);
+    expect(createLoanApplicationSchema.safeParse({ productId: basePayload.productId, proposedPrincipalMinor: basePayload.proposedPrincipalMinor, groupId: "7c2a0d4e-9b11-4f0c-8a77-2e1d6c4b9a01" }).success).toBe(false);
     expect(createLoanApplicationSchema.safeParse({ ...basePayload, disbursementOn: "2026-10-01" }).success).toBe(false);
     expect(createLoanApplicationSchema.safeParse({ ...basePayload, savingsAccountId: "9b6b7e2b-3d0a-4b8f-8f0a-6f4a2f7b1c11" }).success).toBe(false);
     expect(updateLoanApplicationSchema.safeParse({ applicationExpiresOn: "2026-09-30" }).success).toBe(true);

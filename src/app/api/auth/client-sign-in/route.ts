@@ -20,8 +20,14 @@ export async function POST(request: Request) {
   });
   if (!client?.authUserId) return invalid();
 
-  const authUser = await prisma.user.findUnique({ where: { id: client.authUserId }, select: { email: true } });
+  const authUser = await prisma.user.findUnique({
+    where: { id: client.authUserId },
+    select: { email: true, banned: true },
+  });
   if (!authUser) return invalid();
+  if (authUser.banned) {
+    return NextResponse.json({ error: { message: "This account has been archived and cannot sign in." } }, { status: 403 });
+  }
 
   try {
     return await auth.api.signInEmail({

@@ -274,7 +274,7 @@ export default async function LoanPage({
     loan.transactions.every((item) => item.transactionType === "DISBURSEMENT");
   const canDisburseFromHeader = loan.status === "APPROVED" && !loan.disbursedOn;
   const disbursePreview: LoanPreviewInput = {
-    borrowerLabel: owner?.name ?? "Unknown",
+    borrowerLabel: [owner?.name, loan.client && loan.group ? loan.group.name : null].filter(Boolean).join(" · ") || "Unknown",
     productName: loan.product.name,
     currency: loan.denominationCurrency,
     principalMinor: loan.principalMinor.toString(),
@@ -293,6 +293,7 @@ export default async function LoanPage({
     charges: loan.charges.map((charge) => ({
       name: charge.name,
       amountLabel: formatMinor(charge.amountMinor, loan.denominationCurrency),
+      amountMinor: charge.amountMinor.toString(),
     })),
     collateralLabel:
       loan.collateralItems.length > 0
@@ -343,8 +344,17 @@ export default async function LoanPage({
               </Link>
             ) : (
               "Unknown"
-            )}{" "}
-            {owner?.kind === "group" ? <span className="status review">Group</span> : null}
+            )}
+            {loan.client && loan.group ? (
+              <>
+                {" "}
+                ·{" "}
+                <Link className="green-link" href={`/groups/${loan.group.accountNumber}`}>
+                  {loan.group.name}
+                </Link>
+              </>
+            ) : null}{" "}
+            {owner?.kind === "group" && !loan.client ? <span className="status review">Group</span> : null}
             {" "}· {loan.product.name}
           </p>
         </div>

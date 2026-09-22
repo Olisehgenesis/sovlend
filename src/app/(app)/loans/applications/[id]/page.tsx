@@ -34,6 +34,24 @@ function toStringValue(value: unknown) {
   return typeof value === "string" ? value : "";
 }
 
+function applicationBorrowerName(application: {
+  client: { firstName: string; lastName: string } | null;
+  group: { name: string } | null;
+}) {
+  const clientName = application.client ? `${application.client.firstName} ${application.client.lastName}` : "";
+  if (clientName && application.group?.name) return `${clientName} · ${application.group.name}`;
+  if (clientName) return clientName;
+  if (application.group?.name) return `Group: ${application.group.name}`;
+  return "Unknown";
+}
+
+function applicationBorrowerAccount(application: {
+  client: { accountNumber: string } | null;
+  group: { accountNumber: string } | null;
+}) {
+  return application.client?.accountNumber ?? application.group?.accountNumber ?? "";
+}
+
 export default async function LoanApplicationPage({
   params,
 }: {
@@ -196,9 +214,7 @@ export default async function LoanApplicationPage({
       ? "None"
       : collateralSnapshot.map((item) => item.type?.trim() || item.description?.trim() || "Collateral").join(", ");
   const loanPreview: LoanPreviewInput = {
-    borrowerLabel: application.client
-      ? `${application.client.firstName} ${application.client.lastName}`
-      : `Group: ${application.group?.name ?? "Unknown"}`,
+    borrowerLabel: applicationBorrowerName(application),
     productName: application.product.name,
     currency: application.product.denominationCurrency,
     principalMinor: (application.loan?.principalMinor ?? application.proposedPrincipalMinor).toString(),
@@ -213,6 +229,7 @@ export default async function LoanApplicationPage({
     charges: chargeSelections.map((charge) => ({
       name: charge.name,
       amountLabel: formatMinor(BigInt(charge.amountMinor), application.product.denominationCurrency),
+      amountMinor: charge.amountMinor,
     })),
     collateralLabel: collateralSummary === "None" ? undefined : collateralSummary,
     officerName: application.loanOfficer?.name ?? undefined,
@@ -274,7 +291,7 @@ export default async function LoanApplicationPage({
         items={[
           { label: "Loans", href: "/loans" },
           { label: "Applications", href: "/loans/applications" },
-          { label: application.client ? `${application.client.firstName} ${application.client.lastName}` : `Group: ${application.group?.name ?? "Unknown"}` },
+          { label: applicationBorrowerName(application) },
         ]}
       />
       <header className="directory-header">
@@ -282,8 +299,8 @@ export default async function LoanApplicationPage({
           <p className="eyebrow">Maker-checker review</p>
           <h1>Loan application</h1>
           <p>
-            {application.client ? `${application.client.firstName} ${application.client.lastName}` : `Group: ${application.group?.name ?? "Unknown"}`}{" "}
-            · {application.client ? application.client.accountNumber : application.group?.accountNumber ?? ""}
+            {applicationBorrowerName(application)}{" "}
+            · {applicationBorrowerAccount(application)}
           </p>
         </div>
         <div className="header-actions">
@@ -329,6 +346,16 @@ export default async function LoanApplicationPage({
               <dt>Product</dt>
               <dd>{application.product.name}</dd>
             </div>
+            {application.group ? (
+              <div>
+                <dt>Group</dt>
+                <dd>
+                  <Link className="green-link" href={`/groups/${application.group.accountNumber}`}>
+                    {application.group.name}
+                  </Link>
+                </dd>
+              </div>
+            ) : null}
             <div>
               <dt>Proposed principal</dt>
               <dd>{proposed}</dd>
@@ -408,7 +435,7 @@ export default async function LoanApplicationPage({
           {canEditApplication ? (
             <EditLoanApplicationForm
               applicationId={application.id}
-              borrowerLabel={application.client ? `${application.client.firstName} ${application.client.lastName} · ${application.client.accountNumber}` : `Group: ${application.group?.name ?? "Unknown"} · ${application.group?.accountNumber ?? ""}`}
+              borrowerLabel={`${applicationBorrowerName(application)} · ${applicationBorrowerAccount(application)}`}
               charges={availableCharges.map((charge) => ({
                 id: charge.id,
                 name: charge.name,

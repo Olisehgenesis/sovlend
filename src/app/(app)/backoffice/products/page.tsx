@@ -30,11 +30,17 @@ export default async function ProductsPage({
   if (!allowed || !organizationId) redirect("/");
 
   const query = (await searchParams).query?.trim() ?? "";
-  const [loanProducts, savingsProducts, chargeDefinitions] = await Promise.all([
+  const [loanProducts, savingsProducts, chargeDefinitions, activeLoanCounts] = await Promise.all([
     prisma.loanProduct.findMany({ where: { organizationId } }),
     prisma.savingsProduct.findMany({ where: { organizationId }, orderBy: { name: "asc" } }),
     prisma.chargeDefinition.findMany({ where: { organizationId }, orderBy: { name: "asc" } }),
+    prisma.loan.groupBy({
+      by: ["productId"],
+      where: { product: { organizationId }, status: { in: ["ACTIVE", "IN_ARREARS"] } },
+      _count: { _all: true },
+    }),
   ]);
+  const activeLoansByProduct = new Map(activeLoanCounts.map((row) => [row.productId, row._count._all]));
 
   const matchingLoanProducts = query
     ? loanProducts.filter((product) => loanProductMatchesQuery(product, query))
@@ -99,6 +105,7 @@ export default async function ProductsPage({
                   <th className="numeric">Principal range</th>
                   <th className="numeric">Interest / month</th>
                   <th className="numeric">Monitoring / month</th>
+                  <th className="numeric">Active loans</th>
                   <th>Status</th>
                   <th className="table-actions" />
                 </tr>
@@ -107,7 +114,7 @@ export default async function ProductsPage({
                 {catalogSections.flatMap((group) => [
                   <tr className="catalog-group-row" key={`group-${group.label}`}>
                     <td className="row-index" />
-                    <td colSpan={8}>{group.label}</td>
+                    <td colSpan={9}>{group.label}</td>
                   </tr>,
                   ...group.products.map(({ product, number }) => {
                     const href = `/backoffice/products/loan/${product.id}`;
@@ -141,6 +148,10 @@ export default async function ProductsPage({
                         </td>
                         <td className="numeric">
                           {formatMonthlyPercent(product.monitoringFeeAnnualRateBps)}%
+                          <TableRowLink href={href} label={label} />
+                        </td>
+                        <td className="numeric">
+                          {(activeLoansByProduct.get(product.id) ?? 0).toLocaleString()}
                           <TableRowLink href={href} label={label} />
                         </td>
                         <td>

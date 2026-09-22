@@ -375,7 +375,9 @@ export default async function LoansPage({
                     );
                     const overpaidBy = clampToZero(totalPaid - totalExpectedRepayment);
                     const borrower = loan.client
-                      ? `${loan.client.firstName} ${loan.client.lastName}`
+                      ? loan.group
+                        ? `${loan.client.firstName} ${loan.client.lastName} · ${loan.group.name}`
+                        : `${loan.client.firstName} ${loan.client.lastName}`
                       : `Group: ${loan.group?.name ?? "Unknown"}`;
                     const loanHref = `/loans/${loan.id}`;
                     const loanLabel = `Open loan ${loan.accountNumber}`;
@@ -531,7 +533,9 @@ export default async function LoansPage({
                       </td>
                       <td>
                         {application.client
-                          ? `${application.client.firstName} ${application.client.lastName}`
+                          ? application.group
+                            ? `${application.client.firstName} ${application.client.lastName} · ${application.group.name}`
+                            : `${application.client.firstName} ${application.client.lastName}`
                           : `Group: ${application.group?.name ?? "Unknown"}`}
                         <TableRowLink href={href} label={label} primary />
                       </td>

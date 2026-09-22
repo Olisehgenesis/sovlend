@@ -50,6 +50,7 @@ type MockOptions = Readonly<{
   principalMinor?: bigint;
   charges?: Array<{ id: string; amountMinor: bigint; name?: string }>;
   groupLoan?: boolean;
+  memberGroupLoan?: boolean;
   existingAuditEvents?: Array<{
     action: string;
     actorId: string | null;
@@ -87,6 +88,7 @@ function buildPrismaMock(options: MockOptions = {}) {
     loanTransactionData: null,
     journalLines: [],
     savingsTransactionData: null,
+    savingsFindManyWhere: null,
     chargeUpdateArgs: null,
     auditEvents: [] as Array<Record<string, unknown>>,
   };
@@ -99,7 +101,7 @@ function buildPrismaMock(options: MockOptions = {}) {
   const loan = {
     id: "loan-1",
     clientId: options.groupLoan ? null : "client-1",
-    groupId: options.groupLoan ? "group-1" : null,
+    groupId: options.groupLoan || options.memberGroupLoan ? "group-1" : null,
     officeId: "office-1",
     accountNumber: "LN-0001",
     status: "APPROVED",
@@ -147,14 +149,15 @@ function buildPrismaMock(options: MockOptions = {}) {
       }),
     },
     savingsAccount: {
-      findMany: vi.fn(async () =>
-        savingsAccounts.map((account) => ({
+      findMany: vi.fn(async (args?: { where?: Record<string, unknown> }) => {
+        captures.savingsFindManyWhere = args?.where ?? null;
+        return savingsAccounts.map((account) => ({
           id: account.id,
           accountNumber: account.accountNumber,
           isDefault: account.isDefault,
           product: { id: `${account.id}-product`, shortName: account.productShortName ?? null },
-        })),
-      ),
+        }));
+      }),
       findUniqueOrThrow: vi.fn(async ({ where }: { where: { id: string } }) => {
         const account = savingsAccounts.find((item) => item.id === where.id);
         if (!account) throw new Error("Savings account not found");
@@ -453,6 +456,25 @@ describe("disburseLoan", () => {
       },
     ]);
     expectBalanced(captures.journalLines as unknown[]);
+  });
+
+  it("credits the member's savings when a group loan is issued to an individual", async () => {
+    const { prisma, captures } = buildPrismaMock({ memberGroupLoan: true, charges: [] });
+
+    await disburseLoan(prisma, {
+      loanId: "loan-1",
+      actorUserId: "operator-1",
+      businessDate: new Date("2026-09-08T00:00:00.000Z"),
+      idempotencyKey: "1a4e8c3b-2d7f-4b11-9c55-6e8f0a1b2c3d",
+    });
+
+    expect(captures.savingsFindManyWhere).toMatchObject({ clientId: "client-1" });
+    expect(captures.savingsFindManyWhere).not.toMatchObject({ groupId: "group-1" });
+    expect(captures.savingsTransactionData).toMatchObject({
+      savingsAccountId: "savings-1",
+      transactionType: "DEPOSIT",
+      amountMinor: 1_000_000n,
+    });
   });
 
   it("rejects disbursement when fees exceed principal", async () => {

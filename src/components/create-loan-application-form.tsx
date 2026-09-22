@@ -25,7 +25,7 @@ import { annualBpsFromMonthlyPercent } from "@/modules/lending/domain/monthly-ra
 import { generateRepaymentSchedule, INTEREST_DAY_COUNT } from "@/modules/lending/domain/repayment-schedule";
 
 type ClientOption = Readonly<{ id: string; name: string; accountNumber: string }>;
-type GroupOption = Readonly<{ id: string; name: string; accountNumber: string }>;
+type GroupOption = Readonly<{ id: string; name: string; accountNumber: string; members: readonly ClientOption[] }>;
 
 const steps = ["Details", "Terms", "Charges", "Review"] as const;
 
@@ -132,6 +132,8 @@ export function CreateLoanApplicationForm({
   const [applicationExpiresOn, setApplicationExpiresOn] = useState("");
 
   const product = useMemo(() => products.find((item) => item.id === productId) ?? null, [products, productId]);
+  const selectedGroup = groups?.find((group) => group.id === groupId);
+  const groupMembers = selectedGroup?.members ?? [];
 
   const [amount, setAmount] = useState("");
   const [annualRatePercent, setAnnualRatePercent] = useState("");
@@ -198,7 +200,7 @@ export function CreateLoanApplicationForm({
   }
 
   function detailsValid() {
-    const ownerOk = borrowerType === "group" ? Boolean(groupId) : Boolean(clientId);
+    const ownerOk = borrowerType === "group" ? Boolean(groupId && clientId) : Boolean(clientId);
     return ownerOk && Boolean(productId);
   }
 
@@ -219,6 +221,10 @@ export function CreateLoanApplicationForm({
 
   async function submit() {
     const proposedPrincipalMinor = toMinor(amount);
+    if (borrowerType === "group" && (!groupId || !groupMembers.some((member) => member.id === clientId))) {
+      toast.error("Select a group member to receive this loan");
+      return;
+    }
     if (!proposedPrincipalMinor) {
       toast.error("Enter a valid loan amount");
       return;
@@ -242,7 +248,7 @@ export function CreateLoanApplicationForm({
           arrearsTolerance,
         })
       : undefined;
-    const owner = borrowerType === "group" ? { groupId } : { clientId };
+    const owner = borrowerType === "group" ? { clientId, groupId } : { clientId };
     const response = await fetch("/api/loan-applications", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -271,8 +277,8 @@ export function CreateLoanApplicationForm({
     router.refresh();
   }
 
-  const selectedClientLabel = clients.find((client) => client.id === clientId);
-  const selectedGroupLabel = groups?.find((group) => group.id === groupId);
+  const selectedClientLabel = (borrowerType === "group" ? groupMembers : clients).find((client) => client.id === clientId);
+  const selectedGroupLabel = selectedGroup;
   const selectedOfficerLabel = officers.find((officer) => officer.id === loanOfficerId);
   const selectedFundLabel = funds.find((fund) => fund.id === fundId);
   const previewInput = useMemo((): LoanPreviewInput | null => {
@@ -281,7 +287,9 @@ export function CreateLoanApplicationForm({
     const chargePayload = buildChargePayload({ charges, proposedPrincipalMinor: principalMinor, selectedChargeIds: selectedCharges });
     return {
       borrowerLabel:
-        borrowerType === "group" ? (selectedGroupLabel?.name ?? "Not selected") : (selectedClientLabel?.name ?? "Not selected"),
+        borrowerType === "group"
+          ? [selectedClientLabel?.name, selectedGroupLabel?.name].filter(Boolean).join(" · ") || "Not selected"
+          : (selectedClientLabel?.name ?? "Not selected"),
       productName: product.name,
       currency: product.currency,
       principalMinor,
@@ -296,6 +304,7 @@ export function CreateLoanApplicationForm({
       charges: chargePayload.map((charge) => ({
         name: charge.name,
         amountLabel: formatMinor(BigInt(charge.amountMinor), product.currency),
+        amountMinor: charge.amountMinor,
       })),
       collateralLabel:
         collateral
@@ -349,20 +358,45 @@ export function CreateLoanApplicationForm({
           {hasGroups ? (
             <label>
               Borrower type
-              <select onChange={(event) => setBorrowerType(event.target.value === "group" ? "group" : "client")} value={borrowerType}>
+              <select
+                onChange={(event) => {
+                  const next = event.target.value === "group" ? "group" : "client";
+                  setBorrowerType(next);
+                  setClientId("");
+                  if (next === "client") setGroupId("");
+                }}
+                value={borrowerType}
+              >
                 <option value="client">Client (individual)</option>
-                <option value="group">Group (SACCO / savings group)</option>
+                <option value="group">Group member</option>
               </select>
             </label>
           ) : null}
           {borrowerType === "group" && hasGroups ? (
-            <label>
-              Group
-              <select onChange={(event) => setGroupId(event.target.value)} required value={groupId}>
-                <option value="" disabled>Select group</option>
-                {groups!.map((group) => <option key={group.id} value={group.id}>{group.name} · {group.accountNumber}</option>)}
-              </select>
-            </label>
+            <>
+              <label>
+                Group
+                <select
+                  onChange={(event) => {
+                    setGroupId(event.target.value);
+                    setClientId("");
+                  }}
+                  required
+                  value={groupId}
+                >
+                  <option value="" disabled>Select group</option>
+                  {groups!.map((group) => <option key={group.id} value={group.id}>{group.name} · {group.accountNumber}</option>)}
+                </select>
+              </label>
+              <label>
+                Member
+                <select disabled={!groupId} onChange={(event) => setClientId(event.target.value)} required value={clientId}>
+                  <option value="" disabled>{groupId ? "Select member" : "Select a group first"}</option>
+                  {groupMembers.map((member) => <option key={member.id} value={member.id}>{member.name} · {member.accountNumber}</option>)}
+                </select>
+              </label>
+              {groupId && groupMembers.length === 0 ? <p className="muted-text">This group has no active members to lend to.</p> : <p className="muted-text">The loan is issued to the selected member, not the group as a whole.</p>}
+            </>
           ) : (
             <label>
               Client
@@ -467,7 +501,7 @@ export function CreateLoanApplicationForm({
         <fieldset>
           <legend>Review</legend>
           <dl className="detail-grid">
-            <div><dt>Borrower</dt><dd>{borrowerType === "group" ? (selectedGroupLabel?.name ?? "Not selected") : (selectedClientLabel?.name ?? "Not selected")}</dd></div>
+            <div><dt>Borrower</dt><dd>{borrowerType === "group" ? (selectedClientLabel && selectedGroupLabel ? `${selectedClientLabel.name} · ${selectedGroupLabel.name}` : "Not selected") : (selectedClientLabel?.name ?? "Not selected")}</dd></div>
             <div><dt>Product</dt><dd>{product?.name ?? "Not selected"}</dd></div>
             <div><dt>Loan officer</dt><dd>{selectedOfficerLabel?.name ?? "Unassigned"}</dd></div>
             <div><dt>Loan purpose</dt><dd>{purpose || "—"}</dd></div>

@@ -66,6 +66,7 @@ export const auth = betterAuth({
       defaultRole: "user",
       adminRoles: ["admin"],
       impersonationSessionDuration: 60 * 30,
+      bannedUserMessage: "This account has been archived and cannot sign in.",
     }),
     passkey({
       rpID: rpId,
