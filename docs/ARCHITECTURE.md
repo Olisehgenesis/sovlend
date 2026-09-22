@@ -115,7 +115,7 @@ A command validates permissions, office scope, state transition, amount and idem
 
 ## Backup and Recovery
 
-The backup container creates a PostgreSQL custom-format dump daily at 01:17 UTC, verifies it with `pg_restore --list`, checksums it, encrypts it through Restic and uploads it to S3-compatible storage outside the VPS. Retention is 7 daily, 5 weekly and 12 monthly snapshots.
+The backup container dumps PostgreSQL as plain SQL, gzips it, and uploads named files to Backblaze B2 (`jumpstart-v2`) daily at 01:17 UTC plus once on container start. Files are `postgres/daily/sovlend-daily-YYYY-MM-DD.sql.gz` and `postgres/monthly/sovlend-monthly-YYYY-MM.sql.gz` (readable SQL, not restic). It keeps 21 dailies and 12 monthlies, then hard-deletes older objects so the bucket cannot fill the account. Restore a throwaway database with `gzip -dc dump.sql.gz | psql`.
 
 Before launch, add PostgreSQL WAL archiving for point-in-time recovery. Restore monthly into an isolated database and reconcile row counts, ledger totals and recent audit events. Initial targets are RPO 24 hours with dumps, RPO 15 minutes after WAL archiving, and RTO 4 hours.
 

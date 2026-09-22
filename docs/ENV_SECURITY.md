@@ -104,5 +104,5 @@ convenience shortcut -- it will eventually recreate a container with ciphertext 
 ## Current variables
 
 See `.env.example` for the full, documented list (database/cache, auth, price providers, the
-read-only legacy migration source, Blink Lightning, SMS, and backup/restic credentials). Keep
+read-only legacy migration source, Blink Lightning, SMS, and Backblaze B2 backup credentials). Keep
 that file in sync whenever a new `process.env.*` reference is added to the codebase.

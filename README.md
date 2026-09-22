@@ -11,7 +11,7 @@ The repository currently contains the architecture foundation and an operations 
 - Redis and BullMQ workers
 - Integer minor-unit money values and Decimal.js rates
 - Docker Compose and Caddy TLS
-- Restic encrypted off-VPS backups
+- Daily gzipped SQL dumps to Backblaze B2
 - Sonner accessible toasts
 - Better Auth with email/password, admin controls, sessions, and WebAuthn passkeys
 - Vitest and ESLint
@@ -62,7 +62,7 @@ docker compose --env-file .env.example config
 1. Put strong generated secrets in `.env`; never commit it.
 2. Set `SOVLEND_DOMAIN` to the production hostname.
 3. Set `BETTER_AUTH_URL` to the exact HTTPS origin and generate a high-entropy `BETTER_AUTH_SECRET` of at least 32 characters.
-4. Point `RESTIC_REPOSITORY` to S3-compatible storage outside the VPS.
+4. Set `B2_APPLICATION_KEY_ID`, `B2_APPLICATION_KEY`, and `B2_BUCKET` so the backup container can upload named SQL dumps.
 5. Run database migrations as an explicit release step.
 6. Start with `docker compose up -d --build`.
 7. Test a full database restore before onboarding real users.
