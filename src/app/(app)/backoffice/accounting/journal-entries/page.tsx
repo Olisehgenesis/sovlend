@@ -9,6 +9,7 @@ import { prisma } from "@/lib/prisma";
 import { AuthorizationService } from "@/modules/identity/application/authorization-service";
 import { getUserDataScope } from "@/modules/identity/application/data-scope";
 import { permissions } from "@/modules/identity/domain/permissions";
+import { postableLedgerAccountWhere } from "@/modules/ledger/domain/postable-ledger-account";
 
 export default async function AddJournalEntriesPage() {
   const session = await auth.api.getSession({ headers: await headers() });
@@ -25,7 +26,7 @@ export default async function AddJournalEntriesPage() {
     prisma.office.findMany({ where: { organizationId: scope.organizationId, ...(scope.officeIds ? { id: { in: [...scope.officeIds] } } : {}) }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
     prisma.currency.findMany({ where: { active: true }, select: { code: true, name: true }, orderBy: { code: "asc" } }),
     prisma.ledgerAccount.findMany({
-      where: { active: true, usage: "DETAIL", manualEntriesAllowed: true },
+      where: postableLedgerAccountWhere,
       select: { id: true, code: true, name: true, type: true, currencyCode: true },
       orderBy: [{ code: "asc" }],
     }),

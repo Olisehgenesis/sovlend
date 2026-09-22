@@ -216,7 +216,7 @@ export default async function ClientsPage({
           <table className="clickable-rows">
             <thead>
               <tr>
-                <th>#</th>
+                <th className="row-index">#</th>
                 <th>Client</th>
                 <th>Account</th>
                 <th>Mobile</th>
@@ -227,7 +227,7 @@ export default async function ClientsPage({
             <tbody>
               {clients.map((client, index) => (
                 <tr key={client.id}>
-                  <td className="mono muted-text">{(page - 1) * pageSize + index + 1}</td>
+                  <td className="row-index mono muted-text">{(page - 1) * pageSize + index + 1}</td>
                   <td>
                     <strong>{[client.firstName, client.middleName, client.lastName].filter(Boolean).join(" ")}</strong>
                     <Link

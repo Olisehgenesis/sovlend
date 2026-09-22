@@ -6,9 +6,13 @@ import { notFound, redirect } from "next/navigation";
 import { Breadcrumbs } from "@/components/breadcrumbs";
 import { EntityAvatar } from "@/components/entity-avatar";
 import { AddGroupMemberForm, AddGroupNoteForm } from "@/components/group-record-forms";
+import { StaffAssignment } from "@/components/loan-officer-assignment";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { AuthorizationService } from "@/modules/identity/application/authorization-service";
 import { getUserDataScope, groupScopeWhere } from "@/modules/identity/application/data-scope";
+import { permissions } from "@/modules/identity/domain/permissions";
+import { STAFF_SYSTEM_ROLES } from "@/modules/identity/domain/staff-roles";
 import { formatMinor } from "@/modules/money/domain/format-minor";
 
 const tabs = [
@@ -174,6 +178,27 @@ export default async function GroupDetailPage({ params, searchParams }: { params
     group.loans[0]?.denominationCurrency ??
     "UGX";
 
+  const authorization = new AuthorizationService(prisma);
+  const [canManage, officeStaff] = await Promise.all([
+    authorization.isAllowed({
+      actorUserId: session.user.id,
+      permission: permissions.clientManage,
+      organizationId: scope.organizationId,
+      officeId: group.officeId,
+    }),
+    prisma.user.findMany({
+      where: {
+        organizationId: scope.organizationId,
+        OR: [
+          ...(group.staffId ? [{ id: group.staffId }] : []),
+          { officeId: group.officeId, systemRole: { in: [...STAFF_SYSTEM_ROLES] } },
+        ],
+      },
+      select: { id: true, name: true },
+      orderBy: { name: "asc" },
+    }),
+  ]);
+
   return (
     <main className="directory-page">
       <Breadcrumbs items={[{ label: "Groups", href: "/groups" }, { label: group.name }]} />
@@ -242,7 +267,18 @@ export default async function GroupDetailPage({ params, searchParams }: { params
             </div>
             <div>
               <dt>Staff</dt>
-              <dd>{group.assignedOfficer?.name ?? "Unassigned"}</dd>
+              <dd>
+                {canManage ? (
+                  <StaffAssignment
+                    actionUrl={`/api/groups/${group.id}/assign-staff`}
+                    currentOfficerId={group.staffId}
+                    officers={officeStaff}
+                    successMessage="Group staff updated"
+                  />
+                ) : (
+                  group.assignedOfficer?.name ?? "Unassigned"
+                )}
+              </dd>
             </div>
             <div>
               <dt>Submitted on</dt>

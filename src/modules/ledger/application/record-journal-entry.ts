@@ -6,6 +6,7 @@ import { AuthorizationService } from "@/modules/identity/application/authorizati
 import { permissions } from "@/modules/identity/domain/permissions";
 
 import { assertBalancedJournal } from "../domain/journal";
+import { isPostableLedgerAccount } from "../domain/postable-ledger-account";
 import { assertPeriodOpen } from "./assert-period-open";
 
 export type JournalEntryLineCommand = Readonly<{
@@ -63,8 +64,8 @@ export async function recordJournalEntry(prisma: PrismaClient, command: RecordJo
   for (const accountId of accountIds) {
     const account = accountsById.get(accountId);
     if (!account) throw new Error("One of the selected GL accounts could not be found");
-    if (!account.active || account.usage !== "DETAIL" || !account.manualEntriesAllowed) {
-      throw new Error(`"${account.name}" is not an active detail account enabled for manual entries`);
+    if (!isPostableLedgerAccount(account)) {
+      throw new Error(`"${account.name}" is not an active detail account`);
     }
     if (account.currencyCode !== command.currencyCode) {
       throw new Error(`"${account.name}" is denominated in ${account.currencyCode}, not the selected ${command.currencyCode}`);

@@ -120,7 +120,7 @@ export default async function PortalLoanPage({ params }: { params: Promise<{ id:
             <table>
               <thead>
                 <tr>
-                  <th>#</th>
+                  <th className="row-index">#</th>
                   <th>Due</th>
                   <th>Principal</th>
                   <th>Interest</th>
@@ -137,7 +137,7 @@ export default async function PortalLoanPage({ params }: { params: Promise<{ id:
                   const rowOutstanding = installmentOutstandingMinor(item);
                   return (
                     <tr key={item.id}>
-                      <td>{item.installmentNumber}</td>
+                      <td className="row-index">{item.installmentNumber}</td>
                       <td>{formatPortalDate(item.dueOn)}</td>
                       <td>{formatMinor(item.principalDueMinor, loan.denominationCurrency)}</td>
                       <td>{formatMinor(item.interestDueMinor, loan.denominationCurrency)}</td>

@@ -335,7 +335,7 @@ export default async function SavingsAccountsPage({
           <table className="clickable-rows">
             <thead>
               <tr>
-                <th>#</th>
+                <th className="row-index">#</th>
                 <th>Account holder</th>
                 <th>Account number</th>
                 <th>Product</th>
@@ -370,7 +370,7 @@ export default async function SavingsAccountsPage({
                   account.product?.name ?? snapshotString(account.termsSnapshot, "name") ?? "Unlinked product";
                 return (
                   <tr key={account.id}>
-                    <td className="mono muted-text">{(page - 1) * pageSize + index + 1}</td>
+                    <td className="row-index mono muted-text">{(page - 1) * pageSize + index + 1}</td>
                     <td>
                       <strong>{holderName}</strong>{" "}
                       {owner?.kind === "group" ? <span className="status review">Group</span> : null}

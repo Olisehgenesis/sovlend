@@ -259,11 +259,11 @@ export function EditLoanApplicationForm({
             </label>
             <div className="form-row">
               <label>
-                Nominal interest rate %
+                Nominal interest rate % per month
                 <input min={0} onChange={(event) => setAnnualRatePercent(event.target.value)} step="0.01" type="number" value={annualRatePercent} />
               </label>
               <label>
-                Monitoring fee % (per year)
+                Monitoring fee % per month
                 <input min={0} onChange={(event) => setMonitoringFeeAnnualRatePercent(event.target.value)} step="0.01" type="number" value={monitoringFeeAnnualRatePercent} />
               </label>
             </div>
@@ -356,8 +356,8 @@ export function EditLoanApplicationForm({
               <div><dt>Fund</dt><dd>{funds.find((fund) => fund.id === fundId)?.name ?? "Unassigned"}</dd></div>
               <div><dt>Application expiry</dt><dd>{applicationExpiresOn || "—"}</dd></div>
               <div><dt>External ID</dt><dd>{externalId || "—"}</dd></div>
-              <div><dt>Nominal interest rate</dt><dd>{annualRatePercent ? `${annualRatePercent}% per year` : "Product default"}</dd></div>
-              <div><dt>Monitoring fee</dt><dd>{monitoringFeeAnnualRatePercent ? `${monitoringFeeAnnualRatePercent}% per year` : "Product default"}</dd></div>
+              <div><dt>Nominal interest rate</dt><dd>{annualRatePercent ? `${annualRatePercent}% per month` : "Product default"}</dd></div>
+              <div><dt>Monitoring fee</dt><dd>{monitoringFeeAnnualRatePercent ? `${monitoringFeeAnnualRatePercent}% per month` : "Product default"}</dd></div>
               <div><dt>Repayment plan</dt><dd>{repaymentCount && repaymentFrequency ? `${repaymentCount} × ${repaymentFrequency}` : "Product default"}</dd></div>
               <div><dt>Interest method</dt><dd>{interestMethod || "Product default"}</dd></div>
               <div><dt>Amortization</dt><dd>{amortizationMethod || "Product default"}</dd></div>

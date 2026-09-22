@@ -1,3 +1,5 @@
+import { annualBpsFromMonthlyPercent } from "@/modules/lending/domain/monthly-rate";
+
 export type ProductOption = Readonly<{
   id: string;
   name: string;
@@ -102,8 +104,10 @@ export function buildTermsPayload({
   repaymentFrequency: string;
 }) {
   return {
-    annualRateBps: annualRatePercent ? Math.round(Number(annualRatePercent) * 100) : undefined,
-    monitoringFeeAnnualRateBps: monitoringFeeAnnualRatePercent ? Math.round(Number(monitoringFeeAnnualRatePercent) * 100) : undefined,
+    annualRateBps: annualRatePercent ? annualBpsFromMonthlyPercent(Number(annualRatePercent)) : undefined,
+    monitoringFeeAnnualRateBps: monitoringFeeAnnualRatePercent
+      ? annualBpsFromMonthlyPercent(Number(monitoringFeeAnnualRatePercent))
+      : undefined,
     repaymentCount: repaymentCount ? Number(repaymentCount) : undefined,
     repaymentFrequency: repaymentFrequency.trim() || undefined,
     interestMethod: interestMethod.trim() || undefined,

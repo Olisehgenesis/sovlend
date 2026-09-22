@@ -14,6 +14,11 @@ import {
   loanScopeWhere,
   officeWhere,
 } from "@/modules/identity/application/data-scope";
+import { formatMonthlyPercent } from "@/modules/lending/domain/monthly-rate";
+import {
+  formatLoanProductTerm,
+  groupLoanProductsByTerm,
+} from "@/modules/lending/domain/loan-product-catalog";
 import {
   installmentDueMinor,
   installmentPaidMinor,
@@ -148,7 +153,6 @@ export default async function LoansPage({
   const [products, applications, loanTotal] = await Promise.all([
     prisma.loanProduct.findMany({
       where: { organizationId: userScope.organizationId },
-      orderBy: [{ active: "desc" }, { name: "asc" }],
     }),
     prisma.loanApplication.findMany({
       where: {
@@ -200,6 +204,14 @@ export default async function LoansPage({
     take: pageSize,
   });
 
+  let productNumber = 0;
+  const catalogSections = groupLoanProductsByTerm(products).map((group) => ({
+    label: group.label,
+    products: group.products.map((product) => {
+      productNumber += 1;
+      return { product, number: productNumber };
+    }),
+  }));
   const pageWindow = paginateWindow(page, pages);
   const pageHref = (targetPage: number) => {
     const nextParams = new URLSearchParams();
@@ -294,6 +306,7 @@ export default async function LoansPage({
               <table className="clickable-rows">
                 <thead>
                   <tr>
+                    <th className="row-index">No.</th>
                     <th>Client Name</th>
                     <th>Loan Account No.</th>
                     <th>Client Account No.</th>
@@ -318,7 +331,7 @@ export default async function LoansPage({
                   </tr>
                 </thead>
                 <tbody>
-                  {loans.map((loan) => {
+                  {loans.map((loan, index) => {
                     const schedule = installmentsWithCharges(loan.installments, loan.charges);
                     const principalDueRaw = schedule.reduce(
                       (sum, item) => sum + item.principalDueMinor - item.principalPaidMinor - item.principalWaivedMinor,
@@ -369,6 +382,10 @@ export default async function LoansPage({
 
                     return (
                       <tr key={loan.id}>
+                        <td className="row-index">
+                          {(page - 1) * pageSize + index + 1}
+                          <TableRowLink href={loanHref} label={loanLabel} />
+                        </td>
                         <td>
                           {borrower}
                           <TableRowLink href={loanHref} label={loanLabel} primary />
@@ -494,6 +511,7 @@ export default async function LoansPage({
               <table className="clickable-rows">
                 <thead>
                   <tr>
+                    <th className="row-index">No.</th>
                     <th>Client</th>
                     <th>Product</th>
                     <th>Loan Amount</th>
@@ -502,11 +520,15 @@ export default async function LoansPage({
                   </tr>
                 </thead>
                 <tbody>
-                  {applications.map((application) => {
+                  {applications.map((application, index) => {
                     const href = `/loans/applications/${application.id}`;
                     const label = `Review ${application.product.name} application`;
                     return (
                     <tr key={application.id}>
+                      <td className="row-index">
+                        {index + 1}
+                        <TableRowLink href={href} label={label} />
+                      </td>
                       <td>
                         {application.client
                           ? `${application.client.firstName} ${application.client.lastName}`
@@ -547,38 +569,47 @@ export default async function LoansPage({
           <div className="panel-heading">
             <div>
               <h2>Loan products</h2>
-              <p>{products.length} verified configurations</p>
+              <p>
+                {products.length} verified configurations · grouped by repayment cycle
+              </p>
             </div>
           </div>
           <div className="table-scroll">
-            <table>
+            <table className="loan-product-catalog">
               <thead>
                 <tr>
+                  <th className="row-index">No.</th>
                   <th>Product</th>
-                  <th>Principal range</th>
-                  <th>Annual rate</th>
-                  <th>Repayments</th>
+                  <th>Code</th>
+                  <th>Term</th>
+                  <th className="numeric">Principal range</th>
+                  <th className="numeric">Interest / month</th>
                   <th>Method</th>
                 </tr>
               </thead>
               <tbody>
-                {products.map((product) => (
-                  <tr key={product.id}>
-                    <td>
-                      <strong>{product.name}</strong>
-                      <small>{product.shortName}</small>
-                    </td>
-                    <td>
-                      {formatMinor(product.principalMinMinor, product.denominationCurrency)} -{" "}
-                      {formatMinor(product.principalMaxMinor, product.denominationCurrency)}
-                    </td>
-                    <td>{(product.annualRateBps / 100).toFixed(2)}%</td>
-                    <td>
-                      {product.repaymentCount} | {product.repaymentFrequency}
-                    </td>
-                    <td>{product.interestMethod}</td>
-                  </tr>
-                ))}
+                {catalogSections.flatMap((group) => [
+                  <tr className="catalog-group-row" key={`group-${group.label}`}>
+                    <td className="row-index" />
+                    <td colSpan={6}>{group.label}</td>
+                  </tr>,
+                  ...group.products.map(({ product, number }) => (
+                    <tr key={product.id}>
+                      <td className="row-index">{number}</td>
+                      <td>
+                        <strong>{product.name}</strong>
+                      </td>
+                      <td className="mono">{product.shortName}</td>
+                      <td>{formatLoanProductTerm(product.repaymentCount, product.repaymentFrequency)}</td>
+                      <td className="numeric">
+                        {formatMinor(product.principalMinMinor, product.denominationCurrency)} –{" "}
+                        {formatMinor(product.principalMaxMinor, product.denominationCurrency)}
+                      </td>
+                      <td className="numeric">{formatMonthlyPercent(product.annualRateBps)}%</td>
+                      <td>{product.interestMethod}</td>
+                    </tr>
+                  )),
+                ])}
               </tbody>
             </table>
           </div>

@@ -1,15 +1,34 @@
 import { describe, expect, it } from "vitest";
 
-import { generateRepaymentSchedule, parseRepaymentFrequency } from "./repayment-schedule";
+import { generateRepaymentSchedule, INTEREST_DAY_COUNT, parseRepaymentFrequency, describeRepaymentCadence, readInterestDayCount } from "./repayment-schedule";
 
 describe("repayment schedule", () => {
   it("preserves every principal minor unit for flat weekly loans", () => {
     const schedule = generateRepaymentSchedule({ principalMinor: 70_000_000n, annualRateBps: 3360, repaymentCount: 20, repaymentFrequency: "1 Weeks", interestMethod: "Flat", disbursedOn: new Date("2026-09-02T00:00:00Z") });
     expect(schedule).toHaveLength(20);
     expect(schedule.reduce((sum, item) => sum + item.principalDueMinor, 0n)).toBe(70_000_000n);
+    expect(schedule.reduce((sum, item) => sum + item.interestDueMinor, 0n)).toBe(9_021_370n);
     expect(schedule.every((item) => item.feesDueMinor === 0n)).toBe(true);
     expect(schedule[0].dueOn.toISOString().slice(0, 10)).toBe("2026-09-09");
     expect(schedule[19].dueOn.toISOString().slice(0, 10)).toBe("2027-01-20");
+  });
+
+  it("keeps Actual/365 weekly interest unless a new loan opts into four-week months", () => {
+    const terms = {
+      principalMinor: 100_000_000n,
+      annualRateBps: 3360,
+      repaymentCount: 24,
+      repaymentFrequency: "1 Weeks",
+      interestMethod: "Flat" as const,
+      disbursedOn: new Date("2026-09-01T00:00:00Z"),
+    };
+    const legacy = generateRepaymentSchedule(terms);
+    const next = generateRepaymentSchedule({ ...terms, interestDayCount: INTEREST_DAY_COUNT.FOUR_WEEK_MONTH });
+    expect(legacy.reduce((sum, item) => sum + item.interestDueMinor, 0n)).toBe(15_465_205n);
+    expect(next.reduce((sum, item) => sum + item.interestDueMinor, 0n)).toBe(16_800_000n);
+    expect(next.every((item) => item.interestDueMinor === 700_000n)).toBe(true);
+    expect(next[0].dueOn.toISOString().slice(0, 10)).toBe("2026-09-08");
+    expect(next[1].dueOn.toISOString().slice(0, 10)).toBe("2026-09-15");
   });
 
   it("creates declining-balance interest that falls with the balance", () => {
@@ -39,5 +58,31 @@ describe("repayment schedule", () => {
 
   it("rejects unsupported frequencies", () => {
     expect(() => parseRepaymentFrequency("fortnightly")).toThrow("Unsupported repayment frequency");
+  });
+
+  it("describes weekly collections as every 7 days", () => {
+    expect(describeRepaymentCadence(parseRepaymentFrequency("1 Weeks"))).toBe("every 7 days");
+    expect(describeRepaymentCadence(parseRepaymentFrequency("1 Months"))).toBe("monthly");
+  });
+
+  it("treats missing day-count as Actual/365 so pending loans keep old math", () => {
+    expect(readInterestDayCount(undefined)).toBe(INTEREST_DAY_COUNT.ACTUAL_365);
+    expect(readInterestDayCount("FOUR_WEEK_MONTH")).toBe(INTEREST_DAY_COUNT.FOUR_WEEK_MONTH);
+  });
+
+  it("charges 2.2% interest and 2.8% monitoring per month on a 24-week personal loan", () => {
+    const schedule = generateRepaymentSchedule({
+      principalMinor: 70_000_000n,
+      annualRateBps: 2_640,
+      monitoringFeeAnnualRateBps: 3_360,
+      repaymentCount: 24,
+      repaymentFrequency: "1 Weeks",
+      interestMethod: "Flat",
+      interestDayCount: INTEREST_DAY_COUNT.FOUR_WEEK_MONTH,
+      disbursedOn: new Date("2026-09-18T00:00:00Z"),
+    });
+    expect(schedule.reduce((sum, item) => sum + item.principalDueMinor, 0n)).toBe(70_000_000n);
+    expect(schedule.reduce((sum, item) => sum + item.interestDueMinor, 0n)).toBe(9_240_000n);
+    expect(schedule.reduce((sum, item) => sum + item.monitoringFeeDueMinor, 0n)).toBe(11_760_000n);
   });
 });

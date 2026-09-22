@@ -27,6 +27,10 @@
 # locally stored client document uploads
 /.uploads/
 
+# local copies of the production database (never commit)
+/.local-db-fork/
+
+
 # misc
 .DS_Store
 *.pem

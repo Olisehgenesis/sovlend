@@ -155,6 +155,31 @@ export function AppHeader({
     dropdownClassName: "header-dropdown header-dropdown-reports",
   });
 
+  navSections.push({
+    id: "docs",
+    label: "Docs",
+    items: [
+      { type: "link", href: "/docs", label: "All playbooks" },
+      { type: "divider", key: "docs-roles-divider" },
+      { type: "group", key: "docs-roles-group", label: "By role" },
+      { type: "link", href: "/docs?role=teller", label: "Teller" },
+      { type: "link", href: "/docs?role=loan-officer", label: "Loan officer" },
+      { type: "link", href: "/docs?role=branch-manager", label: "Branch manager" },
+      { type: "link", href: "/docs?role=general-manager", label: "General manager" },
+      { type: "link", href: "/docs?role=treasury-signer", label: "Treasury signer" },
+      { type: "link", href: "/docs?role=auditor", label: "Auditor" },
+      { type: "link", href: "/docs?role=investor", label: "Investor" },
+    ],
+  });
+
+  if (canManageInvestors) {
+    navSections.push({
+      id: "investors",
+      label: "Investors",
+      items: [{ type: "link", href: "/backoffice/investors", label: "Approve access requests" }],
+    });
+  }
+
   if (admin) {
     navSections.push({
       id: "admin",
@@ -168,14 +193,11 @@ export function AppHeader({
         { type: "link", href: "/settings/security", label: "Settings" },
       ],
     });
-  } else if (canManageProducts || canManageInvestors) {
+  } else if (canManageProducts) {
     navSections.push({
       id: "admin",
       label: "Admin",
-      items: [
-        ...(canManageInvestors ? ([{ type: "link" as const, href: "/backoffice/investors", label: "Investor access requests" }] as NavItem[]) : []),
-        ...(canManageProducts ? ([{ type: "link" as const, href: "/backoffice/products", label: "Products" }] as NavItem[]) : []),
-      ],
+      items: [{ type: "link", href: "/backoffice/products", label: "Products" }],
     });
   }
 

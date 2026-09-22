@@ -8,7 +8,8 @@ import type { PrismaClient } from "@prisma/client";
  * business later does not silently expose it to every investor.
  *
  * Idempotent -- safe to call for an investor who already has access (e.g. a self-heal path
- * re-running for an existing profile).
+ * re-running for an existing profile). REQUESTED/INVITED rows are promoted to ACTIVE; REJECTED
+ * and SUSPENDED stays are left alone so an explicit denial is not silently undone.
  */
 export async function grantJumpStartAfricaAccess(prisma: PrismaClient, investorId: string) {
   const organization = await prisma.organization.findFirst({
@@ -16,9 +17,19 @@ export async function grantJumpStartAfricaAccess(prisma: PrismaClient, investorI
     select: { id: true },
   });
   if (!organization) return;
-  await prisma.investorOrganizationAccess.upsert({
+  const existing = await prisma.investorOrganizationAccess.findUnique({
     where: { investorId_organizationId: { investorId, organizationId: organization.id } },
-    create: { investorId, organizationId: organization.id, status: "ACTIVE", approvedAt: new Date() },
-    update: {},
   });
+  if (!existing) {
+    await prisma.investorOrganizationAccess.create({
+      data: { investorId, organizationId: organization.id, status: "ACTIVE", approvedAt: new Date() },
+    });
+    return;
+  }
+  if (existing.status === "REQUESTED" || existing.status === "INVITED") {
+    await prisma.investorOrganizationAccess.update({
+      where: { id: existing.id },
+      data: { status: "ACTIVE", approvedAt: new Date() },
+    });
+  }
 }

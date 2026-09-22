@@ -4,6 +4,7 @@ import { AccountingRulesManager } from "@/components/accounting-rules-manager";
 import { Breadcrumbs } from "@/components/breadcrumbs";
 import { prisma } from "@/lib/prisma";
 import { requireSuperAdmin } from "@/lib/require-super-admin";
+import { postableLedgerAccountWhere } from "@/modules/ledger/domain/postable-ledger-account";
 
 export default async function AccountingRulesPage() {
   const session = await requireSuperAdmin();
@@ -18,7 +19,7 @@ export default async function AccountingRulesPage() {
     }),
     prisma.office.findMany({ where: { organizationId: user.organizationId }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
     prisma.ledgerAccount.findMany({
-      where: { active: true, usage: "DETAIL", manualEntriesAllowed: true },
+      where: postableLedgerAccountWhere,
       select: { id: true, code: true, name: true },
       orderBy: [{ type: "asc" }, { code: "asc" }],
     }),

@@ -1,11 +1,13 @@
 "use client";
 
-import { CircleDollarSign, LoaderCircle, Plus, Trash2 } from "lucide-react";
+import { CircleDollarSign, Eye, LoaderCircle, Plus, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
+import { LoanPreviewDialog, type LoanPreviewInput } from "@/components/loan-preview-panel";
 import { BrandActionButton } from "@/components/ui/brand-action-button";
+import { type DialogHandle } from "@/components/ui/dialog";
 
 import {
   buildChargePayload,
@@ -19,6 +21,8 @@ import {
   toMinor,
 } from "@/components/loan-application-form-shared";
 import { formatMinor } from "@/modules/money/domain/format-minor";
+import { annualBpsFromMonthlyPercent } from "@/modules/lending/domain/monthly-rate";
+import { generateRepaymentSchedule, INTEREST_DAY_COUNT } from "@/modules/lending/domain/repayment-schedule";
 
 type ClientOption = Readonly<{ id: string; name: string; accountNumber: string }>;
 type GroupOption = Readonly<{ id: string; name: string; accountNumber: string }>;
@@ -29,6 +33,67 @@ function normalizeInterestMethod(value: string | null | undefined) {
   if (value === "DECLINING_BALANCE") return "Declining Balance";
   if (value === "FLAT") return "Flat";
   return value ?? "";
+}
+
+function NewLoanRepaymentPreview({
+  amount,
+  annualRatePercent,
+  currency,
+  interestMethod,
+  monitoringFeeAnnualRatePercent,
+  repaymentCount,
+  repaymentFrequency,
+}: {
+  amount: string;
+  annualRatePercent: string;
+  currency: string;
+  interestMethod: string;
+  monitoringFeeAnnualRatePercent: string;
+  repaymentCount: string;
+  repaymentFrequency: string;
+}) {
+  const preview = useMemo(() => {
+    const principalMinor = toMinor(amount);
+    const count = Number(repaymentCount);
+    if (!principalMinor || !Number.isInteger(count) || count <= 0 || !repaymentFrequency.trim()) return null;
+    try {
+      const schedule = generateRepaymentSchedule({
+        principalMinor: BigInt(principalMinor),
+        annualRateBps: annualBpsFromMonthlyPercent(Number(annualRatePercent || 0)),
+        monitoringFeeAnnualRateBps: annualBpsFromMonthlyPercent(Number(monitoringFeeAnnualRatePercent || 0)),
+        repaymentCount: count,
+        repaymentFrequency,
+        interestMethod: interestMethod || "Flat",
+        interestDayCount: INTEREST_DAY_COUNT.FOUR_WEEK_MONTH,
+        disbursedOn: new Date("2026-01-01T00:00:00Z"),
+      });
+      const installmentDueMinor = schedule[0].principalDueMinor + schedule[0].interestDueMinor + schedule[0].monitoringFeeDueMinor;
+      return {
+        count: schedule.length,
+        installmentDueMinor,
+        totalInterestMinor: schedule.reduce((sum, item) => sum + item.interestDueMinor, 0n),
+        totalMonitoringMinor: schedule.reduce((sum, item) => sum + item.monitoringFeeDueMinor, 0n),
+        weekly: repaymentFrequency.toUpperCase().includes("WEEK"),
+      };
+    } catch {
+      return null;
+    }
+  }, [amount, annualRatePercent, interestMethod, monitoringFeeAnnualRatePercent, repaymentCount, repaymentFrequency]);
+
+  if (!preview) return null;
+
+  return (
+    <aside className="configuration-note">
+      <strong>
+        {formatMinor(preview.installmentDueMinor, currency)} {preview.weekly ? "every 7 days" : `× ${preview.count}`}
+      </strong>
+      <span>
+        Principal + interest{preview.totalMonitoringMinor > 0n ? " + maintenance" : ""} split across {preview.count}{" "}
+        {preview.weekly ? "weekly" : ""} installments. Interest {formatMinor(preview.totalInterestMinor, currency)}
+        {preview.totalMonitoringMinor > 0n ? ` · maintenance ${formatMinor(preview.totalMonitoringMinor, currency)}` : ""}.
+      </span>
+    </aside>
+  );
 }
 
 export function CreateLoanApplicationForm({
@@ -52,6 +117,7 @@ export function CreateLoanApplicationForm({
 }) {
   const router = useRouter();
   const hasGroups = (groups?.length ?? 0) > 0;
+  const previewRef = useRef<DialogHandle>(null);
   const [step, setStep] = useState(0);
   const [pending, setPending] = useState(false);
 
@@ -209,6 +275,55 @@ export function CreateLoanApplicationForm({
   const selectedGroupLabel = groups?.find((group) => group.id === groupId);
   const selectedOfficerLabel = officers.find((officer) => officer.id === loanOfficerId);
   const selectedFundLabel = funds.find((fund) => fund.id === fundId);
+  const previewInput = useMemo((): LoanPreviewInput | null => {
+    const principalMinor = toMinor(amount);
+    if (!principalMinor || !product) return null;
+    const chargePayload = buildChargePayload({ charges, proposedPrincipalMinor: principalMinor, selectedChargeIds: selectedCharges });
+    return {
+      borrowerLabel:
+        borrowerType === "group" ? (selectedGroupLabel?.name ?? "Not selected") : (selectedClientLabel?.name ?? "Not selected"),
+      productName: product.name,
+      currency: product.currency,
+      principalMinor,
+      annualRatePercent,
+      monitoringFeeAnnualRatePercent,
+      repaymentCount,
+      repaymentFrequency,
+      interestMethod,
+      amortizationMethod,
+      interestDayCount: INTEREST_DAY_COUNT.FOUR_WEEK_MONTH,
+      firstRepaymentOn: firstRepaymentOn || undefined,
+      charges: chargePayload.map((charge) => ({
+        name: charge.name,
+        amountLabel: formatMinor(BigInt(charge.amountMinor), product.currency),
+      })),
+      collateralLabel:
+        collateral
+          .filter((row) => row.type.trim() || row.description.trim())
+          .map((row) => row.type || row.description)
+          .join(", ") || undefined,
+      officerName: selectedOfficerLabel?.name,
+      purpose: purpose.trim() || undefined,
+    };
+  }, [
+    amortizationMethod,
+    amount,
+    annualRatePercent,
+    borrowerType,
+    charges,
+    collateral,
+    firstRepaymentOn,
+    interestMethod,
+    monitoringFeeAnnualRatePercent,
+    product,
+    purpose,
+    repaymentCount,
+    repaymentFrequency,
+    selectedCharges,
+    selectedClientLabel?.name,
+    selectedGroupLabel?.name,
+    selectedOfficerLabel?.name,
+  ]);
 
   return (
     <div className="entity-form">
@@ -294,8 +409,8 @@ export function CreateLoanApplicationForm({
           {product ? <p className="muted-text">Allowed range: {product.currency} {product.minimum} – {product.maximum}</p> : null}
           <label>Loan purpose<textarea onChange={(event) => setPurpose(event.target.value)} rows={3} value={purpose} /></label>
           <div className="form-row">
-            <label>Nominal interest rate %<input min={0} onChange={(event) => { setAnnualRatePercent(event.target.value); markTermsTouched(); }} step="0.01" type="number" value={annualRatePercent} /></label>
-            <label>Monitoring fee % (per year)<input min={0} onChange={(event) => { setMonitoringFeeAnnualRatePercent(event.target.value); markTermsTouched(); }} step="0.01" type="number" value={monitoringFeeAnnualRatePercent} /></label>
+            <label>Nominal interest rate % per month<input min={0} onChange={(event) => { setAnnualRatePercent(event.target.value); markTermsTouched(); }} step="0.01" type="number" value={annualRatePercent} /></label>
+            <label>Monitoring fee % per month<input min={0} onChange={(event) => { setMonitoringFeeAnnualRatePercent(event.target.value); markTermsTouched(); }} step="0.01" type="number" value={monitoringFeeAnnualRatePercent} /></label>
           </div>
           <div className="form-row three">
             <label>Number of repayments<input min={1} onChange={(event) => { setRepaymentCount(event.target.value); markTermsTouched(); }} type="number" value={repaymentCount} /></label>
@@ -307,6 +422,15 @@ export function CreateLoanApplicationForm({
             <label>First repayment on<input onChange={(event) => { setFirstRepaymentOn(event.target.value); markTermsTouched(); }} type="date" value={firstRepaymentOn} /></label>
             <label>Arrears tolerance ({product?.currency ?? "UGX"})<input inputMode="decimal" onChange={(event) => { setArrearsTolerance(event.target.value); markTermsTouched(); }} value={arrearsTolerance} /></label>
           </div>
+          <NewLoanRepaymentPreview
+            amount={amount}
+            annualRatePercent={annualRatePercent}
+            currency={product?.currency ?? "UGX"}
+            interestMethod={interestMethod}
+            monitoringFeeAnnualRatePercent={monitoringFeeAnnualRatePercent}
+            repaymentCount={repaymentCount}
+            repaymentFrequency={repaymentFrequency}
+          />
         </fieldset>
       ) : null}
 
@@ -351,8 +475,8 @@ export function CreateLoanApplicationForm({
             <div><dt>Application expiry</dt><dd>{applicationExpiresOn || "—"}</dd></div>
             <div><dt>External ID</dt><dd>{externalId || "—"}</dd></div>
             <div><dt>Principal</dt><dd>{amount ? `${product?.currency ?? "UGX"} ${amount}` : "—"}</dd></div>
-            <div><dt>Nominal interest rate</dt><dd>{annualRatePercent ? `${annualRatePercent}% per year` : "Product default"}</dd></div>
-            <div><dt>Monitoring fee</dt><dd>{monitoringFeeAnnualRatePercent ? `${monitoringFeeAnnualRatePercent}% per year` : "Product default"}</dd></div>
+            <div><dt>Nominal interest rate</dt><dd>{annualRatePercent ? `${annualRatePercent}% per month` : "Product default"}</dd></div>
+            <div><dt>Monitoring fee</dt><dd>{monitoringFeeAnnualRatePercent ? `${monitoringFeeAnnualRatePercent}% per month` : "Product default"}</dd></div>
             <div><dt>Repayment plan</dt><dd>{repaymentCount && repaymentFrequency ? `${repaymentCount} × ${repaymentFrequency}` : "Product default"}</dd></div>
             <div><dt>Interest method</dt><dd>{interestMethod || "Product default"}</dd></div>
             <div><dt>Amortization</dt><dd>{amortizationMethod || "Product default"}</dd></div>
@@ -369,9 +493,31 @@ export function CreateLoanApplicationForm({
         {step < steps.length - 1 ? (
           <button className="invest-button" disabled={(step === 0 && !detailsValid()) || (step === 1 && !termsValid())} onClick={() => setStep((current) => current + 1)} type="button">Next</button>
         ) : (
-          <BrandActionButton disabled={pending} icon={pending ? <LoaderCircle className="spin" size={18} /> : <CircleDollarSign size={18} />} onClick={submit} type="button">Submit loan application</BrandActionButton>
+          <BrandActionButton
+            disabled={pending}
+            icon={pending ? <LoaderCircle className="spin" size={18} /> : <Eye size={18} />}
+            onClick={() => {
+              if (!previewInput) {
+                toast.error("Enter loan terms before previewing");
+                return;
+              }
+              previewRef.current?.showModal();
+            }}
+            type="button"
+          >
+            Preview loan
+          </BrandActionButton>
         )}
       </div>
+      {previewInput ? (
+        <LoanPreviewDialog dialogRef={previewRef} input={previewInput} title="Preview loan application">
+          <div className="form-actions">
+            <BrandActionButton disabled={pending} icon={pending ? <LoaderCircle className="spin" size={18} /> : <CircleDollarSign size={18} />} onClick={submit} type="button">
+              Submit loan application
+            </BrandActionButton>
+          </div>
+        </LoanPreviewDialog>
+      ) : null}
     </div>
   );
 }

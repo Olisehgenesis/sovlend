@@ -7,6 +7,7 @@ import { prisma } from "@/lib/prisma";
 import { AuthorizationService, PermissionDeniedError } from "@/modules/identity/application/authorization-service";
 import { getUserDataScope, loanScopeWhere } from "@/modules/identity/application/data-scope";
 import { permissions } from "@/modules/identity/domain/permissions";
+import { STAFF_SYSTEM_ROLES } from "@/modules/identity/domain/staff-roles";
 
 const schema = z.object({ officerId: z.string().trim().min(1).nullable() });
 
@@ -33,8 +34,15 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     return NextResponse.json({ ok: true });
   }
 
-  const officer = await prisma.user.findFirst({ where: { id: parsed.data.officerId, organizationId: scope.organizationId, officeId: loan.officeId, systemRole: "LOAN_OFFICER" } });
-  if (!officer) return NextResponse.json({ error: "Loan officer not found at this loan's office" }, { status: 404 });
+  const officer = await prisma.user.findFirst({
+    where: {
+      id: parsed.data.officerId,
+      organizationId: scope.organizationId,
+      officeId: loan.officeId,
+      systemRole: { in: [...STAFF_SYSTEM_ROLES] },
+    },
+  });
+  if (!officer) return NextResponse.json({ error: "Staff member not found at this loan's office" }, { status: 404 });
 
   await prisma.loan.update({ where: { id: loan.id }, data: { loanOfficerId: officer.id } });
   return NextResponse.json({ ok: true });

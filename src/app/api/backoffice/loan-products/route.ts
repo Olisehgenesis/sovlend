@@ -4,6 +4,7 @@ import { z } from "zod";
 
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { annualBpsFromMonthlyPercent } from "@/modules/lending/domain/monthly-rate";
 
 const schema = z.object({
   name: z.string().trim().min(1).max(150),
@@ -40,8 +41,8 @@ export async function POST(request: Request) {
       denominationCurrency: parsed.data.denominationCurrency,
       principalMinMinor: BigInt(Math.round(parsed.data.principalMin * 100)),
       principalMaxMinor: BigInt(Math.round(parsed.data.principalMax * 100)),
-      annualRateBps: Math.round(parsed.data.annualRate * 100),
-      monitoringFeeAnnualRateBps: Math.round(parsed.data.monitoringFeeAnnualRate * 100),
+      annualRateBps: annualBpsFromMonthlyPercent(parsed.data.annualRate),
+      monitoringFeeAnnualRateBps: annualBpsFromMonthlyPercent(parsed.data.monitoringFeeAnnualRate),
       repaymentCount: parsed.data.repaymentCount,
       repaymentFrequency: parsed.data.repaymentFrequency,
       amortizationMethod: parsed.data.amortizationMethod,

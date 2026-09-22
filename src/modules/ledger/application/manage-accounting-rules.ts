@@ -1,5 +1,7 @@
 import type { Prisma, PrismaClient } from "@prisma/client";
 
+import { postableLedgerAccountWhere } from "../domain/postable-ledger-account";
+
 type RulePrisma = PrismaClient | Prisma.TransactionClient;
 
 export type AccountingRuleSide = "DEBIT" | "CREDIT";
@@ -25,8 +27,7 @@ function dedupe(ids: readonly string[]): string[] {
 /**
  * Validates the debit/credit account selection shared by create and update: at least one
  * account per side, no account used on both sides, and every selected account must be an
- * active, manual-entry-enabled DETAIL account sharing a single currency (mirrors the
- * validation recordManualJournalEntry() applies to its two accounts, generalized to N).
+ * active DETAIL account sharing a single currency.
  */
 async function validateAccountSelection(prisma: RulePrisma, accounts: readonly AccountingRuleAccountSelection[]) {
   const debitAccountIds = dedupe(accounts.filter((account) => account.side === "DEBIT").map((account) => account.accountId));
@@ -38,11 +39,11 @@ async function validateAccountSelection(prisma: RulePrisma, accounts: readonly A
 
   const allAccountIds = [...debitAccountIds, ...creditAccountIds];
   const foundAccounts = await prisma.ledgerAccount.findMany({
-    where: { id: { in: allAccountIds }, active: true, usage: "DETAIL", manualEntriesAllowed: true },
+    where: { id: { in: allAccountIds }, ...postableLedgerAccountWhere },
     select: { id: true, currencyCode: true },
   });
   if (foundAccounts.length !== allAccountIds.length) {
-    throw new Error("Select active accounts that are enabled for manual entries");
+    throw new Error("Select active detail accounts");
   }
   const currencies = new Set(foundAccounts.map((account) => account.currencyCode));
   if (currencies.size > 1) throw new Error("All accounts in a rule must share the same currency");

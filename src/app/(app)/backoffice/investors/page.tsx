@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 
 import { Breadcrumbs } from "@/components/breadcrumbs";
 import { InvestorAccessReviewList } from "@/components/investor-access-review-list";
+import { InvestorLeadReviewList } from "@/components/investor-lead-review-list";
 import { auth } from "@/lib/auth";
 import { loadInvestorAccessScope } from "@/lib/can-manage-investor-access";
 import { prisma } from "@/lib/prisma";
@@ -45,7 +46,7 @@ export default async function InvestorsBackofficePage() {
         <div>
           <p className="eyebrow">Investor onboarding</p>
           <h1>Pending business access</h1>
-          <p>Investors sign up instantly but stay locked out of business data until you approve which business they can see and fund.</p>
+          <p>Branch managers and general managers can approve requests for this business. Jump Start Africa is granted on sign-up; other businesses still need a review here.</p>
         </div>
       </header>
       <InvestorAccessReviewList
@@ -57,40 +58,16 @@ export default async function InvestorsBackofficePage() {
           createdAt: item.createdAt.toISOString(),
         }))}
       />
-      {leads.length > 0 ? (
-        <section className="panel">
-          <div className="panel-heading">
-            <div>
-              <h2>Inbound investor leads</h2>
-              <p>Submitted before creating an account, via the public &ldquo;request an account&rdquo; form -- reach out directly and point them to sign up.</p>
-            </div>
-          </div>
-          <div className="table-scroll">
-            <table>
-              <thead>
-                <tr>
-                  <th>Name</th>
-                  <th>Email</th>
-                  <th>Business</th>
-                  <th>Message</th>
-                  <th>Submitted</th>
-                </tr>
-              </thead>
-              <tbody>
-                {leads.map((lead) => (
-                  <tr key={lead.id}>
-                    <td><strong>{lead.name}</strong></td>
-                    <td>{lead.email}</td>
-                    <td>{lead.organization.name}</td>
-                    <td>{lead.message ?? <span className="muted-text">—</span>}</td>
-                    <td>{new Date(lead.createdAt).toLocaleDateString()}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </section>
-      ) : null}
+      <InvestorLeadReviewList
+        leads={leads.map((lead) => ({
+          id: lead.id,
+          name: lead.name,
+          email: lead.email,
+          organizationName: lead.organization.name,
+          message: lead.message,
+          createdAt: lead.createdAt.toISOString(),
+        }))}
+      />
       {scope.isSuperAdmin ? <p><Link href="/backoffice">Back to backoffice</Link></p> : null}
     </main>
   );

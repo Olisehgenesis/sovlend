@@ -22,6 +22,7 @@ export const termsOverrideSchema = z.object({
   isTopupLoan: z.boolean().optional(),
   recalculateInterest: z.boolean().optional(),
   daysInMonth: z.string().trim().min(1).optional(),
+  interestDayCount: z.enum(["ACTUAL_365", "FOUR_WEEK_MONTH"]).optional(),
 });
 
 export const chargeSelectionSchema = z.object({

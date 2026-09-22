@@ -8,23 +8,26 @@ import { ApproveLoanForm } from "@/components/approve-loan-form";
 import { Breadcrumbs } from "@/components/breadcrumbs";
 import { DisburseLoanForm } from "@/components/disburse-loan-form";
 import { EditLoanApplicationForm } from "@/components/edit-loan-application-form";
+import { LoanPreviewButton, type LoanPreviewInput } from "@/components/loan-preview-panel";
 import { fromMinor } from "@/components/loan-application-form-shared";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { AuthorizationService } from "@/modules/identity/application/authorization-service";
 import { getUserDataScope } from "@/modules/identity/application/data-scope";
 import { permissions } from "@/modules/identity/domain/permissions";
+import { STAFF_SYSTEM_ROLES } from "@/modules/identity/domain/staff-roles";
 import { canEditSubmittedLoanApplication, canSelfApproveLoanApplication } from "@/modules/lending/application/loan-application-access";
 import { isLoanApplicationExpired } from "@/modules/lending/application/loan-application-expiry";
 import { readChargeSnapshot, readCollateralSnapshot, readTermsSnapshot } from "@/modules/lending/application/loan-application-payload";
+import { formatMonthlyPercent } from "@/modules/lending/domain/monthly-rate";
 import { formatMinor } from "@/modules/money/domain/format-minor";
 
 function toDateInput(value: Date | null) {
   return value ? value.toISOString().slice(0, 10) : "";
 }
 
-function toPercentString(value: unknown) {
-  return typeof value === "number" ? String(value / 100) : "";
+function toMonthlyPercentString(value: unknown) {
+  return typeof value === "number" ? formatMonthlyPercent(value) : "";
 }
 
 function toStringValue(value: unknown) {
@@ -131,8 +134,8 @@ export default async function LoanApplicationPage({
     estimatedValueLabel: item.estimatedValueMinor ? formatMinor(BigInt(item.estimatedValueMinor), application.product.denominationCurrency) : undefined,
   }));
   const termValues = {
-    annualRatePercent: toPercentString(termsSnapshot.annualRateBps) || String(application.product.annualRateBps / 100),
-    monitoringFeeAnnualRatePercent: toPercentString(termsSnapshot.monitoringFeeAnnualRateBps) || String(application.product.monitoringFeeAnnualRateBps / 100),
+    annualRatePercent: toMonthlyPercentString(termsSnapshot.annualRateBps) || formatMonthlyPercent(application.product.annualRateBps),
+    monitoringFeeAnnualRatePercent: toMonthlyPercentString(termsSnapshot.monitoringFeeAnnualRateBps) || formatMonthlyPercent(application.product.monitoringFeeAnnualRateBps),
     repaymentCount: typeof termsSnapshot.repaymentCount === "number" ? String(termsSnapshot.repaymentCount) : String(application.product.repaymentCount),
     repaymentFrequency: toStringValue(termsSnapshot.repaymentFrequency) || application.product.repaymentFrequency,
     interestMethod: toStringValue(termsSnapshot.interestMethod) || application.product.interestMethod,
@@ -147,10 +150,14 @@ export default async function LoanApplicationPage({
         prisma.user.findMany({
           where: {
             organizationId: scope.organizationId,
-            systemRole: "LOAN_OFFICER",
             ...(application.loanOfficerId
-              ? { OR: [{ officeId: application.officeId }, { id: application.loanOfficerId }] }
-              : { officeId: application.officeId }),
+              ? {
+                  OR: [
+                    { id: application.loanOfficerId },
+                    { officeId: application.officeId, systemRole: { in: [...STAFF_SYSTEM_ROLES] } },
+                  ],
+                }
+              : { officeId: application.officeId, systemRole: { in: [...STAFF_SYSTEM_ROLES] } }),
           },
           select: { id: true, name: true },
           orderBy: { name: "asc" },
@@ -188,6 +195,29 @@ export default async function LoanApplicationPage({
     collateralSnapshot.length === 0
       ? "None"
       : collateralSnapshot.map((item) => item.type?.trim() || item.description?.trim() || "Collateral").join(", ");
+  const loanPreview: LoanPreviewInput = {
+    borrowerLabel: application.client
+      ? `${application.client.firstName} ${application.client.lastName}`
+      : `Group: ${application.group?.name ?? "Unknown"}`,
+    productName: application.product.name,
+    currency: application.product.denominationCurrency,
+    principalMinor: (application.loan?.principalMinor ?? application.proposedPrincipalMinor).toString(),
+    annualRatePercent: termValues.annualRatePercent,
+    monitoringFeeAnnualRatePercent: termValues.monitoringFeeAnnualRatePercent,
+    repaymentCount: termValues.repaymentCount,
+    repaymentFrequency: termValues.repaymentFrequency,
+    interestMethod: termValues.interestMethod,
+    amortizationMethod: termValues.amortizationMethod,
+    interestDayCount: typeof termsSnapshot.interestDayCount === "string" ? termsSnapshot.interestDayCount : undefined,
+    firstRepaymentOn: termValues.firstRepaymentOn || undefined,
+    charges: chargeSelections.map((charge) => ({
+      name: charge.name,
+      amountLabel: formatMinor(BigInt(charge.amountMinor), application.product.denominationCurrency),
+    })),
+    collateralLabel: collateralSummary === "None" ? undefined : collateralSummary,
+    officerName: application.loanOfficer?.name ?? undefined,
+    purpose: application.purpose ?? undefined,
+  };
 
   const actionPanel =
     application.status === "SUBMITTED" && applicationExpired ? (
@@ -218,6 +248,7 @@ export default async function LoanApplicationPage({
       <article className="panel">
         <DisburseLoanForm
           loanId={application.loan.id}
+          preview={loanPreview}
           savingsAccounts={savingsAccounts.map((account) => ({
             id: account.id,
             accountNumber: account.accountNumber,
@@ -256,6 +287,7 @@ export default async function LoanApplicationPage({
           </p>
         </div>
         <div className="header-actions">
+          <LoanPreviewButton input={loanPreview} />
           <Link className="secondary-action" href="/loans/applications">
             All applications
           </Link>
@@ -327,11 +359,11 @@ export default async function LoanApplicationPage({
             </div>
             <div>
               <dt>Interest rate</dt>
-              <dd>{termValues.annualRatePercent}% per year</dd>
+              <dd>{termValues.annualRatePercent}% per month</dd>
             </div>
             <div>
               <dt>Monitoring fee</dt>
-              <dd>{termValues.monitoringFeeAnnualRatePercent}% per year</dd>
+              <dd>{termValues.monitoringFeeAnnualRatePercent}% per month</dd>
             </div>
             <div>
               <dt>Repayments</dt>
@@ -409,8 +441,8 @@ export default async function LoanApplicationPage({
                 maximum: formatMinor(application.product.principalMaxMinor, application.product.denominationCurrency).replace(`${application.product.denominationCurrency} `, ""),
                 minimumMinor: application.product.principalMinMinor.toString(),
                 maximumMinor: application.product.principalMaxMinor.toString(),
-                annualRatePercent: application.product.annualRateBps / 100,
-                monitoringFeeAnnualRatePercent: application.product.monitoringFeeAnnualRateBps / 100,
+                annualRatePercent: Number(formatMonthlyPercent(application.product.annualRateBps)),
+                monitoringFeeAnnualRatePercent: Number(formatMonthlyPercent(application.product.monitoringFeeAnnualRateBps)),
                 repaymentCount: application.product.repaymentCount,
                 repaymentFrequency: application.product.repaymentFrequency,
                 interestMethod: application.product.interestMethod,

@@ -98,7 +98,7 @@ export function ManualJournalEntryForm({
             <strong>Accounting setup required</strong>
             <span>
               {ledgerAccounts.length === 0
-                ? `Enable "Allow manual entries" on at least one ${label} account in Chart of accounts.`
+                ? `No active ${label} accounts in the chart of accounts.`
                 : "Add a cash, bank, or mobile-money account in Backoffice → Accounting mappings."}
             </span>
           </aside>

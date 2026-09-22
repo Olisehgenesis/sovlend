@@ -6,6 +6,7 @@ import { AuthorizationService } from "@/modules/identity/application/authorizati
 import { permissions } from "@/modules/identity/domain/permissions";
 
 import { assertBalancedJournal, type PayeeType } from "../domain/journal";
+import { postableLedgerAccountWhere } from "../domain/postable-ledger-account";
 import { assertPeriodOpen } from "./assert-period-open";
 
 export type ManualJournalEntryType = "INCOME" | "EXPENSE";
@@ -56,11 +57,11 @@ export async function recordManualJournalEntry(prisma: PrismaClient, command: Ma
 
   const expectedType = command.entryType === "INCOME" ? "REVENUE" : "EXPENSE";
   const ledgerAccount = await prisma.ledgerAccount.findFirst({
-    where: { id: command.ledgerAccountId, active: true, usage: "DETAIL", type: expectedType, manualEntriesAllowed: true },
+    where: { id: command.ledgerAccountId, ...postableLedgerAccountWhere, type: expectedType },
   });
   if (!ledgerAccount) {
     throw new Error(
-      `Select an active ${command.entryType === "INCOME" ? "income" : "expense"} account that is enabled for manual entries`,
+      `Select an active ${command.entryType === "INCOME" ? "income" : "expense"} account`,
     );
   }
   if (ledgerAccount.currencyCode !== settlementAccount.currencyCode) {

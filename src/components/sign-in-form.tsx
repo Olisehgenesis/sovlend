@@ -48,7 +48,7 @@ export function SignInForm() {
     setPending(false);
 
     if (result.error) {
-      toast.error(result.error.message ?? "Sign-in failed");
+      toast.error(result.error.message?.trim() || "Sign-in failed. Check the server is using the local database.");
       return;
     }
 

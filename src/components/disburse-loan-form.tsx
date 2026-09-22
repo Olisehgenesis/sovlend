@@ -6,6 +6,7 @@ import { useMemo, useState } from "react";
 import { toast } from "sonner";
 
 import { BrandActionButton } from "@/components/ui/brand-action-button";
+import { LoanPreviewPanel, type LoanPreviewInput } from "@/components/loan-preview-panel";
 import { PAYEE_TYPE_LABELS, PAYEE_TYPES, payeeReferencePlaceholder, type PayeeType } from "@/modules/ledger/domain/journal";
 import { formatMinor } from "@/modules/money/domain/format-minor";
 
@@ -34,12 +35,14 @@ export function DisburseLoanForm({
   settlementAccounts,
   savingsAccounts = [],
   payoffLoanOptions = [],
+  preview,
   onSuccess,
 }: {
   loanId: string;
   settlementAccounts: SettlementAccountOption[];
   savingsAccounts?: SavingsAccountOption[];
   payoffLoanOptions?: PayoffLoanOption[];
+  preview?: LoanPreviewInput;
   onSuccess?: () => void;
 }) {
   const router = useRouter();
@@ -104,6 +107,12 @@ export function DisburseLoanForm({
 
   return (
     <form action={disburse} className="entity-form compact-mapping">
+      {preview ? (
+        <fieldset>
+          <legend>Repayment preview</legend>
+          <LoanPreviewPanel input={preview} />
+        </fieldset>
+      ) : null}
       <fieldset>
         <legend>Loan payout</legend>
         {canUseSavings ? (

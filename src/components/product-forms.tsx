@@ -79,6 +79,7 @@ export function CreateLoanProductForm() {
       return;
     }
     toast.success("Loan product created");
+    router.push("/backoffice/products");
     router.refresh();
   }
 
@@ -93,10 +94,11 @@ export function CreateLoanProductForm() {
       <div className="form-row three">
         <label>Minimum principal<input inputMode="decimal" min={0} name="principalMin" required step="0.01" type="number" /></label>
         <label>Maximum principal<input inputMode="decimal" min={0} name="principalMax" required step="0.01" type="number" /></label>
-        <label>Annual rate %<input min={0} name="annualRate" required step="0.01" type="number" /></label>
+        <label>Interest % per month<input min={0} name="annualRate" required step="0.01" type="number" /></label>
       </div>
+      <p className="field-help">Interest and monitoring are monthly rates. Weekly products collect every 7 days (4 weeks = 1 month).</p>
       <div className="form-row">
-        <label>Monitoring fee %<input min={0} name="monitoringFeeAnnualRate" step="0.01" type="number" /></label>
+        <label>Monitoring fee % per month<input min={0} name="monitoringFeeAnnualRate" step="0.01" type="number" /></label>
       </div>
       <div className="form-row three">
         <label>Repayment count<input min={1} name="repaymentCount" required step={1} type="number" /></label>
@@ -155,10 +157,11 @@ export function EditLoanProductForm({ product }: { product: LoanProductDraft }) 
       <div className="form-row three">
         <label>Minimum principal<input defaultValue={product.principalMin} inputMode="decimal" min={0} name="principalMin" required step="0.01" type="number" /></label>
         <label>Maximum principal<input defaultValue={product.principalMax} inputMode="decimal" min={0} name="principalMax" required step="0.01" type="number" /></label>
-        <label>Annual rate %<input defaultValue={product.annualRate} min={0} name="annualRate" required step="0.01" type="number" /></label>
+        <label>Interest % per month<input defaultValue={product.annualRate} min={0} name="annualRate" required step="0.01" type="number" /></label>
       </div>
+      <p className="field-help">Interest and monitoring are monthly rates. Weekly products collect every 7 days (4 weeks = 1 month). Existing loans keep their original schedule.</p>
       <div className="form-row">
-        <label>Monitoring fee %<input defaultValue={product.monitoringFeeAnnualRate} min={0} name="monitoringFeeAnnualRate" step="0.01" type="number" /></label>
+        <label>Monitoring fee % per month<input defaultValue={product.monitoringFeeAnnualRate} min={0} name="monitoringFeeAnnualRate" step="0.01" type="number" /></label>
       </div>
       <div className="form-row three">
         <label>Repayment count<input defaultValue={product.repaymentCount} min={1} name="repaymentCount" required step={1} type="number" /></label>

@@ -2,6 +2,14 @@ import Decimal from "decimal.js";
 
 export type RepaymentFrequency = Readonly<{ every: number; unit: "DAYS" | "WEEKS" | "MONTHS" }>;
 
+/** Existing loans and pending applications omit this and keep Actual/365 weekly math. */
+export const INTEREST_DAY_COUNT = {
+  ACTUAL_365: "ACTUAL_365",
+  FOUR_WEEK_MONTH: "FOUR_WEEK_MONTH",
+} as const;
+
+export type InterestDayCount = (typeof INTEREST_DAY_COUNT)[keyof typeof INTEREST_DAY_COUNT];
+
 export type ScheduleTerms = Readonly<{
   principalMinor: bigint;
   annualRateBps: number;
@@ -10,6 +18,7 @@ export type ScheduleTerms = Readonly<{
   repaymentFrequency: string;
   interestMethod: string;
   disbursedOn: Date;
+  interestDayCount?: InterestDayCount;
 }>;
 
 export type ScheduledInstallment = Readonly<{
@@ -31,8 +40,11 @@ export function generateRepaymentSchedule(terms: ScheduleTerms): ScheduledInstal
   const monitoringFeeAnnualRateBps = terms.monitoringFeeAnnualRateBps ?? 0;
   if (!Number.isInteger(monitoringFeeAnnualRateBps) || monitoringFeeAnnualRateBps < 0) throw new Error("Monitoring fee rate must be non-negative basis points");
   const frequency = parseRepaymentFrequency(terms.repaymentFrequency);
-  const periodicRate = getPeriodicRate(terms.annualRateBps, frequency);
-  const monitoringPeriodicRate = getPeriodicRate(monitoringFeeAnnualRateBps, frequency);
+  const dayCount = terms.interestDayCount === INTEREST_DAY_COUNT.FOUR_WEEK_MONTH
+    ? INTEREST_DAY_COUNT.FOUR_WEEK_MONTH
+    : INTEREST_DAY_COUNT.ACTUAL_365;
+  const periodicRate = getPeriodicRate(terms.annualRateBps, frequency, dayCount);
+  const monitoringPeriodicRate = getPeriodicRate(monitoringFeeAnnualRateBps, frequency, dayCount);
   const method = normalizeInterestMethod(terms.interestMethod);
   const installments = method === "FLAT"
     ? flatSchedule(terms.principalMinor, terms.repaymentCount, periodicRate)
@@ -54,6 +66,22 @@ export function parseRepaymentFrequency(value: string): RepaymentFrequency {
   const rawUnit = match[2];
   const unit = rawUnit.startsWith("DAY") ? "DAYS" : rawUnit.startsWith("WEEK") ? "WEEKS" : "MONTHS";
   return { every, unit };
+}
+
+export function readInterestDayCount(value: unknown): InterestDayCount {
+  return value === INTEREST_DAY_COUNT.FOUR_WEEK_MONTH
+    ? INTEREST_DAY_COUNT.FOUR_WEEK_MONTH
+    : INTEREST_DAY_COUNT.ACTUAL_365;
+}
+
+export function describeRepaymentCadence(frequency: RepaymentFrequency): string {
+  if (frequency.unit === "WEEKS") {
+    return frequency.every === 1 ? "every 7 days" : `every ${frequency.every * 7} days`;
+  }
+  if (frequency.unit === "MONTHS") {
+    return frequency.every === 1 ? "monthly" : `every ${frequency.every} months`;
+  }
+  return frequency.every === 1 ? "daily" : `every ${frequency.every} days`;
 }
 
 function flatSchedule(principal: bigint, count: number, periodicRate: Decimal) {
@@ -117,9 +145,16 @@ function addMonitoringFees(
   });
 }
 
-function getPeriodicRate(annualRateBps: number, frequency: RepaymentFrequency) {
+function getPeriodicRate(annualRateBps: number, frequency: RepaymentFrequency, dayCount: InterestDayCount) {
   const annual = new Decimal(annualRateBps).div(10_000);
   if (frequency.unit === "MONTHS") return annual.mul(frequency.every).div(12);
+  // New weekly/daily originations treat interest and maintenance as monthly rates
+  // (annual / 12) with a 4-week month, then split the term total across weekly due dates.
+  // Existing loans stay on Actual/365 so already-booked schedules do not move.
+  if (dayCount === INTEREST_DAY_COUNT.FOUR_WEEK_MONTH) {
+    if (frequency.unit === "WEEKS") return annual.mul(frequency.every).div(48);
+    return annual.mul(frequency.every).div(360);
+  }
   const days = frequency.unit === "WEEKS" ? frequency.every * 7 : frequency.every;
   return annual.mul(days).div(365);
 }

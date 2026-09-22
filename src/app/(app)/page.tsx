@@ -10,6 +10,7 @@ import { redirect } from "next/navigation";
 
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { ensureInvestorWorkspace } from "@/modules/investments/application/ensure-investor-workspace";
 import { formatMinor, loadDashboard } from "@/modules/reporting/application/dashboard";
 
 const ugxCurrencyFormatter = new Intl.NumberFormat("en-UG", {
@@ -33,6 +34,14 @@ export default async function Home() {
     // Investors have no staff workspace assignment -- route them to their own portal instead of
     // a dead-end "workspace required" screen (this also covers investors landing here directly,
     // e.g. via a bookmark, rather than through the sign-in page's "Investor portal" button).
+    const user = await prisma.user.findUnique({
+      where: { id: session.user.id },
+      select: { id: true, name: true, email: true, systemRole: true },
+    });
+    if (user?.systemRole === "INVESTOR") {
+      await ensureInvestorWorkspace(prisma, user);
+      redirect("/investor");
+    }
     const investor = await prisma.investorProfile.findUnique({ where: { userId: session.user.id }, select: { id: true } });
     if (investor) redirect("/investor");
 

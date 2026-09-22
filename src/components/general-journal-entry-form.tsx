@@ -48,7 +48,7 @@ export function GeneralJournalEntryForm({
   const router = useRouter();
   const [pending, setPending] = useState(false);
   const [selectedOfficeId, setSelectedOfficeId] = useState(officeId ?? offices[0]?.id ?? "");
-  const [currencyCode, setCurrencyCode] = useState(currencies[0]?.code ?? "");
+  const [currencyCode, setCurrencyCode] = useState(currencies.find((currency) => currency.code === "UGX")?.code ?? currencies[0]?.code ?? "");
   const [referenceNumber, setReferenceNumber] = useState("");
   const [businessDate, setBusinessDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [narration, setNarration] = useState("");
@@ -168,7 +168,7 @@ export function GeneralJournalEntryForm({
               options={accountOptions}
               defaultValue={line.accountId}
               placeholder="Search GL account..."
-              emptyMessage={noAccounts ? "No accounts enabled for manual entries in this currency" : "No matches"}
+              emptyMessage={noAccounts ? "No GL accounts in this currency" : "No matches"}
               onChange={(value) => updateLine(side, line.key, { accountId: value })}
             />
             <input
@@ -197,7 +197,7 @@ export function GeneralJournalEntryForm({
         {noAccounts ? (
           <aside className="configuration-note">
             <strong>Accounting setup required</strong>
-            <span>Enable &quot;Allow manual entries&quot; on at least two active detail accounts in this currency, in Chart of accounts.</span>
+            <span>No active detail GL accounts in this currency.</span>
           </aside>
         ) : null}
         <div className="form-row">

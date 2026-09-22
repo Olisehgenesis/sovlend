@@ -57,7 +57,7 @@ const permissionBlueprint: readonly PermissionBlueprintCategory[] = [
   {
     id: "administration",
     label: "Administration",
-    sections: [{ id: "administration-core", label: "Identity and configuration", codes: [permissions.userManage, permissions.permissionManage, permissions.auditView, permissions.productManage] }],
+    sections: [{ id: "administration-core", label: "Identity and configuration", codes: [permissions.userManage, permissions.permissionManage, permissions.auditView, permissions.productManage, permissions.investorAccessManage] }],
   },
 ] as const;
 

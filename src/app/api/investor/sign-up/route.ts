@@ -3,7 +3,7 @@ import { z } from "zod";
 
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { grantJumpStartAfricaAccess } from "@/modules/investments/application/grant-flagship-access";
+import { ensureInvestorWorkspace } from "@/modules/investments/application/ensure-investor-workspace";
 
 const schema = z.object({
   name: z.string().trim().min(2).max(120),
@@ -37,8 +37,7 @@ export async function POST(request: Request) {
   });
 
   try {
-    const investor = await prisma.investorProfile.create({ data: { userId: created.user.id, displayName: input.name } });
-    await grantJumpStartAfricaAccess(prisma, investor.id);
+    await ensureInvestorWorkspace(prisma, { id: created.user.id, name: input.name, email: input.email });
   } catch (error) {
     await prisma.user.delete({ where: { id: created.user.id } });
     throw error;

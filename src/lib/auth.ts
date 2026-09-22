@@ -6,15 +6,15 @@ import { nextCookies } from "better-auth/next-js";
 import { admin } from "better-auth/plugins";
 import { z } from "zod";
 
+import { ensureInvestorWorkspace } from "@/modules/investments/application/ensure-investor-workspace";
+
 import { prisma } from "./prisma";
+import { extraTrustedOriginsFromEnv, trustedOriginsForAuthUrl } from "./auth-trusted-origins";
 
 const baseUrl = process.env.BETTER_AUTH_URL ?? "http://localhost:3000";
 const authUrl = new URL(baseUrl);
 const rpId = authUrl.hostname;
-const localDevelopment = rpId === "localhost" || rpId === "127.0.0.1";
-const trustedOrigins = localDevelopment
-  ? ["http://localhost", "http://localhost:3000", "http://127.0.0.1", "http://127.0.0.1:3000"]
-  : [authUrl.origin];
+const trustedOrigins = trustedOriginsForAuthUrl(baseUrl, extraTrustedOriginsFromEnv());
 
 /**
  * Passkey-first investor sign-up. The client passes this (as JSON) via the passkey
@@ -99,11 +99,12 @@ export const auth = betterAuth({
         afterVerification: async ({ user, context }) => {
           // Only investor passkey-first sign-ups reach here with a matching context; staff
           // adding a passkey to their own account via settings passes no context at all.
-          if (!parseInvestorPasskeySignupContext(context)) return;
-          await prisma.investorProfile.upsert({
-            where: { userId: user.id },
-            update: {},
-            create: { userId: user.id, displayName: user.displayName ?? user.name },
+          const signup = parseInvestorPasskeySignupContext(context);
+          if (!signup) return;
+          await ensureInvestorWorkspace(prisma, {
+            id: user.id,
+            name: user.displayName ?? user.name,
+            email: signup.email,
           });
         },
       },

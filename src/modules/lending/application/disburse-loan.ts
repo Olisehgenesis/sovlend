@@ -35,6 +35,7 @@ const termsSchema = z.object({
   repaymentCount: z.number().int().positive(),
   repaymentFrequency: z.string(),
   interestMethod: z.string(),
+  interestDayCount: z.enum(["ACTUAL_365", "FOUR_WEEK_MONTH"]).optional(),
 });
 
 export type LoanDisbursementCommand = {
@@ -403,6 +404,7 @@ export async function disburseLoan(
     repaymentCount: terms.repaymentCount,
     repaymentFrequency: terms.repaymentFrequency,
     interestMethod: terms.interestMethod,
+    interestDayCount: terms.interestDayCount,
     disbursedOn: command.businessDate,
   });
 

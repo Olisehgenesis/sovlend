@@ -15,6 +15,10 @@ describe("loan application payload helpers", () => {
   it("strips undefined term fields while preserving valid overrides", () => {
     expect(buildTermsSnapshot({ annualRateBps: 2_400, arrearsToleranceMinor: undefined })).toEqual({ annualRateBps: 2_400 });
     expect(readTermsSnapshot({ annualRateBps: 2_400, unknown: "ignored" })).toEqual({ annualRateBps: 2_400 });
+    expect(buildTermsSnapshot({ annualRateBps: 2_400, interestDayCount: "FOUR_WEEK_MONTH" })).toEqual({
+      annualRateBps: 2_400,
+      interestDayCount: "FOUR_WEEK_MONTH",
+    });
   });
 
   it("round-trips charge and collateral snapshots in the approval-compatible shape", () => {

@@ -128,9 +128,9 @@ describe("saveAccountingRule", () => {
     ).rejects.toThrow("both the debit and credit side");
   });
 
-  it("rejects when a selected account is inactive, header, or manual-entries-disallowed", async () => {
+  it("rejects when a selected account is missing or not a postable detail account", async () => {
     const { prisma } = buildPrisma({ ledgerAccounts: [{ id: "expense-1", currencyCode: "UGX" }] });
-    await expect(saveAccountingRule(prisma, baseCommand)).rejects.toThrow("enabled for manual entries");
+    await expect(saveAccountingRule(prisma, baseCommand)).rejects.toThrow("Select active detail accounts");
   });
 
   it("rejects when the selected accounts do not share a currency", async () => {

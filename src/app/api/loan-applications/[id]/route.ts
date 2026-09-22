@@ -9,6 +9,7 @@ import { prisma } from "@/lib/prisma";
 import { AuthorizationService, PermissionDeniedError } from "@/modules/identity/application/authorization-service";
 import { getUserDataScope } from "@/modules/identity/application/data-scope";
 import { permissions } from "@/modules/identity/domain/permissions";
+import { STAFF_SYSTEM_ROLES } from "@/modules/identity/domain/staff-roles";
 import { canEditSubmittedLoanApplication } from "@/modules/lending/application/loan-application-access";
 import {
   buildChargeSnapshot,
@@ -136,7 +137,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   const [loanOfficer, fund] = await Promise.all([
     hasOwn(payload, "loanOfficerId") && parsed.data.loanOfficerId
       ? prisma.user.findFirst({
-          where: { id: parsed.data.loanOfficerId, organizationId: application.office.organizationId, systemRole: "LOAN_OFFICER" },
+          where: { id: parsed.data.loanOfficerId, organizationId: application.office.organizationId, systemRole: { in: [...STAFF_SYSTEM_ROLES] } },
         })
       : null,
     hasOwn(payload, "fundId") && parsed.data.fundId

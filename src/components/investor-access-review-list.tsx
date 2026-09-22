@@ -38,7 +38,7 @@ export function InvestorAccessReviewList({ requests }: { requests: AccessRequest
       <div className="empty-state">
         <Building2 size={28} />
         <strong>No pending requests</strong>
-        <p>New investor business-access requests will appear here for review.</p>
+        <p>New investor business-access requests will appear here with Approve and Reject. Public form submissions are in Inbound investor leads below.</p>
       </div>
     );
   }

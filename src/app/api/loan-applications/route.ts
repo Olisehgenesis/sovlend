@@ -8,6 +8,7 @@ import { prisma } from "@/lib/prisma";
 import { AuthorizationService, PermissionDeniedError } from "@/modules/identity/application/authorization-service";
 import { getUserDataScope } from "@/modules/identity/application/data-scope";
 import { permissions } from "@/modules/identity/domain/permissions";
+import { STAFF_SYSTEM_ROLES } from "@/modules/identity/domain/staff-roles";
 import {
   buildChargeSnapshot,
   buildCollateralSnapshot,
@@ -29,7 +30,7 @@ export async function POST(request: Request) {
       : prisma.group.findFirst({ where: { id: parsed.data.groupId, organizationId: scope.organizationId } }),
     prisma.loanProduct.findFirst({ where: { id: parsed.data.productId, organizationId: scope.organizationId, active: true } }),
     parsed.data.loanOfficerId
-      ? prisma.user.findFirst({ where: { id: parsed.data.loanOfficerId, organizationId: scope.organizationId, systemRole: "LOAN_OFFICER" } })
+      ? prisma.user.findFirst({ where: { id: parsed.data.loanOfficerId, organizationId: scope.organizationId, systemRole: { in: [...STAFF_SYSTEM_ROLES] } } })
       : null,
     parsed.data.fundId
       ? prisma.fund.findFirst({ where: { id: parsed.data.fundId, organizationId: scope.organizationId, isActive: true } })
@@ -72,7 +73,10 @@ export async function POST(request: Request) {
         purpose: parsed.data.purpose || null,
         externalId: parsed.data.externalId || null,
         applicationExpiresOn: parsed.data.applicationExpiresOn ? new Date(`${parsed.data.applicationExpiresOn}T00:00:00.000Z`) : null,
-        termsSnapshot: buildTermsSnapshot(parsed.data.terms),
+        termsSnapshot: buildTermsSnapshot({
+          ...parsed.data.terms,
+          interestDayCount: "FOUR_WEEK_MONTH",
+        }),
         chargesSnapshot: buildChargeSnapshot(parsed.data.charges),
         collateralSnapshot: buildCollateralSnapshot(parsed.data.collateral),
         status: "SUBMITTED",

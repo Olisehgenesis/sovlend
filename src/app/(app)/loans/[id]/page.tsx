@@ -10,6 +10,7 @@ import { LoanDocumentsPanel, LoanNotesPanel } from "@/components/loan-record-for
 import { LoanOfficerAssignment } from "@/components/loan-officer-assignment";
 import { LoanServiceActionsPanel } from "@/components/loan-service-actions-panel";
 import { DisburseLoanButton } from "@/components/disburse-loan-button";
+import { type LoanPreviewInput } from "@/components/loan-preview-panel";
 import { RecordPaymentButton } from "@/components/record-payment-button";
 import { LoanTopUpButton } from "@/components/loan-top-up-button";
 import { RepaymentForm } from "@/components/repayment-form";
@@ -21,6 +22,8 @@ import { prisma } from "@/lib/prisma";
 import { AuthorizationService } from "@/modules/identity/application/authorization-service";
 import { getUserDataScope } from "@/modules/identity/application/data-scope";
 import { permissions } from "@/modules/identity/domain/permissions";
+import { STAFF_SYSTEM_ROLES } from "@/modules/identity/domain/staff-roles";
+import { formatMonthlyPercent } from "@/modules/lending/domain/monthly-rate";
 import { formatMinor } from "@/modules/money/domain/format-minor";
 import {
   installmentDueMinor,
@@ -162,7 +165,13 @@ export default async function LoanPage({
     orderBy: [{ type: "asc" }, { name: "asc" }],
   });
   const officeOfficers = await prisma.user.findMany({
-    where: { organizationId: scope.organizationId, officeId: loan.officeId, systemRole: "LOAN_OFFICER" },
+    where: {
+      organizationId: scope.organizationId,
+      OR: [
+        ...(loan.loanOfficerId ? [{ id: loan.loanOfficerId }] : []),
+        { officeId: loan.officeId, systemRole: { in: [...STAFF_SYSTEM_ROLES] } },
+      ],
+    },
     select: { id: true, name: true },
     orderBy: { name: "asc" },
   });
@@ -264,6 +273,33 @@ export default async function LoanPage({
     Boolean(loan.disbursedOn) &&
     loan.transactions.every((item) => item.transactionType === "DISBURSEMENT");
   const canDisburseFromHeader = loan.status === "APPROVED" && !loan.disbursedOn;
+  const disbursePreview: LoanPreviewInput = {
+    borrowerLabel: owner?.name ?? "Unknown",
+    productName: loan.product.name,
+    currency: loan.denominationCurrency,
+    principalMinor: loan.principalMinor.toString(),
+    annualRatePercent: formatMonthlyPercent(
+      snapshotNumber(loan.termsSnapshot, "annualRateBps") ?? loan.product.annualRateBps,
+    ),
+    monitoringFeeAnnualRatePercent: formatMonthlyPercent(
+      snapshotNumber(loan.termsSnapshot, "monitoringFeeAnnualRateBps") ?? loan.product.monitoringFeeAnnualRateBps,
+    ),
+    repaymentCount: String(snapshotNumber(loan.termsSnapshot, "repaymentCount") ?? loan.product.repaymentCount),
+    repaymentFrequency: snapshotString(loan.termsSnapshot, "repaymentFrequency") ?? loan.product.repaymentFrequency,
+    interestMethod: snapshotString(loan.termsSnapshot, "interestMethod") ?? loan.product.interestMethod,
+    amortizationMethod: snapshotString(loan.termsSnapshot, "amortizationMethod") ?? loan.product.amortizationMethod,
+    interestDayCount: snapshotString(loan.termsSnapshot, "interestDayCount"),
+    firstRepaymentOn: snapshotString(loan.termsSnapshot, "firstRepaymentOn") ?? undefined,
+    charges: loan.charges.map((charge) => ({
+      name: charge.name,
+      amountLabel: formatMinor(charge.amountMinor, loan.denominationCurrency),
+    })),
+    collateralLabel:
+      loan.collateralItems.length > 0
+        ? loan.collateralItems.map((item) => item.type || item.description || "Collateral").join(", ")
+        : undefined,
+    officerName: loan.loanOfficer?.name ?? undefined,
+  };
   const isOpenLoan = ["ACTIVE", "IN_ARREARS", "OVERPAID"].includes(loan.status);
   const nextDueInstallment = [...schedule]
     .sort((left, right) => left.dueOn.getTime() - right.dueOn.getTime() || left.installmentNumber - right.installmentNumber)
@@ -317,6 +353,7 @@ export default async function LoanPage({
             <DisburseLoanButton
               loanId={loan.id}
               payoffLoanOptions={payoffLoanOptions}
+              preview={disbursePreview}
               savingsAccounts={savingsAccounts.map((account) => ({
                 id: account.id,
                 accountNumber: account.accountNumber,
@@ -507,11 +544,11 @@ export default async function LoanPage({
             <div>
               <dt>Interest rate</dt>
               <dd>
-                {(
-                  (snapshotNumber(loan.termsSnapshot, "annualRateBps") ??
-                    loan.product.annualRateBps) / 100
-                ).toFixed(2)}
-                % per annum
+                {formatMonthlyPercent(
+                  snapshotNumber(loan.termsSnapshot, "annualRateBps") ??
+                    loan.product.annualRateBps,
+                )}
+                % per month
               </dd>
             </div>
             <div>
@@ -526,11 +563,11 @@ export default async function LoanPage({
             <div>
               <dt>Monitoring fee</dt>
               <dd>
-                {(
-                  (snapshotNumber(loan.termsSnapshot, "monitoringFeeAnnualRateBps") ??
-                    loan.product.monitoringFeeAnnualRateBps) / 100
-                ).toFixed(2)}
-                % per annum
+                {formatMonthlyPercent(
+                  snapshotNumber(loan.termsSnapshot, "monitoringFeeAnnualRateBps") ??
+                    loan.product.monitoringFeeAnnualRateBps,
+                )}
+                % per month
               </dd>
             </div>
             <div>
@@ -953,7 +990,7 @@ export default async function LoanPage({
               <table className={isOpenLoan ? "clickable-rows" : ""}>
                 <thead>
                   <tr>
-                    <th>#</th>
+                    <th className="row-index">#</th>
                     <th>Due</th>
                     <th>Principal</th>
                     <th>Interest</th>
@@ -978,7 +1015,7 @@ export default async function LoanPage({
                           : "schedule-row-upcoming";
                     return (
                       <tr key={item.id} className={rowStatus}>
-                        <td>
+                        <td className="row-index">
                           {item.installmentNumber}
                           {isOpenLoan ? (
                             <Link

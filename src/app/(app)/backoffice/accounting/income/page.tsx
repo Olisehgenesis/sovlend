@@ -9,6 +9,7 @@ import { prisma } from "@/lib/prisma";
 import { AuthorizationService } from "@/modules/identity/application/authorization-service";
 import { getUserDataScope } from "@/modules/identity/application/data-scope";
 import { permissions } from "@/modules/identity/domain/permissions";
+import { postableLedgerAccountWhere } from "@/modules/ledger/domain/postable-ledger-account";
 
 export default async function RecordIncomePage() {
   const session = await auth.api.getSession({ headers: await headers() });
@@ -23,7 +24,7 @@ export default async function RecordIncomePage() {
   const user = await prisma.user.findUnique({ where: { id: session.user.id }, select: { officeId: true } });
   const [offices, ledgerAccounts, settlementAccounts] = await Promise.all([
     prisma.office.findMany({ where: { organizationId: scope.organizationId, ...(scope.officeIds ? { id: { in: [...scope.officeIds] } } : {}) }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
-    prisma.ledgerAccount.findMany({ where: { active: true, usage: "DETAIL", type: "REVENUE", manualEntriesAllowed: true }, select: { id: true, code: true, name: true }, orderBy: [{ code: "asc" }] }),
+    prisma.ledgerAccount.findMany({ where: { ...postableLedgerAccountWhere, type: "REVENUE" }, select: { id: true, code: true, name: true }, orderBy: [{ code: "asc" }] }),
     prisma.settlementAccount.findMany({ where: { organizationId: scope.organizationId, active: true }, select: { id: true, name: true, type: true }, orderBy: [{ type: "asc" }, { name: "asc" }] }),
   ]);
 

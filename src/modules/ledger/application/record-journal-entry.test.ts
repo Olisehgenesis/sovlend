@@ -129,15 +129,27 @@ describe("recordJournalEntry", () => {
     ).rejects.toThrow("greater than zero");
   });
 
-  it("rejects an account that isn't enabled for manual entries", async () => {
-    const { prisma } = buildPrisma({ accounts: [CASH, { ...SUSPENSE, manualEntriesAllowed: false }] });
+  it("posts to an imported detail account even when Fineract left Allow manual entries off", async () => {
+    const { prisma, journalLineCreateMany } = buildPrisma({
+      accounts: [CASH, { ...SUSPENSE, manualEntriesAllowed: false }],
+    });
+    await recordJournalEntry(prisma, {
+      ...baseCommand,
+      debits: [{ ledgerAccountId: "cash-1", amountMinor: 10_000n }],
+      credits: [{ ledgerAccountId: "suspense-1", amountMinor: 10_000n }],
+    });
+    expect(journalLineCreateMany).toHaveBeenCalled();
+  });
+
+  it("rejects a header account", async () => {
+    const { prisma } = buildPrisma({ accounts: [CASH, { ...SUSPENSE, usage: "HEADER" }] });
     await expect(
       recordJournalEntry(prisma, {
         ...baseCommand,
         debits: [{ ledgerAccountId: "cash-1", amountMinor: 10_000n }],
         credits: [{ ledgerAccountId: "suspense-1", amountMinor: 10_000n }],
       }),
-    ).rejects.toThrow(/manual entries/);
+    ).rejects.toThrow(/active detail account/);
   });
 
   it("rejects an account in a different currency than the entry", async () => {
