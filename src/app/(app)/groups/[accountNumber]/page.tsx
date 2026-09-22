@@ -1,4 +1,4 @@
-import { CircleDollarSign, CircleUserRound, PiggyBank, StickyNote, Users } from "lucide-react";
+import { AlertTriangle, CircleDollarSign, CircleUserRound, PiggyBank, StickyNote, Users } from "lucide-react";
 import { headers } from "next/headers";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
@@ -13,11 +13,13 @@ import { AuthorizationService } from "@/modules/identity/application/authorizati
 import { getUserDataScope, groupScopeWhere } from "@/modules/identity/application/data-scope";
 import { permissions } from "@/modules/identity/domain/permissions";
 import { STAFF_SYSTEM_ROLES } from "@/modules/identity/domain/staff-roles";
+import { installmentOutstandingMinor } from "@/modules/lending/domain/loan-outstanding";
 import { formatMinor } from "@/modules/money/domain/format-minor";
 
 const tabs = [
   { key: "general", label: "General", icon: CircleUserRound },
   { key: "members", label: "Members", icon: Users },
+  { key: "arrears", label: "Arrears", icon: AlertTriangle },
   { key: "savings", label: "Savings", icon: PiggyBank },
   { key: "loans", label: "Loans", icon: CircleDollarSign },
   { key: "notes", label: "Notes", icon: StickyNote },
@@ -49,6 +51,26 @@ function savingsAccountTypeLabel(accountType: string) {
   return accountType.replaceAll("_", " ");
 }
 
+type OpenInstallment = {
+  installmentNumber: number;
+  dueOn: Date;
+  principalDueMinor: bigint;
+  principalPaidMinor: bigint;
+  principalWaivedMinor: bigint;
+  interestDueMinor: bigint;
+  interestPaidMinor: bigint;
+  interestWaivedMinor: bigint;
+  feesDueMinor: bigint;
+  feesPaidMinor: bigint;
+  feesWaivedMinor: bigint;
+  penaltiesDueMinor: bigint;
+  penaltiesPaidMinor: bigint;
+  penaltiesWaivedMinor: bigint;
+  monitoringFeeDueMinor: bigint;
+  monitoringFeePaidMinor: bigint;
+  monitoringFeeWaivedMinor: bigint;
+};
+
 function outstandingPrincipalMinor(
   installments: Array<{ principalDueMinor: bigint; principalPaidMinor: bigint; principalWaivedMinor: bigint }>,
   principalWrittenOffMinor: bigint = 0n,
@@ -60,6 +82,55 @@ function outstandingPrincipalMinor(
   const outstanding = dueOutstanding - principalWrittenOffMinor;
   return outstanding > 0n ? outstanding : 0n;
 }
+
+function utcDay(date: Date) {
+  return Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate());
+}
+
+function arrearsOutstandingMinor(installments: readonly OpenInstallment[], asOf: Date) {
+  const asOfDay = utcDay(asOf);
+  return installments.reduce((sum, installment) => {
+    if (utcDay(installment.dueOn) >= asOfDay) return sum;
+    return sum + installmentOutstandingMinor(installment);
+  }, 0n);
+}
+
+function nextCollectionOn(installments: readonly OpenInstallment[]) {
+  const next = [...installments]
+    .filter((installment) => installmentOutstandingMinor(installment) > 0n)
+    .sort((left, right) => left.dueOn.getTime() - right.dueOn.getTime() || left.installmentNumber - right.installmentNumber)[0];
+  return next?.dueOn ?? null;
+}
+
+function earlierDate(left: Date | null, right: Date | null) {
+  if (!left) return right;
+  if (!right) return left;
+  return left.getTime() <= right.getTime() ? left : right;
+}
+
+function formatGroupDate(date: Date) {
+  return new Intl.DateTimeFormat("en-UG", { dateStyle: "medium", timeZone: "UTC" }).format(date);
+}
+
+const openInstallmentSelect = {
+  installmentNumber: true,
+  dueOn: true,
+  principalDueMinor: true,
+  principalPaidMinor: true,
+  principalWaivedMinor: true,
+  interestDueMinor: true,
+  interestPaidMinor: true,
+  interestWaivedMinor: true,
+  feesDueMinor: true,
+  feesPaidMinor: true,
+  feesWaivedMinor: true,
+  penaltiesDueMinor: true,
+  penaltiesPaidMinor: true,
+  penaltiesWaivedMinor: true,
+  monitoringFeeDueMinor: true,
+  monitoringFeePaidMinor: true,
+  monitoringFeeWaivedMinor: true,
+} as const;
 
 export default async function GroupDetailPage({ params, searchParams }: { params: Promise<{ accountNumber: string }>; searchParams: Promise<{ tab?: string }> }) {
   const session = await auth.api.getSession({ headers: await headers() });
@@ -93,7 +164,7 @@ export default async function GroupDetailPage({ params, searchParams }: { params
         },
       },
       notes: { orderBy: { createdAt: "desc" }, include: { author: { select: { name: true } } } },
-      loans: { where: { clientId: null }, orderBy: { createdAt: "desc" }, include: { product: true, installments: { select: { principalDueMinor: true, principalPaidMinor: true, principalWaivedMinor: true } } } },
+      loans: { where: { clientId: null }, orderBy: { createdAt: "desc" }, include: { product: true, installments: { select: openInstallmentSelect } } },
       savingsAccounts: {
         orderBy: { createdAt: "desc" },
         include: {
@@ -122,7 +193,7 @@ export default async function GroupDetailPage({ params, searchParams }: { params
         status: true,
         product: { select: { name: true } },
         client: { select: { accountNumber: true, firstName: true, middleName: true, lastName: true } },
-        installments: { select: { principalDueMinor: true, principalPaidMinor: true, principalWaivedMinor: true } },
+        installments: { select: openInstallmentSelect },
         principalWrittenOffMinor: true,
       },
     }),
@@ -136,13 +207,35 @@ export default async function GroupDetailPage({ params, searchParams }: { params
     }),
   ]);
 
-  const memberLoanSummary = new Map<string, { activeLoanCount: number; outstandingPrincipalMinor: bigint; currencyCode: string }>();
+  const today = new Date();
+  const memberLoanSummary = new Map<
+    string,
+    {
+      activeLoanCount: number;
+      outstandingPrincipalMinor: bigint;
+      currencyCode: string;
+      inArrears: boolean;
+      arrearsMinor: bigint;
+      nextCollectionOn: Date | null;
+    }
+  >();
   for (const loan of memberLoans) {
     if (!loan.clientId) continue;
-    const summary = memberLoanSummary.get(loan.clientId) ?? { activeLoanCount: 0, outstandingPrincipalMinor: 0n, currencyCode: loan.denominationCurrency };
+    const summary = memberLoanSummary.get(loan.clientId) ?? {
+      activeLoanCount: 0,
+      outstandingPrincipalMinor: 0n,
+      currencyCode: loan.denominationCurrency,
+      inArrears: false,
+      arrearsMinor: 0n,
+      nextCollectionOn: null,
+    };
     if (ACTIVE_MEMBER_LOAN_STATUSES.has(loan.status)) {
       summary.activeLoanCount += 1;
       summary.outstandingPrincipalMinor += outstandingPrincipalMinor(loan.installments, loan.principalWrittenOffMinor);
+      const loanArrears = arrearsOutstandingMinor(loan.installments, today);
+      summary.arrearsMinor += loanArrears;
+      if (loan.status === "IN_ARREARS" || loanArrears > 0n) summary.inArrears = true;
+      summary.nextCollectionOn = earlierDate(summary.nextCollectionOn, nextCollectionOn(loan.installments));
     }
     memberLoanSummary.set(loan.clientId, summary);
   }
@@ -166,12 +259,25 @@ export default async function GroupDetailPage({ params, searchParams }: { params
     0n,
   );
   const groupOwnedActiveLoanCount = group.loans.filter((loan) => ACTIVE_MEMBER_LOAN_STATUSES.has(loan.status)).length;
+  const groupOwnedArrearsMinor = group.loans.reduce(
+    (sum, loan) => sum + (ACTIVE_MEMBER_LOAN_STATUSES.has(loan.status) ? arrearsOutstandingMinor(loan.installments, today) : 0n),
+    0n,
+  );
+  const groupOwnedNextCollection = group.loans.reduce<Date | null>((soonest, loan) => {
+    if (!ACTIVE_MEMBER_LOAN_STATUSES.has(loan.status)) return soonest;
+    return earlierDate(soonest, nextCollectionOn(loan.installments));
+  }, null);
 
   const memberSavingsMinor = [...memberSavingsSummary.values()].reduce((sum, summary) => sum + summary.totalBalanceMinor, 0n);
   const memberSavingsAccountCount = [...memberSavingsSummary.values()].reduce((sum, summary) => sum + summary.accountCount, 0);
   const totalSavingsMinor = memberSavingsMinor + groupOwnedSavingsMinor;
-  const totalLoanOutstandingMinor = [...memberLoanSummary.values()].reduce((sum, summary) => sum + summary.outstandingPrincipalMinor, 0n) + groupOwnedLoanOutstandingMinor;
   const totalActiveLoans = [...memberLoanSummary.values()].reduce((sum, summary) => sum + summary.activeLoanCount, 0) + groupOwnedActiveLoanCount;
+  const membersInArrears = group.members.filter((member) => memberLoanSummary.get(member.clientId)?.inArrears).length;
+  const totalArrearsMinor = [...memberLoanSummary.values()].reduce((sum, summary) => sum + summary.arrearsMinor, 0n) + groupOwnedArrearsMinor;
+  const nextGroupCollection = [...memberLoanSummary.values()].reduce<Date | null>(
+    (soonest, summary) => earlierDate(soonest, summary.nextCollectionOn),
+    groupOwnedNextCollection,
+  );
   const totalSavingsAccountCount = memberSavingsAccountCount + group.savingsAccounts.length;
   const summaryCurrencyCode =
     group.savingsAccounts[0]?.currencyCode ??
@@ -214,10 +320,20 @@ export default async function GroupDetailPage({ params, searchParams }: { params
         </div>
       </header>
 
-      <section className="loan-summary-metrics" aria-label="Group summary">
+      <section className="loan-summary-metrics group-summary-metrics" aria-label="Group summary">
         <article>
           <span>Total Members</span>
           <strong>{group.members.length.toLocaleString()}</strong>
+        </article>
+        <article>
+          <span>Members in arrears</span>
+          <strong className={membersInArrears > 0 ? "is-arrears" : undefined}>{membersInArrears.toLocaleString()}</strong>
+        </article>
+        <article>
+          <span>Arrears</span>
+          <strong className={totalArrearsMinor > 0n ? "is-arrears" : undefined}>
+            {formatMinor(totalArrearsMinor, summaryCurrencyCode)}
+          </strong>
         </article>
         <article>
           <span>Active Loans</span>
@@ -229,8 +345,8 @@ export default async function GroupDetailPage({ params, searchParams }: { params
           <small>{totalSavingsAccountCount.toLocaleString()} account(s)</small>
         </article>
         <article>
-          <span>Total Loan Outstanding</span>
-          <strong>{formatMinor(totalLoanOutstandingMinor, summaryCurrencyCode)}</strong>
+          <span>Next collection</span>
+          <strong>{nextGroupCollection ? formatGroupDate(nextGroupCollection) : "—"}</strong>
         </article>
       </section>
 
@@ -322,24 +438,39 @@ export default async function GroupDetailPage({ params, searchParams }: { params
                     <th>Status</th>
                     <th>Loans</th>
                     <th>Savings</th>
+                    <th>Next collection</th>
                   </tr>
                 </thead>
                 <tbody>
                   {group.members.map((member) => {
-                    const loanSummary = memberLoanSummary.get(member.clientId) ?? { activeLoanCount: 0, outstandingPrincipalMinor: 0n, currencyCode: "UGX" };
+                    const loanSummary = memberLoanSummary.get(member.clientId) ?? {
+                      activeLoanCount: 0,
+                      outstandingPrincipalMinor: 0n,
+                      currencyCode: "UGX",
+                      inArrears: false,
+                      arrearsMinor: 0n,
+                      nextCollectionOn: null,
+                    };
                     const savingsSummary = memberSavingsSummary.get(member.clientId) ?? { accountCount: 0, totalBalanceMinor: 0n, currencyCode: "UGX" };
                     const memberName = fullName(member.client);
                     return (
-                      <tr key={member.id}>
+                      <tr className={loanSummary.inArrears ? "member-in-arrears" : undefined} key={member.id}>
                         <td className="mono">{member.client.accountNumber}</td>
                         <td>
                           <div className="person-cell">
                             <EntityAvatar genderCode={member.client.genderCode} name={memberName} photoUrl={member.client.photoDocumentId ? `/api/documents/${member.client.photoDocumentId}` : null} seed={member.clientId} size={28} />
-                            <span className="person-copy"><strong>{memberName}</strong></span>
+                            <span className="person-copy">
+                              <strong>{memberName}</strong>
+                              {loanSummary.inArrears ? <small className="arrears-mark">In arrears · {formatMinor(loanSummary.arrearsMinor, loanSummary.currencyCode)}</small> : null}
+                            </span>
                             <Link className="row-link" href={`/clients/${member.client.accountNumber}`} aria-label={`Open ${memberName}`} />
                           </div>
                         </td>
-                        <td><span className={`status ${member.client.status === "ACTIVE" ? "up-to-date" : "review"}`}>{member.client.status}</span></td>
+                        <td>
+                          <span className={`status ${loanSummary.inArrears ? "arrears-mark" : member.client.status === "ACTIVE" ? "up-to-date" : "review"}`}>
+                            {loanSummary.inArrears ? "In arrears" : member.client.status}
+                          </span>
+                        </td>
                         <td>
                           <strong>{loanSummary.activeLoanCount} active loan{loanSummary.activeLoanCount === 1 ? "" : "s"}</strong>
                           <br />
@@ -350,6 +481,7 @@ export default async function GroupDetailPage({ params, searchParams }: { params
                           <br />
                           <small>{formatMinor(savingsSummary.totalBalanceMinor, savingsSummary.currencyCode)} balance</small>
                         </td>
+                        <td>{loanSummary.nextCollectionOn ? formatGroupDate(loanSummary.nextCollectionOn) : "—"}</td>
                       </tr>
                     );
                   })}
@@ -358,6 +490,68 @@ export default async function GroupDetailPage({ params, searchParams }: { params
             </div>
           )}
           <AddGroupMemberForm groupId={group.id} />
+        </section>
+      ) : null}
+
+      {activeTab === "arrears" ? (
+        <section className="panel">
+          <div className="panel-heading">
+            <div>
+              <h2>Arrears</h2>
+              <p>
+                {membersInArrears.toLocaleString()} member{membersInArrears === 1 ? "" : "s"} behind ·{" "}
+                {formatMinor(totalArrearsMinor, summaryCurrencyCode)} overdue
+                {nextGroupCollection ? ` · next collection ${formatGroupDate(nextGroupCollection)}` : ""}
+              </p>
+            </div>
+          </div>
+          {membersInArrears === 0 ? (
+            <div className="empty-state compact-empty">
+              <AlertTriangle size={26} />
+              <strong>No members in arrears</strong>
+              <p>Everyone in this group is current on their collections.</p>
+            </div>
+          ) : (
+            <div className="table-scroll">
+              <table className="clickable-rows">
+                <thead>
+                  <tr>
+                    <th>Account #</th>
+                    <th>Member</th>
+                    <th>Arrears</th>
+                    <th>Active loans</th>
+                    <th>Next collection</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {group.members
+                    .filter((member) => memberLoanSummary.get(member.clientId)?.inArrears)
+                    .map((member) => {
+                      const loanSummary = memberLoanSummary.get(member.clientId)!;
+                      const memberName = fullName(member.client);
+                      return (
+                        <tr className="member-in-arrears" key={member.id}>
+                          <td className="mono">{member.client.accountNumber}</td>
+                          <td>
+                            <div className="person-cell">
+                              <EntityAvatar genderCode={member.client.genderCode} name={memberName} photoUrl={member.client.photoDocumentId ? `/api/documents/${member.client.photoDocumentId}` : null} seed={member.clientId} size={28} />
+                              <span className="person-copy">
+                                <strong>{memberName}</strong>
+                                <small className="arrears-mark">In arrears</small>
+                              </span>
+                              <Link className="row-link" href={`/clients/${member.client.accountNumber}`} aria-label={`Open ${memberName}`} />
+                            </div>
+                          </td>
+                          <td className="is-arrears">{formatMinor(loanSummary.arrearsMinor, loanSummary.currencyCode)}</td>
+                          <td>{loanSummary.activeLoanCount}</td>
+                          <td>{loanSummary.nextCollectionOn ? formatGroupDate(loanSummary.nextCollectionOn) : "—"}</td>
+                        </tr>
+                      );
+                    })}
+                </tbody>
+              </table>
+            </div>
+          )}
         </section>
       ) : null}
 
