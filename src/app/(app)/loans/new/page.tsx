@@ -11,6 +11,7 @@ import { clientScopeWhere, getUserDataScope, groupScopeWhere, officeWhere } from
 import { STAFF_SYSTEM_ROLES } from "@/modules/identity/domain/staff-roles";
 import { canSelfApproveLoanApplication } from "@/modules/lending/application/loan-application-access";
 import { formatMonthlyPercent } from "@/modules/lending/domain/monthly-rate";
+import { formatMinor } from "@/modules/money/domain/format-minor";
 
 export default async function NewLoanApplicationPage({ searchParams }: { searchParams: Promise<{ query?: string; clientId?: string; groupId?: string }> }) {
   const session = await auth.api.getSession({ headers: await headers() });
