@@ -18,8 +18,10 @@ import {
 
 import {
   LIF_SAVINGS_SHORT_NAME,
+  MEMBER_CONTRIBUTION_SAVINGS_SHORT_NAME,
   SECURITY_SAVINGS_SHORT_NAME,
   buildDisbursementPayoutChoice,
+  disbursementCashToMemberMinor,
   extraDisbursementChargesMinor,
   isStatutoryDisbursementCharge,
   type OpenLoanForPayout,
@@ -525,6 +527,15 @@ export async function disburseLoan(
           shortName: LIF_SAVINGS_SHORT_NAME,
           missingLabel: "Loan insurance fund",
         });
+        const contributionAccount = await ensureProductSavingsAccount(transaction, {
+          clientId: loan.clientId,
+          groupId: loan.groupId,
+          organizationId: loan.office.organizationId,
+          currencyCode: loan.denominationCurrency,
+          ownerAccountNumber,
+          shortName: MEMBER_CONTRIBUTION_SAVINGS_SHORT_NAME,
+          missingLabel: "Member contribution",
+        });
         const securityAccount = await ensureProductSavingsAccount(transaction, {
           clientId: loan.clientId,
           groupId: loan.groupId,
@@ -566,6 +577,7 @@ export async function disburseLoan(
           liquidateLoanId: command.topUpOfLoanId,
         });
         const payout = choice.payout;
+        const contributionCreditMinor = disbursementCashToMemberMinor(payout);
         const netProceedsMinor = payout.withdrawableMinor;
 
         const processingIncomeAccountId =
@@ -587,6 +599,11 @@ export async function disburseLoan(
           organizationId: loan.office.organizationId,
           savingsProductId: lifAccount.product?.id ?? lifAccount.productId,
           savingsProductShortName: lifAccount.product?.shortName ?? LIF_SAVINGS_SHORT_NAME,
+        });
+        const contributionLiabilityAccountId = await resolveSavingsLiabilityAccountId(transaction, {
+          organizationId: loan.office.organizationId,
+          savingsProductId: contributionAccount.product?.id ?? contributionAccount.productId,
+          savingsProductShortName: contributionAccount.product?.shortName ?? MEMBER_CONTRIBUTION_SAVINGS_SHORT_NAME,
         });
         const securityLiabilityAccountId = await resolveSavingsLiabilityAccountId(transaction, {
           organizationId: loan.office.organizationId,
@@ -702,7 +719,7 @@ export async function disburseLoan(
           transactionType: "DISBURSEMENT",
           businessDate: command.businessDate,
           settlementCurrency: loan.denominationCurrency,
-          settlementChannel: paymentMethodAccount?.name ?? `Savings ${securityAccount.accountNumber}`,
+          settlementChannel: paymentMethodAccount?.name ?? `Savings ${contributionAccount.accountNumber}`,
           settlementAccountId: paymentMethodAccount?.id,
           settlementAmountMinor: netProceedsMinor,
           denominationAmountMinor: loan.principalMinor,
@@ -736,13 +753,23 @@ export async function disburseLoan(
           idempotencyKey: `loan-disbursement:${transactionRecord.id}:lif-release`,
           postJournal: false,
         });
-      }
-      if (netProceedsMinor > 0n) {
         await recordSavingsTransactionInTransaction(transaction, {
           savingsAccountId: securityAccount.id,
           actorUserId: command.actorUserId,
           transactionType: "DEPOSIT",
-          amountMinor: netProceedsMinor,
+          amountMinor: payout.lifReleasedToSecurityMinor,
+          reason: "Loan insurance fund surplus",
+          externalReference: command.externalReference ?? `LIF surplus ${loan.accountNumber}`,
+          idempotencyKey: `loan-disbursement:${transactionRecord.id}:security-lif-release`,
+          postJournal: false,
+        });
+      }
+      if (contributionCreditMinor > 0n) {
+        await recordSavingsTransactionInTransaction(transaction, {
+          savingsAccountId: contributionAccount.id,
+          actorUserId: command.actorUserId,
+          transactionType: "DEPOSIT",
+          amountMinor: contributionCreditMinor,
           reason: "Loan disbursement",
           externalReference:
             command.externalReference ?? `Loan disbursement ${loan.accountNumber}`,
@@ -810,14 +837,25 @@ export async function disburseLoan(
               },
             ]
           : []),
-        ...(netProceedsMinor > 0n
+        ...(payout.lifReleasedToSecurityMinor > 0n
           ? [
               {
                 accountId: securityLiabilityAccountId,
                 currencyCode: loan.denominationCurrency,
                 direction: "CREDIT" as const,
-                amountMinor: netProceedsMinor,
+                amountMinor: payout.lifReleasedToSecurityMinor,
                 memo: securityAccount.accountNumber,
+              },
+            ]
+          : []),
+        ...(contributionCreditMinor > 0n
+          ? [
+              {
+                accountId: contributionLiabilityAccountId,
+                currencyCode: loan.denominationCurrency,
+                direction: "CREDIT" as const,
+                amountMinor: contributionCreditMinor,
+                memo: contributionAccount.accountNumber,
               },
             ]
           : []),
@@ -854,8 +892,8 @@ export async function disburseLoan(
         transactionId: transactionRecord.id,
         paymentMethodAccountId: paymentMethodAccount?.id ?? null,
         paymentMethodAccount: paymentMethodAccount?.name ?? null,
-        savingsAccountId: securityAccount.id,
-        savingsAccountNumber: securityAccount.accountNumber,
+        savingsAccountId: contributionAccount.id,
+        savingsAccountNumber: contributionAccount.accountNumber,
         principalMinor: loan.principalMinor.toString(),
         feesMinor: extraChargesMinor.toString(),
         netProceedsMinor: netProceedsMinor.toString(),

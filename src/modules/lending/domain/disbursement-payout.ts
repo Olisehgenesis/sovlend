@@ -11,6 +11,7 @@ export const CRB_INCOME_MINOR = 500_000n;
 
 export const LIF_SAVINGS_SHORT_NAME = "LAS";
 export const SECURITY_SAVINGS_SHORT_NAME = "cs";
+export const MEMBER_CONTRIBUTION_SAVINGS_SHORT_NAME = "MSA";
 
 export type DisbursementPayout = Readonly<{
   principalMinor: bigint;
@@ -140,6 +141,12 @@ export function buildDisbursementPayoutChoice(input: {
     remainingWithdrawMinor: payout.withdrawableMinor - payoffMinor,
     fullyClosesPrevious: canFullyClose,
   };
+}
+
+/** Cash credited to member contributions after LIF surplus is parked on loan security payable. */
+export function disbursementCashToMemberMinor(payout: DisbursementPayout, payoffMinor = 0n) {
+  const cash = payout.withdrawableMinor - payout.lifReleasedToSecurityMinor - payoffMinor;
+  return cash > 0n ? cash : 0n;
 }
 
 export type DisbursementOverviewLine = Readonly<{

@@ -36,7 +36,35 @@ export function parseServiceActionPayload(actionType: LoanServiceActionType, pay
   return reversalPayloadSchema.parse(payload);
 }
 
+function isBlockingUndoTransaction(type: string) {
+  return type !== "DISBURSEMENT" && type !== "DISBURSEMENT_REVERSAL";
+}
+
+function isInternalDisbursementSavingsKey(key: string | null) {
+  if (!key) return false;
+  return key.startsWith("loan-disbursement:") || key.startsWith("topup-payoff:") || key.endsWith(":undo");
+}
+
 const openLoanStatuses = ["ACTIVE", "IN_ARREARS", "OVERPAID"] as const;
+
+async function assertDisbursementNotCashedOut(db: PrismaClient | Prisma.TransactionClient, disbursementId: string) {
+  const credit = await db.savingsTransaction.findUnique({
+    where: { idempotencyKey: buildLoanDisbursementSavingsIdempotencyKey(disbursementId, "credit") },
+    select: { savingsAccountId: true, createdAt: true },
+  });
+  if (!credit) return;
+  const laterWithdrawals = await db.savingsTransaction.findMany({
+    where: {
+      savingsAccountId: credit.savingsAccountId,
+      transactionType: "WITHDRAWAL",
+      createdAt: { gt: credit.createdAt },
+    },
+    select: { idempotencyKey: true },
+  });
+  if (laterWithdrawals.some((item) => !isInternalDisbursementSavingsKey(item.idempotencyKey))) {
+    throw new Error("This disbursement has already been cashed out and cannot be undone");
+  }
+}
 
 /**
  * Stage a high-risk servicing action for maker-checker review. The requesting user's
@@ -58,10 +86,11 @@ export async function requestLoanServiceAction(
 
   if (command.actionType === "UNDO_DISBURSAL") {
     if (loan.status !== "ACTIVE" || !loan.disbursedOn) throw new Error("Only active, disbursed loans can have disbursal undone");
-    const nonDisbursement = loan.transactions.filter((item) => item.transactionType !== "DISBURSEMENT");
+    const nonDisbursement = loan.transactions.filter((item) => isBlockingUndoTransaction(item.transactionType));
     if (nonDisbursement.length > 0) throw new Error("Cannot undo disbursal after other transactions have been posted against this loan");
-    const disbursement = loan.transactions.find((item) => item.transactionType === "DISBURSEMENT");
+    const disbursement = loan.transactions.find((item) => item.transactionType === "DISBURSEMENT" && !item.reversedById);
     if (!disbursement || disbursement.reversedById) throw new Error("Disbursement transaction is unavailable for reversal");
+    await assertDisbursementNotCashedOut(prisma, disbursement.id);
   } else if (command.actionType === "PREPAY") {
     if (!openLoanStatuses.includes(loan.status as (typeof openLoanStatuses)[number])) throw new Error("Loan is not open for prepayment");
   } else if (command.actionType === "FORECLOSURE") {
@@ -146,16 +175,24 @@ export async function previewLoanPayoff(
 
 type Tx = Prisma.TransactionClient;
 
-async function executeUndoDisbursal(tx: Tx, loanId: string, payload: UndoDisbursalPayload, requestId: string, actorUserId: string) {
+async function executeUndoDisbursal(
+  tx: Tx,
+  loanId: string,
+  payload: UndoDisbursalPayload,
+  requestId: string,
+  actorUserId: string,
+  reason?: string,
+) {
   const current = await tx.loan.findUniqueOrThrow({
     where: { id: loanId },
     include: { transactions: true },
   });
   if (current.status !== "ACTIVE" || !current.disbursedOn) throw new Error("Loan is not in a disbursed state");
-  const nonDisbursement = current.transactions.filter((item) => item.transactionType !== "DISBURSEMENT");
+  const nonDisbursement = current.transactions.filter((item) => isBlockingUndoTransaction(item.transactionType));
   if (nonDisbursement.length > 0) throw new Error("Cannot undo disbursal after other transactions have been posted against this loan");
-  const disbursement = current.transactions.find((item) => item.transactionType === "DISBURSEMENT");
+  const disbursement = current.transactions.find((item) => item.transactionType === "DISBURSEMENT" && !item.reversedById);
   if (!disbursement || disbursement.reversedById) throw new Error("Disbursement transaction is unavailable for reversal");
+  await assertDisbursementNotCashedOut(tx, disbursement.id);
   const originalJournal = await tx.journal.findFirst({
     where: { referenceType: "LOAN_DISBURSEMENT", referenceId: disbursement.id },
     include: { lines: true },
@@ -171,6 +208,7 @@ async function executeUndoDisbursal(tx: Tx, loanId: string, payload: UndoDisburs
           buildLoanDisbursementSavingsIdempotencyKey(disbursement.id, "credit"),
           `loan-disbursement:${disbursement.id}:lif-hold`,
           `loan-disbursement:${disbursement.id}:lif-release`,
+          `loan-disbursement:${disbursement.id}:security-lif-release`,
         ],
       },
     },
@@ -228,14 +266,27 @@ async function executeUndoDisbursal(tx: Tx, loanId: string, payload: UndoDisburs
 
   await tx.loan.update({ where: { id: current.id }, data: { status: "APPROVED", disbursedOn: null, maturesOn: null } });
 
-  await recordServiceAudit(tx, { loanId: current.id, actorUserId, action: "loan.disbursement.undone", metadata: { loanId: current.id, requestId, reversalTransactionId: reversal.id } });
+  await recordServiceAudit(tx, {
+    loanId: current.id,
+    actorUserId,
+    action: "loan.disbursement.undone",
+    metadata: { loanId: current.id, requestId, reversalTransactionId: reversal.id, reason: reason ?? null },
+  });
   return reversal.id;
 }
 
 export async function undoLoanDisbursalNow(
   prisma: PrismaClient,
-  command: { loanId: string; actorUserId: string; businessDate: string },
+  command: { loanId: string; actorUserId: string; businessDate: string; reason?: string },
 ) {
+  const loan = await prisma.loan.findUnique({ where: { id: command.loanId }, include: { office: true } });
+  if (!loan) throw new Error("Loan not found");
+  await new AuthorizationService(prisma).assertAllowed({
+    actorUserId: command.actorUserId,
+    permission: permissions.loanReverse,
+    organizationId: loan.office.organizationId,
+    officeId: loan.officeId,
+  });
   const requestId = randomUUID();
   return prisma.$transaction(
     async (tx) =>
@@ -245,6 +296,7 @@ export async function undoLoanDisbursalNow(
         { businessDate: command.businessDate },
         requestId,
         command.actorUserId,
+        command.reason,
       ),
     { isolationLevel: "Serializable" },
   );

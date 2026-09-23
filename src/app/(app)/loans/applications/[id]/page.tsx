@@ -19,7 +19,7 @@ import { STAFF_SYSTEM_ROLES } from "@/modules/identity/domain/staff-roles";
 import { canEditSubmittedLoanApplication, canSelfApproveLoanApplication } from "@/modules/lending/application/loan-application-access";
 import { isLoanApplicationExpired } from "@/modules/lending/application/loan-application-expiry";
 import { readChargeSnapshot, readCollateralSnapshot, readTermsSnapshot } from "@/modules/lending/application/loan-application-payload";
-import { isStatutoryDisbursementCharge, LIF_SAVINGS_SHORT_NAME, SECURITY_SAVINGS_SHORT_NAME } from "@/modules/lending/domain/disbursement-payout";
+import { isStatutoryDisbursementCharge, LIF_SAVINGS_SHORT_NAME, MEMBER_CONTRIBUTION_SAVINGS_SHORT_NAME, SECURITY_SAVINGS_SHORT_NAME } from "@/modules/lending/domain/disbursement-payout";
 import { loanOutstandingMinor } from "@/modules/lending/domain/loan-outstanding";
 import { formatMonthlyPercent } from "@/modules/lending/domain/monthly-rate";
 import { formatMinor } from "@/modules/money/domain/format-minor";
@@ -262,6 +262,7 @@ export default async function LoanApplicationPage({
   };
   const lifAccount = savingsAccounts.find((account) => account.product?.shortName === LIF_SAVINGS_SHORT_NAME);
   const securityAccount = savingsAccounts.find((account) => account.product?.shortName === SECURITY_SAVINGS_SHORT_NAME);
+  const contributionAccount = savingsAccounts.find((account) => account.product?.shortName === MEMBER_CONTRIBUTION_SAVINGS_SHORT_NAME);
   const payoffLoanOptions = otherClientLoans
     .map((item) => ({
       id: item.id,
@@ -286,6 +287,7 @@ export default async function LoanApplicationPage({
     })),
     lifAccountNumber: lifAccount?.accountNumber,
     securityAccountNumber: securityAccount?.accountNumber,
+    contributionAccountNumber: contributionAccount?.accountNumber,
   };
 
   const actionPanel =

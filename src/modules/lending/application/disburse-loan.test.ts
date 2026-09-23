@@ -87,8 +87,15 @@ function buildPrismaMock(options: MockOptions = {}) {
     {
       id: "savings-security",
       accountNumber: "SV-SEC",
-      isDefault: true,
+      isDefault: false,
       productShortName: "cs",
+      openingBalanceMinor: 0n,
+    },
+    {
+      id: "savings-contribution",
+      accountNumber: "SV-MSA",
+      isDefault: true,
+      productShortName: "MSA",
       openingBalanceMinor: 0n,
     },
   ];
@@ -347,7 +354,7 @@ describe("disburseLoan", () => {
     authorizationState.seenContexts = [];
   });
 
-  it("credits loan security payable net of LIF, processing, and CRB, and keeps the journal balanced", async () => {
+  it("credits member contributions net of LIF, processing, and CRB, and keeps the journal balanced", async () => {
     const { prisma, captures } = buildPrismaMock({ charges: [] });
 
     await disburseLoan(prisma, {
@@ -359,7 +366,7 @@ describe("disburseLoan", () => {
     });
 
     expect(captures.loanTransactionData).toMatchObject({
-      settlementChannel: "Savings SV-SEC",
+      settlementChannel: "Savings SV-MSA",
       settlementAccountId: undefined,
       settlementAmountMinor: 56_600_000n,
       denominationAmountMinor: 70_000_000n,
@@ -372,7 +379,7 @@ describe("disburseLoan", () => {
           amountMinor: 10_500_000n,
         }),
         expect.objectContaining({
-          savingsAccountId: "savings-security",
+          savingsAccountId: "savings-contribution",
           transactionType: "DEPOSIT",
           amountMinor: 56_600_000n,
           reason: "Loan disbursement",
@@ -385,7 +392,7 @@ describe("disburseLoan", () => {
       { journalId: "journal-1", accountId: "ledger-crb-income", direction: "CREDIT", amountMinor: 500_000n, memo: "CRB income" },
       { journalId: "journal-1", accountId: "ledger-crb-payable", direction: "CREDIT", amountMinor: 1_000_000n, memo: "CRB payable" },
       { journalId: "journal-1", accountId: "ledger-lif", direction: "CREDIT", amountMinor: 10_500_000n, memo: "SV-LIF" },
-      { journalId: "journal-1", accountId: "ledger-security", direction: "CREDIT", amountMinor: 56_600_000n, memo: "SV-SEC" },
+      { journalId: "journal-1", accountId: "ledger-savings-liability", direction: "CREDIT", amountMinor: 56_600_000n, memo: "SV-MSA" },
     ]);
     expect(captures.chargeUpdateArgs).toBeNull();
     expectBalanced(captures.journalLines as unknown[]);
@@ -416,7 +423,7 @@ describe("disburseLoan", () => {
       { journalId: "journal-1", accountId: "ledger-crb-income", direction: "CREDIT", amountMinor: 500_000n, memo: "CRB income" },
       { journalId: "journal-1", accountId: "ledger-crb-payable", direction: "CREDIT", amountMinor: 1_000_000n, memo: "CRB payable" },
       { journalId: "journal-1", accountId: "ledger-lif", direction: "CREDIT", amountMinor: 10_500_000n, memo: "SV-LIF" },
-      { journalId: "journal-1", accountId: "ledger-security", direction: "CREDIT", amountMinor: 56_450_000n, memo: "SV-SEC" },
+      { journalId: "journal-1", accountId: "ledger-savings-liability", direction: "CREDIT", amountMinor: 56_450_000n, memo: "SV-MSA" },
     ]);
     expect(captures.chargeUpdateArgs).toMatchObject({
       where: { id: { in: ["charge-1", "charge-2"] } },
@@ -447,7 +454,7 @@ describe("disburseLoan", () => {
       { journalId: "journal-1", accountId: "ledger-crb-income", direction: "CREDIT", amountMinor: 500_000n, memo: "CRB income" },
       { journalId: "journal-1", accountId: "ledger-crb-payable", direction: "CREDIT", amountMinor: 1_000_000n, memo: "CRB payable" },
       { journalId: "journal-1", accountId: "ledger-lif", direction: "CREDIT", amountMinor: 10_500_000n, memo: "SV-LIF" },
-      { journalId: "journal-1", accountId: "ledger-security", direction: "CREDIT", amountMinor: 56_600_000n, memo: "SV-SEC" },
+      { journalId: "journal-1", accountId: "ledger-savings-liability", direction: "CREDIT", amountMinor: 56_600_000n, memo: "SV-MSA" },
     ]);
     expect(captures.journalLines).not.toEqual(
       expect.arrayContaining([expect.objectContaining({ accountId: "ledger-cash" })]),
@@ -466,13 +473,13 @@ describe("disburseLoan", () => {
     });
 
     expect(captures.savingsTransactionData).toMatchObject({
-      savingsAccountId: "savings-security",
+      savingsAccountId: "savings-contribution",
       transactionType: "DEPOSIT",
       amountMinor: 56_600_000n,
     });
     expect(captures.journalLines).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ accountId: "ledger-security", amountMinor: 56_600_000n, memo: "SV-SEC" }),
+        expect.objectContaining({ accountId: "ledger-savings-liability", amountMinor: 56_600_000n, memo: "SV-MSA" }),
       ]),
     );
     expectBalanced(captures.journalLines as unknown[]);
@@ -491,7 +498,7 @@ describe("disburseLoan", () => {
     expect(captures.savingsFindFirstWhere).toMatchObject({ clientId: "client-1" });
     expect(captures.savingsFindFirstWhere).not.toMatchObject({ groupId: "group-1" });
     expect(captures.savingsTransactionData).toMatchObject({
-      savingsAccountId: "savings-security",
+      savingsAccountId: "savings-contribution",
       transactionType: "DEPOSIT",
       amountMinor: 56_600_000n,
     });
@@ -568,7 +575,7 @@ describe("disburseLoan", () => {
       { journalId: "journal-1", accountId: "ledger-crb-income", direction: "CREDIT", amountMinor: 500_000n, memo: "CRB income" },
       { journalId: "journal-1", accountId: "ledger-crb-payable", direction: "CREDIT", amountMinor: 1_000_000n, memo: "CRB payable" },
       { journalId: "journal-1", accountId: "ledger-lif", direction: "CREDIT", amountMinor: 10_500_000n, memo: "SV-LIF" },
-      { journalId: "journal-1", accountId: "ledger-security", direction: "CREDIT", amountMinor: 56_550_000n, memo: "SV-SEC" },
+      { journalId: "journal-1", accountId: "ledger-savings-liability", direction: "CREDIT", amountMinor: 56_550_000n, memo: "SV-MSA" },
     ]);
     expectBalanced(captures.journalLines as unknown[]);
   });
@@ -596,7 +603,7 @@ describe("disburseLoan", () => {
       { journalId: "journal-1", accountId: "ledger-crb-income", direction: "CREDIT", amountMinor: 500_000n, memo: "CRB income" },
       { journalId: "journal-1", accountId: "ledger-crb-payable", direction: "CREDIT", amountMinor: 1_000_000n, memo: "CRB payable" },
       { journalId: "journal-1", accountId: "ledger-lif", direction: "CREDIT", amountMinor: 10_500_000n, memo: "SV-LIF" },
-      { journalId: "journal-1", accountId: "ledger-security", direction: "CREDIT", amountMinor: 56_560_000n, memo: "SV-SEC" },
+      { journalId: "journal-1", accountId: "ledger-savings-liability", direction: "CREDIT", amountMinor: 56_560_000n, memo: "SV-MSA" },
     ]);
     expectBalanced(captures.journalLines as unknown[]);
   });
@@ -835,14 +842,20 @@ describe("disburseLoan", () => {
         expect.objectContaining({
           savingsAccountId: "savings-security",
           transactionType: "DEPOSIT",
-          amountMinor: 42_200_000n,
+          amountMinor: 4_500_000n,
+        }),
+        expect.objectContaining({
+          savingsAccountId: "savings-contribution",
+          transactionType: "DEPOSIT",
+          amountMinor: 37_700_000n,
         }),
       ]),
     );
     expect(captures.journalLines).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ accountId: "ledger-lif", direction: "DEBIT", amountMinor: 4_500_000n }),
-        expect.objectContaining({ accountId: "ledger-security", direction: "CREDIT", amountMinor: 42_200_000n }),
+        expect.objectContaining({ accountId: "ledger-security", direction: "CREDIT", amountMinor: 4_500_000n }),
+        expect.objectContaining({ accountId: "ledger-savings-liability", direction: "CREDIT", amountMinor: 37_700_000n }),
       ]),
     );
     expectBalanced(captures.journalLines as unknown[]);

@@ -235,7 +235,7 @@ export default async function ClientDetailPage({ params, searchParams }: { param
                 ))}
               {activeSavingsCount > 1 ? (
                 <tr className="wallet-subtotal-row">
-                  <td>Savings subtotal</td>
+                  <td>Contributions subtotal</td>
                   <td>{activeSavingsCount.toLocaleString()} active of {client.savingsAccounts.length.toLocaleString()}</td>
                   <td>{formatMinor(wallet.savingsBalanceMinor, wallet.currencyCode)}</td>
                 </tr>

@@ -1,6 +1,6 @@
 "use client";
 
-import { buildDisbursementPayoutChoice, extraDisbursementChargesMinor, isStatutoryDisbursementCharge } from "@/modules/lending/domain/disbursement-payout";
+import { buildDisbursementPayoutChoice, disbursementCashToMemberMinor, extraDisbursementChargesMinor, isStatutoryDisbursementCharge } from "@/modules/lending/domain/disbursement-payout";
 import { formatMinor } from "@/modules/money/domain/format-minor";
 
 export type DisbursementPayoutCharge = Readonly<{ name: string; amountMinor: string }>;
@@ -20,6 +20,7 @@ export type DisbursementPayoutContext = Readonly<{
   otherLoans: readonly DisbursementPayoutLoanOption[];
   lifAccountNumber?: string | null;
   securityAccountNumber?: string | null;
+  contributionAccountNumber?: string | null;
 }>;
 
 function asMinor(value: string) {
@@ -65,6 +66,7 @@ export function DisbursementPayoutPreview({
   const money = (amount: bigint) => formatMinor(amount, context.currency);
   const payout = choice.payout;
   const selected = context.otherLoans.find((loan) => loan.id === liquidateLoanId);
+  const cashToMember = disbursementCashToMemberMinor(payout, choice.payoffMinor);
 
   return (
     <div className="disbursement-payout">
@@ -87,7 +89,7 @@ export function DisbursementPayoutPreview({
         </div>
         <div>
           <dt>To withdraw</dt>
-          <dd>{money(choice.remainingWithdrawMinor)}</dd>
+          <dd>{money(cashToMember)}</dd>
         </div>
       </dl>
       <div className="table-scroll">
@@ -148,16 +150,28 @@ export function DisbursementPayoutPreview({
                 <td className="numeric">−{money(choice.payoffMinor)}</td>
               </tr>
             ) : null}
+            {payout.lifReleasedToSecurityMinor > 0n ? (
+              <tr>
+                <th>
+                  Loan security payable
+                  <span className="field-hint">
+                    Surplus LIF above 15%
+                    {context.securityAccountNumber ? ` · ${context.securityAccountNumber}` : ""}
+                  </span>
+                </th>
+                <td className="numeric">+{money(payout.lifReleasedToSecurityMinor)}</td>
+              </tr>
+            ) : null}
             <tr className="disbursement-payout-total">
               <th>
-                Loan security payable (withdraw)
+                Member contribution (withdraw)
                 <span className="field-hint">
-                  {context.securityAccountNumber
-                    ? `Credited to ${context.securityAccountNumber}, then withdrawn as cash`
+                  {context.contributionAccountNumber
+                    ? `Credited to ${context.contributionAccountNumber}, then withdrawn as cash`
                     : "This is the cash the borrower takes"}
                 </span>
               </th>
-              <td className="numeric">{money(choice.remainingWithdrawMinor)}</td>
+              <td className="numeric">{money(cashToMember)}</td>
             </tr>
           </tbody>
         </table>

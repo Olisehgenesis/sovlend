@@ -6,6 +6,7 @@ import {
   extraDisbursementChargesMinor,
   percentOfMinor,
   disbursementOverviewRows,
+  disbursementCashToMemberMinor,
 } from "./disbursement-payout";
 
 describe("disbursement payout", () => {
@@ -119,5 +120,16 @@ describe("disbursement payout", () => {
       { key: "crb", label: "CRB", original: 1_500_000n, paid: 1_500_000n, waived: 0n, overdue: 0n, outstanding: 0n },
     ]);
     expect(disbursementOverviewRows({ principalMinor: 70_000_000n, disbursed: false }).every((row) => row.paid === 0n)).toBe(true);
+  });
+
+  it("sends LIF surplus to security payable and the rest to member contributions", () => {
+    const payout = buildDisbursementPayout({
+      principalMinor: 40_000_000n,
+      existingLifMinor: 10_500_000n,
+      remainingActivePrincipalMinor: 0n,
+      extraChargesMinor: 0n,
+    });
+    expect(payout.lifReleasedToSecurityMinor).toBe(4_500_000n);
+    expect(disbursementCashToMemberMinor(payout)).toBe(37_700_000n);
   });
 });

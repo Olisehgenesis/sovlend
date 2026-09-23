@@ -10,6 +10,7 @@ import { LoanDocumentsPanel, LoanNotesPanel } from "@/components/loan-record-for
 import { LoanOfficerAssignment } from "@/components/loan-officer-assignment";
 import { LoanServiceActionsPanel } from "@/components/loan-service-actions-panel";
 import { DisburseLoanButton } from "@/components/disburse-loan-button";
+import { UndoDisbursementButton } from "@/components/undo-disbursement-button";
 import { type LoanPreviewInput } from "@/components/loan-preview-panel";
 import { RecordPaymentButton } from "@/components/record-payment-button";
 import { LoanTopUpButton } from "@/components/loan-top-up-button";
@@ -27,12 +28,14 @@ import {
   disbursementOverviewRows,
   isStatutoryDisbursementCharge,
   LIF_SAVINGS_SHORT_NAME,
+  MEMBER_CONTRIBUTION_SAVINGS_SHORT_NAME,
   SECURITY_SAVINGS_SHORT_NAME,
 } from "@/modules/lending/domain/disbursement-payout";
 import { formatMonthlyPercent } from "@/modules/lending/domain/monthly-rate";
 import { generateRepaymentSchedule, readInterestDayCount } from "@/modules/lending/domain/repayment-schedule";
 import { formatMinor } from "@/modules/money/domain/format-minor";
 import { displaySavingsProductName } from "@/modules/savings/domain/savings-product-label";
+import { buildLoanDisbursementSavingsIdempotencyKey } from "@/modules/savings/application/savings-ledger";
 import {
   installmentDueMinor,
   installmentOutstandingMinor,
@@ -315,10 +318,41 @@ export default async function LoanPage({
           href: `/groups/${loan.group.accountNumber}`,
         }
       : null;
+  const unreversedDisbursement = loan.transactions.find(
+    (item) => item.transactionType === "DISBURSEMENT" && !item.reversedById,
+  );
+  const hasBlockingUndoTransactions = loan.transactions.some(
+    (item) => item.transactionType !== "DISBURSEMENT" && item.transactionType !== "DISBURSEMENT_REVERSAL",
+  );
   const hasPendingDisbursement =
-    loan.status === "ACTIVE" &&
-    Boolean(loan.disbursedOn) &&
-    loan.transactions.every((item) => item.transactionType === "DISBURSEMENT");
+    loan.status === "ACTIVE" && Boolean(loan.disbursedOn) && Boolean(unreversedDisbursement) && !hasBlockingUndoTransactions;
+  let disbursementCashedOut = false;
+  if (hasPendingDisbursement && unreversedDisbursement) {
+    const credit = await prisma.savingsTransaction.findUnique({
+      where: { idempotencyKey: buildLoanDisbursementSavingsIdempotencyKey(unreversedDisbursement.id, "credit") },
+      select: { savingsAccountId: true, createdAt: true },
+    });
+    if (credit) {
+      const laterWithdrawals = await prisma.savingsTransaction.findMany({
+        where: {
+          savingsAccountId: credit.savingsAccountId,
+          transactionType: "WITHDRAWAL",
+          createdAt: { gt: credit.createdAt },
+        },
+        select: { idempotencyKey: true },
+      });
+      disbursementCashedOut = laterWithdrawals.some((item) => {
+        const key = item.idempotencyKey;
+        if (!key) return true;
+        return !(
+          key.startsWith("loan-disbursement:") ||
+          key.startsWith("topup-payoff:") ||
+          key.endsWith(":undo")
+        );
+      });
+    }
+  }
+  const canUndoDisbursement = canRequestServiceActions && hasPendingDisbursement && !disbursementCashedOut;
   const canDisburseFromHeader = loan.status === "APPROVED" && !loan.disbursedOn;
   const disbursePreview: LoanPreviewInput = {
     borrowerLabel: [owner?.name, loan.client && loan.group ? loan.group.name : null].filter(Boolean).join(" · ") || "Unknown",
@@ -350,6 +384,7 @@ export default async function LoanPage({
   };
   const lifAccount = savingsAccounts.find((account) => account.product?.shortName === LIF_SAVINGS_SHORT_NAME);
   const securityAccount = savingsAccounts.find((account) => account.product?.shortName === SECURITY_SAVINGS_SHORT_NAME);
+  const contributionAccount = savingsAccounts.find((account) => account.product?.shortName === MEMBER_CONTRIBUTION_SAVINGS_SHORT_NAME);
   const pendingDisbursementCharges = loan.charges.filter(
     (charge) => charge.status === "PENDING" && charge.dueOn == null && !isStatutoryDisbursementCharge(charge.name),
   );
@@ -372,6 +407,7 @@ export default async function LoanPage({
     }),
     lifAccountNumber: lifAccount?.accountNumber,
     securityAccountNumber: securityAccount?.accountNumber,
+    contributionAccountNumber: contributionAccount?.accountNumber,
   };
   const isOpenLoan = ["ACTIVE", "IN_ARREARS", "OVERPAID"].includes(loan.status);
   const nextDueInstallment = [...schedule]
@@ -431,6 +467,7 @@ export default async function LoanPage({
           </p>
         </div>
         <div className="header-actions">
+          {canUndoDisbursement ? <UndoDisbursementButton loanId={loan.id} /> : null}
           {canDisburseFromHeader ? (
             <DisburseLoanButton
               loanId={loan.id}
@@ -1039,7 +1076,7 @@ export default async function LoanPage({
           <LoanServiceActionsPanel
             loanId={loan.id}
             canRequest={canRequestServiceActions}
-            hasPendingDisbursement={hasPendingDisbursement}
+            hasPendingDisbursement={hasPendingDisbursement && !disbursementCashedOut}
             isOpenLoan={isOpenLoan}
             settlementAccounts={settlementAccounts}
             repaymentTransactions={repaymentTransactions}

@@ -106,7 +106,8 @@ function buildPrismaMock(options: MockOptions) {
 
   const lifAccount = { id: "savings-lif", accountNumber: "SV-LIF", isDefault: false, product: { id: "sp-lif", shortName: "LAS" } };
   const securityAccount = { id: "savings-security", accountNumber: "SV-SEC", isDefault: true, product: { id: "sp-cs", shortName: "cs" } };
-  const savingsAccounts = [lifAccount, securityAccount];
+  const contributionAccount = { id: "savings-contribution", accountNumber: "SV-MSA", isDefault: true, product: { id: "sp-msa", shortName: "MSA" } };
+  const savingsAccounts = [lifAccount, securityAccount, contributionAccount];
 
   const transaction = {
     loan: {
@@ -181,7 +182,7 @@ function buildPrismaMock(options: MockOptions) {
     user: { findUnique: vi.fn(async () => ({ systemRole: "LOAN_OFFICER" })) },
     savingsAccount: { findMany: transaction.savingsAccount.findMany },
     savingsTransaction: {
-      findUnique: vi.fn(async () => ({ savingsAccountId: securityAccount.id })),
+      findUnique: vi.fn(async () => ({ savingsAccountId: contributionAccount.id })),
     },
     $transaction: vi.fn(async (callback: (tx: typeof transaction) => unknown) => callback(transaction)),
     accountingClosure: { findFirst: vi.fn(async () => null) },
@@ -223,7 +224,7 @@ describe("disburseLoanAndPayOffPrevious", () => {
     expect(transferSavingsToLoan).toHaveBeenCalledTimes(1);
     expect(transferSavingsToLoan).toHaveBeenCalledWith(
       prisma,
-      expect.objectContaining({ loanId: "loan-old", amountMinor: 50_000n, savingsAccountId: "savings-security" }),
+      expect.objectContaining({ loanId: "loan-old", amountMinor: 50_000n, savingsAccountId: "savings-contribution" }),
     );
     expect(result.payoff?.settlementAmountMinor).toBe(50_000n);
   });

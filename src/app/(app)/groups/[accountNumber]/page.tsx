@@ -322,33 +322,33 @@ export default async function GroupDetailPage({ params, searchParams }: { params
       </header>
 
       <section className="loan-summary-metrics group-summary-metrics" aria-label="Group summary">
-        <article>
+        <Link aria-current={activeTab === "members" ? "page" : undefined} href={`/groups/${group.accountNumber}?tab=members`}>
           <span>Total Members</span>
           <strong>{group.members.length.toLocaleString()}</strong>
-        </article>
-        <article>
+        </Link>
+        <Link aria-current={activeTab === "arrears" ? "page" : undefined} href={`/groups/${group.accountNumber}?tab=arrears`}>
           <span>Members in arrears</span>
           <strong className={membersInArrears > 0 ? "is-arrears" : undefined}>{membersInArrears.toLocaleString()}</strong>
-        </article>
-        <article>
+        </Link>
+        <Link aria-current={activeTab === "arrears" ? "page" : undefined} href={`/groups/${group.accountNumber}?tab=arrears`}>
           <span>Arrears</span>
           <strong className={totalArrearsMinor > 0n ? "is-arrears" : undefined}>
             {formatMinor(totalArrearsMinor, summaryCurrencyCode)}
           </strong>
-        </article>
-        <article>
+        </Link>
+        <Link aria-current={activeTab === "loans" ? "page" : undefined} href={`/groups/${group.accountNumber}?tab=loans`}>
           <span>Active Loans</span>
           <strong>{totalActiveLoans.toLocaleString()}</strong>
-        </article>
-        <article>
+        </Link>
+        <Link aria-current={activeTab === "savings" ? "page" : undefined} href={`/groups/${group.accountNumber}?tab=savings`}>
           <span>Total Savings</span>
           <strong>{formatMinor(totalSavingsMinor, summaryCurrencyCode)}</strong>
           <small>{totalSavingsAccountCount.toLocaleString()} account(s)</small>
-        </article>
-        <article>
+        </Link>
+        <Link aria-current={activeTab === "members" ? "page" : undefined} href={`/groups/${group.accountNumber}?tab=members`}>
           <span>Next collection</span>
           <strong>{nextGroupCollection ? formatGroupDate(nextGroupCollection) : "—"}</strong>
-        </article>
+        </Link>
       </section>
 
       <nav className="client-tabs" aria-label="Group record sections">
