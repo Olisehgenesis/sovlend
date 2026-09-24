@@ -8,7 +8,7 @@ import { Breadcrumbs } from "@/components/breadcrumbs";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { clientScopeWhere, getUserDataScope, groupScopeWhere, officeWhere } from "@/modules/identity/application/data-scope";
-import { STAFF_SYSTEM_ROLES } from "@/modules/identity/domain/staff-roles";
+import { assignableStaffWhere } from "@/modules/identity/domain/staff-roles";
 import { canSelfApproveLoanApplication } from "@/modules/lending/application/loan-application-access";
 import { formatMonthlyPercent } from "@/modules/lending/domain/monthly-rate";
 import { formatMinor } from "@/modules/money/domain/format-minor";
@@ -56,7 +56,7 @@ export default async function NewLoanApplicationPage({ searchParams }: { searchP
     prisma.loanProduct.findMany({ where: { organizationId: scope.organizationId, active: true }, orderBy: { name: "asc" } }),
     prisma.group.findMany({ where: { organizationId: scope.organizationId, ...groupScopeWhere(scope), status: "ACTIVE" }, include: groupMemberInclude, orderBy: { name: "asc" }, take: 100 }),
     params.groupId ? prisma.group.findFirst({ where: { id: params.groupId, organizationId: scope.organizationId, ...groupScopeWhere(scope), status: "ACTIVE" }, include: groupMemberInclude }) : null,
-    prisma.user.findMany({ where: { organizationId: scope.organizationId, systemRole: { in: [...STAFF_SYSTEM_ROLES] }, ...officeWhere(scope) }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
+    prisma.user.findMany({ where: { organizationId: scope.organizationId, ...assignableStaffWhere(), ...officeWhere(scope) }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
     prisma.chargeDefinition.findMany({ where: { organizationId: scope.organizationId, appliesTo: "LOAN", active: true }, orderBy: { name: "asc" } }),
     prisma.fund.findMany({ where: { organizationId: scope.organizationId, isActive: true }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
     prisma.user.findUnique({ where: { id: session.user.id }, select: { systemRole: true } }),

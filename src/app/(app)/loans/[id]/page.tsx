@@ -23,7 +23,7 @@ import { prisma } from "@/lib/prisma";
 import { AuthorizationService } from "@/modules/identity/application/authorization-service";
 import { getUserDataScope } from "@/modules/identity/application/data-scope";
 import { permissions } from "@/modules/identity/domain/permissions";
-import { STAFF_SYSTEM_ROLES } from "@/modules/identity/domain/staff-roles";
+import { assignableStaffWhere } from "@/modules/identity/domain/staff-roles";
 import {
   disbursementOverviewRows,
   isStatutoryDisbursementCharge,
@@ -218,10 +218,7 @@ export default async function LoanPage({
   const officeOfficers = await prisma.user.findMany({
     where: {
       organizationId: scope.organizationId,
-      OR: [
-        ...(loan.loanOfficerId ? [{ id: loan.loanOfficerId }] : []),
-        { officeId: loan.officeId, systemRole: { in: [...STAFF_SYSTEM_ROLES] } },
-      ],
+      ...assignableStaffWhere({ includeUserId: loan.loanOfficerId, officeId: loan.officeId }),
     },
     select: { id: true, name: true },
     orderBy: { name: "asc" },

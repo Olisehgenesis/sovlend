@@ -19,7 +19,7 @@ import { loadClientBtcAccounts } from "@/modules/btc/application/load-client-btc
 import { AuthorizationService } from "@/modules/identity/application/authorization-service";
 import { clientScopeWhere, getUserDataScope } from "@/modules/identity/application/data-scope";
 import { permissions } from "@/modules/identity/domain/permissions";
-import { STAFF_SYSTEM_ROLES } from "@/modules/identity/domain/staff-roles";
+import { assignableStaffWhere } from "@/modules/identity/domain/staff-roles";
 import { getClientWalletSummary, OPEN_LOAN_STATUSES } from "@/modules/lending/application/client-wallet";
 import { installmentDueMinor, installmentPaidMinor } from "@/modules/lending/domain/loan-outstanding";
 import { formatMinor } from "@/modules/money/domain/format-minor";
@@ -79,7 +79,7 @@ export default async function ClientDetailPage({ params, searchParams }: { param
     authorization.isAllowed({ actorUserId: session.user.id, permission: permissions.ledgerPost, organizationId: scope.organizationId, officeId: client.officeId }),
     getClientWalletSummary(prisma, client.id),
     prisma.savingsProduct.findMany({ where: { organizationId: scope.organizationId, active: true }, orderBy: { name: "asc" } }),
-    prisma.user.findMany({ where: { organizationId: scope.organizationId, officeId: client.officeId, systemRole: { in: [...STAFF_SYSTEM_ROLES] } }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
+    prisma.user.findMany({ where: { organizationId: scope.organizationId, ...assignableStaffWhere({ includeUserId: client.assignedOfficerId, officeId: client.officeId }) }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
     prisma.chargeDefinition.findMany({ where: { organizationId: scope.organizationId, appliesTo: "SAVINGS", active: true }, orderBy: { name: "asc" } }),
     prisma.settlementAccount.findMany({ where: { organizationId: scope.organizationId, active: true }, select: { id: true, name: true, type: true, provider: true, accountReference: true, currencyCode: true }, orderBy: [{ type: "asc" }, { name: "asc" }] }),
     prisma.ledgerAccount.findMany({ where: postableLedgerAccountWhere, select: { id: true, code: true, name: true, type: true }, orderBy: [{ code: "asc" }] }),

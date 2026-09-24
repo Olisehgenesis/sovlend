@@ -423,6 +423,7 @@ export async function loadOperationsReportContext(
             OR: [
               {
                 systemRole: "LOAN_OFFICER",
+                NOT: { banned: true },
                 ...(scopeOfficeIds ? { officeId: { in: scopeOfficeIds } } : {}),
               },
               {

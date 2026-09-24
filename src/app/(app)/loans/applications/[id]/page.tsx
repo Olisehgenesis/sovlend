@@ -15,7 +15,7 @@ import { prisma } from "@/lib/prisma";
 import { AuthorizationService } from "@/modules/identity/application/authorization-service";
 import { getUserDataScope } from "@/modules/identity/application/data-scope";
 import { permissions } from "@/modules/identity/domain/permissions";
-import { STAFF_SYSTEM_ROLES } from "@/modules/identity/domain/staff-roles";
+import { assignableStaffWhere } from "@/modules/identity/domain/staff-roles";
 import { canEditSubmittedLoanApplication, canSelfApproveLoanApplication } from "@/modules/lending/application/loan-application-access";
 import { isLoanApplicationExpired } from "@/modules/lending/application/loan-application-expiry";
 import { readChargeSnapshot, readCollateralSnapshot, readTermsSnapshot } from "@/modules/lending/application/loan-application-payload";
@@ -193,14 +193,7 @@ export default async function LoanApplicationPage({
         prisma.user.findMany({
           where: {
             organizationId: scope.organizationId,
-            ...(application.loanOfficerId
-              ? {
-                  OR: [
-                    { id: application.loanOfficerId },
-                    { officeId: application.officeId, systemRole: { in: [...STAFF_SYSTEM_ROLES] } },
-                  ],
-                }
-              : { officeId: application.officeId, systemRole: { in: [...STAFF_SYSTEM_ROLES] } }),
+            ...assignableStaffWhere({ includeUserId: application.loanOfficerId, officeId: application.officeId }),
           },
           select: { id: true, name: true },
           orderBy: { name: "asc" },

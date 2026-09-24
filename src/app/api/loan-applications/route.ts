@@ -8,7 +8,7 @@ import { prisma } from "@/lib/prisma";
 import { AuthorizationService, PermissionDeniedError } from "@/modules/identity/application/authorization-service";
 import { getUserDataScope } from "@/modules/identity/application/data-scope";
 import { permissions } from "@/modules/identity/domain/permissions";
-import { STAFF_SYSTEM_ROLES } from "@/modules/identity/domain/staff-roles";
+import { assignableStaffWhere } from "@/modules/identity/domain/staff-roles";
 import {
   buildChargeSnapshot,
   buildCollateralSnapshot,
@@ -34,7 +34,7 @@ export async function POST(request: Request) {
       : null,
     prisma.loanProduct.findFirst({ where: { id: parsed.data.productId, organizationId: scope.organizationId, active: true } }),
     parsed.data.loanOfficerId
-      ? prisma.user.findFirst({ where: { id: parsed.data.loanOfficerId, organizationId: scope.organizationId, systemRole: { in: [...STAFF_SYSTEM_ROLES] } } })
+      ? prisma.user.findFirst({ where: { id: parsed.data.loanOfficerId, organizationId: scope.organizationId, ...assignableStaffWhere() } })
       : null,
     parsed.data.fundId
       ? prisma.fund.findFirst({ where: { id: parsed.data.fundId, organizationId: scope.organizationId, isActive: true } })

@@ -7,6 +7,7 @@ import { prisma } from "@/lib/prisma";
 import { AuthorizationService, PermissionDeniedError } from "@/modules/identity/application/authorization-service";
 import { clientScopeWhere, getUserDataScope } from "@/modules/identity/application/data-scope";
 import { permissions } from "@/modules/identity/domain/permissions";
+import { assignableStaffWhere } from "@/modules/identity/domain/staff-roles";
 
 const schema = z.object({ officerId: z.string().trim().min(1) });
 
@@ -21,7 +22,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   const client = await prisma.client.findFirst({ where: { id, organizationId: scope.organizationId, ...clientScopeWhere(scope) } });
   if (!client) return NextResponse.json({ error: "Client not found" }, { status: 404 });
 
-  const officer = await prisma.user.findFirst({ where: { id: parsed.data.officerId, organizationId: scope.organizationId, officeId: client.officeId } });
+  const officer = await prisma.user.findFirst({
+    where: { id: parsed.data.officerId, organizationId: scope.organizationId, officeId: client.officeId, ...assignableStaffWhere() },
+  });
   if (!officer) return NextResponse.json({ error: "Staff member not found at this client's office" }, { status: 404 });
 
   try {

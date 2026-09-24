@@ -13,7 +13,7 @@ import { prisma } from "@/lib/prisma";
 import { AuthorizationService } from "@/modules/identity/application/authorization-service";
 import { getUserDataScope, groupScopeWhere } from "@/modules/identity/application/data-scope";
 import { permissions } from "@/modules/identity/domain/permissions";
-import { STAFF_SYSTEM_ROLES } from "@/modules/identity/domain/staff-roles";
+import { assignableStaffWhere } from "@/modules/identity/domain/staff-roles";
 import { installmentOutstandingMinor } from "@/modules/lending/domain/loan-outstanding";
 import { formatMinor } from "@/modules/money/domain/format-minor";
 import { displaySavingsProductName } from "@/modules/savings/domain/savings-product-label";
@@ -311,10 +311,7 @@ export default async function GroupDetailPage({ params, searchParams }: { params
     prisma.user.findMany({
       where: {
         organizationId: scope.organizationId,
-        OR: [
-          ...(group.staffId ? [{ id: group.staffId }] : []),
-          { officeId: group.officeId, systemRole: { in: [...STAFF_SYSTEM_ROLES] } },
-        ],
+        ...assignableStaffWhere({ includeUserId: group.staffId, officeId: group.officeId }),
       },
       select: { id: true, name: true },
       orderBy: { name: "asc" },
