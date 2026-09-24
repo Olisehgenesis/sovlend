@@ -2,13 +2,14 @@
 
 import { Check, ChevronLeft, ChevronRight, Coins, LoaderCircle, Plus } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState, useEffect } from "react";
 import { toast } from "sonner";
 
 import { Dialog, type DialogHandle } from "@/components/ui/dialog";
 import { BrandActionButton } from "@/components/ui/brand-action-button";
 import { formatMinor } from "@/modules/money/domain/format-minor";
 import { displaySavingsProductName } from "@/modules/savings/domain/savings-product-label";
+import { openingChargeNames, type MembershipKind } from "@/modules/charges/domain/opening-charges";
 
 type SavingsProductOption = Readonly<{ id: string; name: string; shortName: string; currencyCode: string; nominalAnnualRateBps: number; minOpeningBalanceMinor: string }>;
 type OfficerOption = Readonly<{ id: string; name: string }>;
@@ -16,10 +17,12 @@ type ChargeOption = Readonly<{ id: string; name: string; calculationType: string
 
 const steps = ["Details", "Terms", "Charges", "Review"] as const;
 
-export function NewSavingsAccountWizard({ clientId, products, officers, charges }: { clientId: string; products: readonly SavingsProductOption[]; officers: readonly OfficerOption[]; charges: readonly ChargeOption[] }) {
+export function NewSavingsAccountWizard({ clientId, products, officers, charges, isNewMember = false }: { clientId: string; products: readonly SavingsProductOption[]; officers: readonly OfficerOption[]; charges: readonly ChargeOption[]; isNewMember?: boolean }) {
   const router = useRouter();
   const dialogRef = useRef<DialogHandle>(null);
   const [step, setStep] = useState(0);
+  const [membership, setMembership] = useState<MembershipKind>("INDIVIDUAL");
+  const [chargeCrb, setChargeCrb] = useState(false);
   const [productId, setProductId] = useState("");
   const [submittedOn, setSubmittedOn] = useState(() => new Date().toISOString().slice(0, 10));
   const [fieldOfficerId, setFieldOfficerId] = useState("");
@@ -29,8 +32,20 @@ export function NewSavingsAccountWizard({ clientId, products, officers, charges 
 
   const product = useMemo(() => products.find((item) => item.id === productId) ?? null, [products, productId]);
 
+  useEffect(() => {
+    if (!isNewMember) return;
+    const recommended = new Set(
+      openingChargeNames({ membership, chargeCrb })
+        .map((name) => charges.find((charge) => charge.name === name)?.id)
+        .filter((id): id is string => Boolean(id)),
+    );
+    setSelectedCharges(recommended);
+  }, [chargeCrb, charges, isNewMember, membership]);
+
   function resetWizard() {
     setStep(0);
+    setMembership("INDIVIDUAL");
+    setChargeCrb(false);
     setProductId("");
     setSubmittedOn(new Date().toISOString().slice(0, 10));
     setFieldOfficerId("");
@@ -87,12 +102,14 @@ export function NewSavingsAccountWizard({ clientId, products, officers, charges 
 
           {step === 0 ? (
             <div className="savings-wizard-body">
+              <label>Membership<select onChange={(event) => setMembership(event.target.value as MembershipKind)} value={membership}><option value="INDIVIDUAL">Individual · admission 25,000</option><option value="GROUP">Group · admission 7,000</option></select></label>
               <label>Product *<select onChange={(event) => setProductId(event.target.value)} required value={productId}><option value="">Select savings product</option>{products.map((item) => <option key={item.id} value={item.id}>{displaySavingsProductName(item.name)}</option>)}</select></label>
               <div className="form-row">
                 <label>Submitted on<input onChange={(event) => setSubmittedOn(event.target.value)} type="date" value={submittedOn} /></label>
                 <label>Field officer<select onChange={(event) => setFieldOfficerId(event.target.value)} value={fieldOfficerId}><option value="">Unassigned</option>{officers.map((officer) => <option key={officer.id} value={officer.id}>{officer.name}</option>)}</select></label>
               </div>
               <label>External ID<input onChange={(event) => setExternalId(event.target.value)} value={externalId} /></label>
+              {isNewMember ? <label className="check-row"><input checked={chargeCrb} onChange={(event) => setChargeCrb(event.target.checked)} type="checkbox" /> Charge CRB (15,000: 5,000 income + 10,000 fee)</label> : null}
             </div>
           ) : null}
 
@@ -123,6 +140,7 @@ export function NewSavingsAccountWizard({ clientId, products, officers, charges 
           {step === 3 ? (
             <div className="savings-wizard-body">
               <dl className="detail-grid">
+                <div><dt>Membership</dt><dd>{membership === "GROUP" ? "Group" : "Individual"}</dd></div>
                 <div><dt>Product</dt><dd>{product ? displaySavingsProductName(product.name) : "Not selected"}</dd></div>
                 <div><dt>Submitted on</dt><dd>{submittedOn}</dd></div>
                 <div><dt>Field officer</dt><dd>{officers.find((officer) => officer.id === fieldOfficerId)?.name ?? "Unassigned"}</dd></div>

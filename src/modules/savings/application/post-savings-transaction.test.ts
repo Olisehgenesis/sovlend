@@ -162,6 +162,41 @@ describe("recordSavingsTransactionInTransaction", () => {
     expect(captures.savingsTransactionData).toMatchObject({ amountMinor: -30_000n, settlementAccountId: "settlement-1" });
   });
 
+  it("posts a withdrawal against a journal account instead of settlement and records the client name", async () => {
+    const { transaction, captures } = buildTransactionMock({ openingBalanceMinor: 100_000n });
+    (transaction.ledgerAccount.findFirst as ReturnType<typeof vi.fn>).mockImplementation(async ({ where }: { where: { id?: string; code?: string } }) => {
+      if (where.id === "ledger-income") return { id: "ledger-income", name: "Admission income", currencyCode: "UGX", active: true, usage: "DETAIL" };
+      if (where.code === "ML-001") return { id: "ledger-savings-liability" };
+      if (where.code === "20004") return { id: "ledger-savings-liability-fallback" };
+      return null;
+    });
+
+    await recordSavingsTransactionInTransaction(transaction, {
+      savingsAccountId: "savings-1",
+      actorUserId: "accountant-1",
+      transactionType: "WITHDRAWAL",
+      amountMinor: 25_000n,
+      counterLedgerAccountId: "ledger-income",
+      payeeName: "Jane Nakato",
+      reason: "Journal from member contribution · Jane Nakato",
+      idempotencyKey: "client-journal-1",
+    });
+
+    expect(captures.journalLineBatches).toEqual([
+      [
+        { journalId: "journal-1", accountId: "ledger-savings-liability", direction: "DEBIT", amountMinor: 25_000n, memo: "SV-0001" },
+        { journalId: "journal-1", accountId: "ledger-income", direction: "CREDIT", amountMinor: 25_000n, memo: "Admission income" },
+      ],
+    ]);
+    expect(transaction.journal.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        payeeName: "Jane Nakato",
+        payeeType: "PERSON",
+        narration: "Journal from member contribution · Jane Nakato",
+      }),
+    }));
+  });
+
   it("does not post a journal when no settlement account is provided (internal mirror calls)", async () => {
     const { transaction, captures } = buildTransactionMock({ openingBalanceMinor: 100_000n });
 

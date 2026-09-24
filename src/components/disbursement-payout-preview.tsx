@@ -21,6 +21,7 @@ export type DisbursementPayoutContext = Readonly<{
   lifAccountNumber?: string | null;
   securityAccountNumber?: string | null;
   contributionAccountNumber?: string | null;
+  collectCrb?: boolean;
 }>;
 
 function asMinor(value: string) {
@@ -54,6 +55,7 @@ export function DisbursementPayoutPreview({
         outstandingMinor: asMinor(loan.outstandingMinor),
       })),
       liquidateLoanId,
+      collectCrb: context.collectCrb,
     });
   } catch (caught) {
     error = caught instanceof Error ? caught.message : "Could not build this disbursement preview.";
@@ -83,10 +85,12 @@ export function DisbursementPayoutPreview({
           <dt>Processing 2%</dt>
           <dd>{money(payout.processingFeeMinor)}</dd>
         </div>
+        {payout.crbTotalMinor > 0n ? (
         <div>
           <dt>CRB</dt>
           <dd>{money(payout.crbTotalMinor)}</dd>
         </div>
+        ) : null}
         <div>
           <dt>To withdraw</dt>
           <dd>{money(cashToMember)}</dd>
@@ -122,6 +126,7 @@ export function DisbursementPayoutPreview({
               </th>
               <td className="numeric">−{money(payout.processingFeeMinor)}</td>
             </tr>
+            {payout.crbTotalMinor > 0n ? (
             <tr>
               <th>
                 CRB 15,000
@@ -131,6 +136,7 @@ export function DisbursementPayoutPreview({
               </th>
               <td className="numeric">−{money(payout.crbTotalMinor)}</td>
             </tr>
+            ) : null}
             {extraCharges.map((charge) => (
               <tr key={charge.name}>
                 <th>{charge.name}</th>

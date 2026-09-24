@@ -52,6 +52,7 @@ export function GeneralJournalEntryForm({
   const [referenceNumber, setReferenceNumber] = useState("");
   const [businessDate, setBusinessDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [narration, setNarration] = useState("");
+  const [payeeName, setPayeeName] = useState("");
   const [showPaymentDetails, setShowPaymentDetails] = useState(false);
   const [paymentType, setPaymentType] = useState("");
   const [accountNumber, setAccountNumber] = useState("");
@@ -128,6 +129,7 @@ export function GeneralJournalEntryForm({
         businessDate,
         referenceNumber: referenceNumber.trim() || null,
         narration: narration.trim(),
+        payeeName: payeeName.trim() || null,
         debits: debitLines,
         credits: creditLines,
         paymentDetails: showPaymentDetails
@@ -289,6 +291,10 @@ export function GeneralJournalEntryForm({
           </div>
         ) : null}
 
+        <label>
+          Client / payee name
+          <input value={payeeName} onChange={(event) => setPayeeName(event.target.value)} maxLength={200} placeholder="Search later by this name" />
+        </label>
         <label>
           Comments
           <textarea value={narration} onChange={(event) => setNarration(event.target.value)} maxLength={200} rows={3} placeholder="Optional description of this entry" />

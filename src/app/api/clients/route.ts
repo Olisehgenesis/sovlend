@@ -9,6 +9,7 @@ import { AuthorizationService, PermissionDeniedError } from "@/modules/identity/
 import { getUserDataScope } from "@/modules/identity/application/data-scope";
 import { permissions } from "@/modules/identity/domain/permissions";
 import { nextSubAccountNumber } from "@/modules/lending/domain/sub-account-numbering";
+import { openingChargeNames } from "@/modules/charges/domain/opening-charges";
 
 const clientSchema = z.object({
   officeId: z.string().uuid(),
@@ -23,6 +24,8 @@ const clientSchema = z.object({
   externalId: z.string().trim().max(100).optional(),
   active: z.boolean().default(false),
   isStaff: z.boolean().default(false),
+  membershipType: z.enum(["INDIVIDUAL", "GROUP"]).default("INDIVIDUAL"),
+  chargeCrb: z.boolean().default(false),
 });
 
 export async function POST(request: Request) {
@@ -76,7 +79,25 @@ export async function POST(request: Request) {
     await transaction.auditEvent.create({ data: { actorId: session.user.id, action: "client.created", entityType: "Client", entityId: created.id, correlationId, metadata, eventHash } });
     await transaction.outboxEvent.create({ data: { aggregateType: "Client", aggregateId: created.id, eventType: "client.created", payload: metadata } });
     // Every new client opens with a default savings sub-account, e.g. "000000926" -> "000000926S".
-    await transaction.savingsAccount.create({ data: { clientId: created.id, accountNumber: nextSubAccountNumber(created.accountNumber, "S", 0), currencyCode: "UGX", status: "ACTIVE" } });
+    const savingsAccount = await transaction.savingsAccount.create({ data: { clientId: created.id, accountNumber: nextSubAccountNumber(created.accountNumber, "S", 0), currencyCode: "UGX", status: "ACTIVE" } });
+    const chargeNames = openingChargeNames({ membership: parsed.data.membershipType, chargeCrb: parsed.data.chargeCrb });
+    const chargeDefinitions = await transaction.chargeDefinition.findMany({
+      where: { organizationId: scope.organizationId, appliesTo: "SAVINGS", active: true, name: { in: [...chargeNames] } },
+    });
+    for (const definition of chargeDefinitions) {
+      const amountMinor = definition.calculationType === "FLAT" ? (definition.amountMinor ?? 0n) : 0n;
+      if (amountMinor <= 0n) continue;
+      await transaction.charge.create({
+        data: {
+          clientId: created.id,
+          savingsAccountId: savingsAccount.id,
+          chargeDefinitionId: definition.id,
+          name: definition.name,
+          amountMinor,
+          currencyCode: definition.currencyCode,
+        },
+      });
+    }
     return created;
   });
   return NextResponse.json({ id: client.id, accountNumber: client.accountNumber }, { status: 201 });

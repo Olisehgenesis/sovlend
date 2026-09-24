@@ -6,6 +6,7 @@ import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
 import { BrandActionButton } from "@/components/ui/brand-action-button";
+import { repaymentRecordedMessage } from "@/modules/lending/domain/repayment-allocation-split";
 import { formatMinor } from "@/modules/money/domain/format-minor";
 
 export type SettlementAccountOption = Readonly<{
@@ -54,6 +55,7 @@ function settlementLabel(account: SettlementAccountOption) {
 
 export function DepositWithdrawForm({
   clientId,
+  groupId,
   currentUserName,
   settlementAccounts,
   savingsTargets,
@@ -63,7 +65,8 @@ export function DepositWithdrawForm({
   allowedActions = ["DEPOSIT", "WITHDRAWAL"],
   onSuccess,
 }: {
-  clientId: string;
+  clientId?: string;
+  groupId?: string;
   currentUserName: string;
   settlementAccounts: readonly SettlementAccountOption[];
   // A client can hold several active savings accounts at once (e.g. personal + group-linked) --
@@ -162,6 +165,15 @@ export function DepositWithdrawForm({
     const trimmedReason = reason.trim();
     const idempotencyKey = crypto.randomUUID();
     try {
+      const savingsOwnerPath = groupId
+        ? `/api/groups/${groupId}/savings-accounts/${selectedTarget.id}/transactions`
+        : clientId
+          ? `/api/clients/${clientId}/savings-accounts/${selectedTarget.id}/transactions`
+          : null;
+      if (selectedTarget.kind !== "loan" && !savingsOwnerPath) {
+        toast.error("Savings owner is missing");
+        return;
+      }
       const response = selectedTarget.kind === "loan" && type === "DEPOSIT"
         ? await fetch(`/api/loans/${selectedTarget.id}/repayments`, {
             method: "POST",
@@ -174,7 +186,7 @@ export function DepositWithdrawForm({
               idempotencyKey,
             }),
           })
-        : await fetch(`/api/clients/${clientId}/savings-accounts/${selectedTarget.id}/transactions`, {
+        : await fetch(savingsOwnerPath!, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -199,7 +211,7 @@ export function DepositWithdrawForm({
       }
       toast.success(
         type === "DEPOSIT" && selectedTarget.kind === "loan"
-          ? `Repayment recorded on loan ${selectedTarget.accountNumber}`
+          ? repaymentRecordedMessage(result)
           : type === "DEPOSIT"
             ? `Deposit recorded on savings account ${selectedTarget.accountNumber}`
             : `Withdrawal recorded on savings account ${selectedTarget.accountNumber}`,
@@ -448,13 +460,16 @@ export function TransferForm({
   );
 }
 
-export function ApproveSavingsAccountButton({ clientId, savingsAccountId }: { clientId: string; savingsAccountId: string }) {
+export function ApproveSavingsAccountButton({ clientId, groupId, savingsAccountId }: { clientId?: string; groupId?: string; savingsAccountId: string }) {
   const router = useRouter();
   const [pending, setPending] = useState(false);
 
   async function approve() {
     setPending(true);
-    const response = await fetch(`/api/clients/${clientId}/savings-accounts/${savingsAccountId}/approve`, { method: "POST" });
+    const path = groupId
+      ? `/api/groups/${groupId}/savings-accounts/${savingsAccountId}/approve`
+      : `/api/clients/${clientId}/savings-accounts/${savingsAccountId}/approve`;
+    const response = await fetch(path, { method: "POST" });
     const result = await response.json().catch(() => ({}));
     setPending(false);
     if (!response.ok) { toast.error(result.error ?? "Could not approve this savings account"); return; }

@@ -108,6 +108,7 @@ function buildPrismaMock(options: MockOptions = {}) {
     savingsFindManyWhere: null,
     savingsFindFirstWhere: null,
     chargeUpdateArgs: null,
+    chargeCreates: [] as Array<Record<string, unknown>>,
     auditEvents: [] as Array<Record<string, unknown>>,
   };
   const auditEvents = [...(options.existingAuditEvents ?? [])];
@@ -178,6 +179,10 @@ function buildPrismaMock(options: MockOptions = {}) {
       updateMany: vi.fn(async (args) => {
         captures.chargeUpdateArgs = args;
         return { count: charges.length };
+      }),
+      create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => {
+        (captures.chargeCreates as Array<Record<string, unknown>>).push(data);
+        return { id: `charge-created-${(captures.chargeCreates as unknown[]).length}`, ...data };
       }),
     },
     savingsAccount: {
@@ -395,7 +400,46 @@ describe("disburseLoan", () => {
       { journalId: "journal-1", accountId: "ledger-savings-liability", direction: "CREDIT", amountMinor: 56_600_000n, memo: "SV-MSA" },
     ]);
     expect(captures.chargeUpdateArgs).toBeNull();
+    expect(captures.chargeCreates).toEqual([
+      expect.objectContaining({
+        loanId: "loan-1",
+        name: "Processing fee",
+        amountMinor: 1_400_000n,
+        status: "PAID",
+        dueOn: null,
+      }),
+      expect.objectContaining({
+        loanId: "loan-1",
+        name: "CRB income",
+        amountMinor: 500_000n,
+        status: "PAID",
+      }),
+      expect.objectContaining({
+        loanId: "loan-1",
+        name: "CRB fee",
+        amountMinor: 1_000_000n,
+        status: "PAID",
+      }),
+    ]);
     expectBalanced(captures.journalLines as unknown[]);
+  });
+
+  it("does not duplicate a statutory charge that is already on the loan", async () => {
+    const { prisma, captures } = buildPrismaMock({
+      charges: [{ id: "charge-processing", amountMinor: 1_400_000n, name: "Processing fee" }],
+    });
+
+    await disburseLoan(prisma, {
+      loanId: "loan-1",
+      actorUserId: "operator-1",
+      businessDate: new Date("2026-09-08T00:00:00.000Z"),
+      idempotencyKey: "82e8d8fb-0e46-4164-a2ff-6a6d01ab17f1",
+    });
+
+    expect(captures.chargeCreates).toEqual([
+      expect.objectContaining({ name: "CRB income", amountMinor: 500_000n, status: "PAID" }),
+      expect.objectContaining({ name: "CRB fee", amountMinor: 1_000_000n, status: "PAID" }),
+    ]);
   });
 
   it("nets pending due-at-disbursement charges against the savings credit and keeps the journal balanced", async () => {

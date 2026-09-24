@@ -5,6 +5,7 @@ import { notFound, redirect } from "next/navigation";
 
 import { Breadcrumbs } from "@/components/breadcrumbs";
 import { AddChargeForm, ApplyForLoanButton, ApproveSavingsAccountButton, ChargesList, DepositWithdrawForm } from "@/components/client-account-panel";
+import { ClientJournalForm } from "@/components/client-journal-form";
 import { ClientActionsMenu } from "@/components/client-actions-menu";
 import { ClientBtcAccountsPanel } from "@/components/client-btc-accounts-panel";
 import { ClientQuickActions } from "@/components/client-quick-actions";
@@ -23,6 +24,7 @@ import { getClientWalletSummary, OPEN_LOAN_STATUSES } from "@/modules/lending/ap
 import { installmentDueMinor, installmentPaidMinor } from "@/modules/lending/domain/loan-outstanding";
 import { formatMinor } from "@/modules/money/domain/format-minor";
 import { displaySavingsProductName } from "@/modules/savings/domain/savings-product-label";
+import { postableLedgerAccountWhere } from "@/modules/ledger/domain/postable-ledger-account";
 
 const tabs = [
   { key: "general", label: "General", icon: CircleUserRound },
@@ -67,18 +69,20 @@ export default async function ClientDetailPage({ params, searchParams }: { param
   if (!client) notFound();
 
   const authorization = new AuthorizationService(prisma);
-  const [canManage, canApplyLoan, canTransact, canRecordRepayment, canApproveSavings, canManageBtc, wallet, savingsProducts, officers, savingsCharges, settlementAccounts] = await Promise.all([
+  const [canManage, canApplyLoan, canTransact, canRecordRepayment, canApproveSavings, canManageBtc, canPostLedger, wallet, savingsProducts, officers, savingsCharges, settlementAccounts, ledgerAccounts] = await Promise.all([
     authorization.isAllowed({ actorUserId: session.user.id, permission: permissions.clientManage, organizationId: scope.organizationId, officeId: client.officeId }),
     authorization.isAllowed({ actorUserId: session.user.id, permission: permissions.loanApply, organizationId: scope.organizationId, officeId: client.officeId }),
     authorization.isAllowed({ actorUserId: session.user.id, permission: permissions.savingsTransact, organizationId: scope.organizationId, officeId: client.officeId }),
     authorization.isAllowed({ actorUserId: session.user.id, permission: permissions.loanRepayment, organizationId: scope.organizationId, officeId: client.officeId }),
     authorization.isAllowed({ actorUserId: session.user.id, permission: permissions.savingsApprove, organizationId: scope.organizationId, officeId: client.officeId }),
     authorization.isAllowed({ actorUserId: session.user.id, permission: permissions.btcAccountManage, organizationId: scope.organizationId, officeId: client.officeId }),
+    authorization.isAllowed({ actorUserId: session.user.id, permission: permissions.ledgerPost, organizationId: scope.organizationId, officeId: client.officeId }),
     getClientWalletSummary(prisma, client.id),
     prisma.savingsProduct.findMany({ where: { organizationId: scope.organizationId, active: true }, orderBy: { name: "asc" } }),
     prisma.user.findMany({ where: { organizationId: scope.organizationId, officeId: client.officeId, systemRole: { in: [...STAFF_SYSTEM_ROLES] } }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
     prisma.chargeDefinition.findMany({ where: { organizationId: scope.organizationId, appliesTo: "SAVINGS", active: true }, orderBy: { name: "asc" } }),
     prisma.settlementAccount.findMany({ where: { organizationId: scope.organizationId, active: true }, select: { id: true, name: true, type: true, provider: true, accountReference: true, currencyCode: true }, orderBy: [{ type: "asc" }, { name: "asc" }] }),
+    prisma.ledgerAccount.findMany({ where: postableLedgerAccountWhere, select: { id: true, code: true, name: true, type: true }, orderBy: [{ code: "asc" }] }),
   ]);
 
   // Only resolve BTC balances (which may call out to a public block explorer for on-chain-tracked
@@ -292,9 +296,10 @@ export default async function ClientDetailPage({ params, searchParams }: { param
 
       {activeTab === "savings" ? (
         <section className="panel">
-          <div className="panel-heading"><div><h2>Savings</h2><p>Savings, share and deposit accounts held by this client</p></div>{canTransact && client.status === "ACTIVE" && client.savingsAccounts.length === 0 ? <NewSavingsAccountWizard charges={savingsCharges.map((charge) => ({ id: charge.id, name: charge.name, calculationType: charge.calculationType, amountMinor: charge.amountMinor?.toString() ?? null, percentageBps: charge.percentageBps, currencyCode: charge.currencyCode }))} clientId={client.id} officers={officers} products={savingsProducts.map((product) => ({ id: product.id, name: product.name, shortName: product.shortName, currencyCode: product.currencyCode, nominalAnnualRateBps: product.nominalAnnualRateBps, minOpeningBalanceMinor: product.minOpeningBalanceMinor.toString() }))} /> : null}</div>
+          <div className="panel-heading"><div><h2>Savings</h2><p>Savings, share and deposit accounts held by this client</p></div>{canTransact && client.status === "ACTIVE" ? <NewSavingsAccountWizard charges={savingsCharges.map((charge) => ({ id: charge.id, name: charge.name, calculationType: charge.calculationType, amountMinor: charge.amountMinor?.toString() ?? null, percentageBps: charge.percentageBps, currencyCode: charge.currencyCode }))} clientId={client.id} isNewMember={client.savingsAccounts.length === 0} officers={officers} products={savingsProducts.map((product) => ({ id: product.id, name: product.name, shortName: product.shortName, currencyCode: product.currencyCode, nominalAnnualRateBps: product.nominalAnnualRateBps, minOpeningBalanceMinor: product.minOpeningBalanceMinor.toString() }))} /> : null}</div>
           {client.savingsAccounts.length === 0 ? <div className="empty-state compact-empty"><PiggyBank size={26} /><strong>No savings accounts yet</strong><p>Open one above to start recording deposits.</p></div> : <div className="table-scroll"><table><thead><tr><th>Account</th><th>Type</th><th>Product</th><th>Currency</th><th>Balance</th><th>Status</th><th>Opened</th><th></th></tr></thead><tbody>{savingsRows.map(({ account, balanceMinor }) => <tr key={account.id}><td className="mono"><Link className="green-link" href={`/savings-accounts/${account.accountNumber}`}>{account.accountNumber}</Link></td><td>{account.accountType.replaceAll("_", " ")}</td><td>{displaySavingsProductName(account.product?.name, "\u2014")}</td><td>{account.currencyCode}</td><td>{formatMinor(balanceMinor, account.currencyCode)}</td><td><span className={`status ${account.status === "ACTIVE" ? "up-to-date" : "review"}`}>{account.status === "SUBMITTED" ? "Pending approval" : account.status}</span></td><td>{new Intl.DateTimeFormat("en-UG", { dateStyle: "medium" }).format(account.createdAt)}</td><td>{account.status === "SUBMITTED" && canApproveSavings && account.submittedById !== session.user.id ? <ApproveSavingsAccountButton clientId={client.id} savingsAccountId={account.id} /> : null}</td></tr>)}</tbody></table></div>}
           {client.status === "ACTIVE" && ((canTransact && savingsTargets.length > 0) || loanPaymentTargets.length > 0) ? <DepositWithdrawForm clientId={client.id} currentUserName={session.user.name ?? "Signed in user"} loanTargets={loanPaymentTargets} savingsTargets={canTransact ? savingsTargets : []} settlementAccounts={settlementAccounts} /> : null}
+          {canPostLedger && client.status === "ACTIVE" && savingsTargets.length > 0 ? <ClientJournalForm clientId={client.id} clientName={fullName} ledgerAccounts={ledgerAccounts} savingsAccounts={savingsTargets.map((account) => ({ id: account.id, accountNumber: account.accountNumber, productName: account.productName, isDefault: account.isDefault }))} /> : null}
         </section>
       ) : null}
 

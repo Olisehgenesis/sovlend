@@ -34,6 +34,7 @@ export type RecordJournalEntryCommand = Readonly<{
   credits: readonly JournalEntryLineCommand[];
   paymentDetails: JournalEntryPaymentDetails | null;
   idempotencyKey: string;
+  payeeName?: string | null;
 }>;
 
 /**
@@ -109,6 +110,7 @@ export async function recordJournalEntry(prisma: PrismaClient, command: RecordJo
         referenceType: "MANUAL_JOURNAL_ENTRY",
         referenceId: command.referenceNumber,
         narration: command.narration.trim() || "Manual journal entry",
+        payeeName: command.payeeName?.trim() || null,
         idempotencyKey,
       },
     });
@@ -127,6 +129,7 @@ export async function recordJournalEntry(prisma: PrismaClient, command: RecordJo
       credits: command.credits.map((line) => ({ ledgerAccountId: line.ledgerAccountId, amountMinor: line.amountMinor.toString() })),
       paymentDetails: command.paymentDetails,
       narration: command.narration.trim(),
+      payeeName: command.payeeName?.trim() || null,
     };
     const eventHash = createHash("sha256")
       .update(JSON.stringify({ correlationId, action: "ledger.journal_entry_posted", metadata }))

@@ -39,6 +39,34 @@ const DEFAULT_CHARGE_DEFINITIONS: readonly DefaultChargeDefinition[] = [
     percentageBps: 100,
     penalty: true,
   },
+  {
+    name: "Admission fee (individual)",
+    appliesTo: "SAVINGS",
+    calculationType: "FLAT",
+    amountMinor: 2_500_000n,
+    penalty: false,
+  },
+  {
+    name: "Admission fee (group)",
+    appliesTo: "SAVINGS",
+    calculationType: "FLAT",
+    amountMinor: 700_000n,
+    penalty: false,
+  },
+  {
+    name: "CRB income (member)",
+    appliesTo: "SAVINGS",
+    calculationType: "FLAT",
+    amountMinor: 500_000n,
+    penalty: false,
+  },
+  {
+    name: "CRB fee (member)",
+    appliesTo: "SAVINGS",
+    calculationType: "FLAT",
+    amountMinor: 1_000_000n,
+    penalty: false,
+  },
 ];
 
 type SeedChargeDefinitionsOptions = Readonly<{

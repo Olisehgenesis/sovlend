@@ -19,6 +19,7 @@ const schema = z.object({
   repaymentFrequency: z.string().trim().regex(/^\d+\s+(day|days|week|weeks|month|months)$/i, "Repayment frequency must be like '1 Months'"),
   amortizationMethod: z.string().trim().min(1).max(120),
   interestMethod: z.enum(["Flat", "Declining Balance"]),
+  collectCrb: z.boolean().default(true),
 });
 
 export async function POST(request: Request) {
@@ -45,6 +46,7 @@ export async function POST(request: Request) {
       repaymentFrequency: parsed.data.repaymentFrequency,
       amortizationMethod: parsed.data.amortizationMethod,
       interestMethod: parsed.data.interestMethod,
+      collectCrb: parsed.data.collectCrb,
       version: 1,
     },
   });

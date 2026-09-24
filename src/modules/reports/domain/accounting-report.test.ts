@@ -247,6 +247,8 @@ describe("getJournalReconciliationReport", () => {
     expect(where?.OR).toEqual([
       { referenceId: { contains: "LN0001", mode: "insensitive" } },
       { narration: { contains: "LN0001", mode: "insensitive" } },
+      { payeeName: { contains: "LN0001", mode: "insensitive" } },
+      { payeeReference: { contains: "LN0001", mode: "insensitive" } },
     ]);
   });
 

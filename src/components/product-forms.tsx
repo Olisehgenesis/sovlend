@@ -20,6 +20,7 @@ type LoanProductDraft = Readonly<{
   repaymentFrequency: string;
   amortizationMethod: string;
   interestMethod: "Flat" | "Declining Balance";
+  collectCrb: boolean;
 }>;
 
 type SavingsProductDraft = Readonly<{
@@ -70,6 +71,7 @@ export function CreateLoanProductForm() {
         repaymentFrequency: formData.get("repaymentFrequency"),
         amortizationMethod: formData.get("amortizationMethod"),
         interestMethod: formData.get("interestMethod"),
+        collectCrb: formData.get("collectCrb") === "on",
       }),
     });
     const result = await response.json().catch(() => ({}));
@@ -108,6 +110,9 @@ export function CreateLoanProductForm() {
       <div className="form-row">
         <label>Amortization method<input defaultValue="Equal installments" name="amortizationMethod" required /></label>
       </div>
+      <div className="check-row">
+        <label><input defaultChecked name="collectCrb" type="checkbox" /> Collect CRB (15,000: 5,000 income + 10,000 fee)</label>
+      </div>
     </fieldset>
     <div className="form-actions"><BrandActionButton disabled={pending} icon={pending ? <LoaderCircle className="spin" size={16} /> : <Plus size={16} />} type="submit">Create loan product</BrandActionButton></div>
   </form>;
@@ -134,6 +139,7 @@ export function EditLoanProductForm({ product }: { product: LoanProductDraft }) 
         repaymentFrequency: formData.get("repaymentFrequency"),
         amortizationMethod: formData.get("amortizationMethod"),
         interestMethod: formData.get("interestMethod"),
+        collectCrb: formData.get("collectCrb") === "on",
       }),
     });
     const result = await response.json().catch(() => ({}));
@@ -170,6 +176,9 @@ export function EditLoanProductForm({ product }: { product: LoanProductDraft }) 
       </div>
       <div className="form-row">
         <label>Amortization method<input defaultValue={product.amortizationMethod} name="amortizationMethod" required /></label>
+      </div>
+      <div className="check-row">
+        <label><input defaultChecked={product.collectCrb} name="collectCrb" type="checkbox" /> Collect CRB (15,000: 5,000 income + 10,000 fee)</label>
       </div>
     </fieldset>
     <div className="form-actions"><BrandActionButton disabled={pending} icon={pending ? <LoaderCircle className="spin" size={18} /> : <Save size={18} />} type="submit">Save changes</BrandActionButton></div>

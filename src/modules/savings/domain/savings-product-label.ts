@@ -4,9 +4,10 @@ const SAVINGS_PRODUCT_DISPLAY_NAMES: Record<string, string> = {
   "compulsory saving": "Loan security payable",
   "member savings account": "Member contribution",
   "member savings": "Member contribution",
+  "group general savings": "Group journal contribution",
 };
 
-const STORED_SAVINGS_PRODUCT_NAMES = ["LIF Account Savings", "Compulsory savings", "Member Savings Account"] as const;
+const STORED_SAVINGS_PRODUCT_NAMES = ["LIF Account Savings", "Compulsory savings", "Member Savings Account", "Group general savings"] as const;
 
 function normalizeAccountLabel(value: string) {
   return value.trim().toLowerCase().replace(/\s+/g, " ");

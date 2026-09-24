@@ -4,6 +4,7 @@ import type { Prisma } from "@prisma/client";
 
 import { assertPeriodOpen } from "@/modules/ledger/application/assert-period-open";
 import { assertBalancedJournal } from "@/modules/ledger/domain/journal";
+import { isPostableLedgerAccount } from "@/modules/ledger/domain/postable-ledger-account";
 
 import { resolveSavingsLiabilityAccountId } from "./savings-ledger";
 
@@ -13,6 +14,8 @@ export type PostSavingsTransactionCommand = Readonly<{
   transactionType: "DEPOSIT" | "WITHDRAWAL";
   amountMinor: bigint;
   settlementAccountId?: string;
+  counterLedgerAccountId?: string;
+  payeeName?: string;
   reason?: string;
   externalReference?: string;
   idempotencyKey: string;
@@ -58,6 +61,10 @@ export async function recordSavingsTransactionInTransaction(transaction: Tx, com
   if (!organizationId) throw new Error("Savings account owner is not linked to an organization");
   const officeId = current.client?.officeId ?? current.group?.officeId;
 
+  if (command.settlementAccountId && command.counterLedgerAccountId) {
+    throw new Error("Choose either a settlement account or a journal account, not both");
+  }
+
   const settlement = command.settlementAccountId
     ? await transaction.settlementAccount.findFirst({
         where: {
@@ -72,6 +79,28 @@ export async function recordSavingsTransactionInTransaction(transaction: Tx, com
   if (command.settlementAccountId && !settlement) {
     throw new Error("Selected settlement account is not available");
   }
+
+  const counterAccount = command.counterLedgerAccountId
+    ? await transaction.ledgerAccount.findFirst({
+        where: { id: command.counterLedgerAccountId },
+        select: { id: true, name: true, currencyCode: true, active: true, usage: true },
+      })
+    : null;
+  if (command.counterLedgerAccountId && !counterAccount) {
+    throw new Error("Selected journal account is not available");
+  }
+  if (counterAccount && !isPostableLedgerAccount(counterAccount)) {
+    throw new Error(`"${counterAccount.name}" is not an active detail account`);
+  }
+  if (counterAccount && counterAccount.currencyCode !== current.currencyCode) {
+    throw new Error("The journal account must share a currency with the savings account");
+  }
+
+  const counterpart = settlement
+    ? { id: settlement.ledgerAccountId, name: settlement.name }
+    : counterAccount
+      ? { id: counterAccount.id, name: counterAccount.name }
+      : null;
 
   const currentBalance = current.transactions.reduce((sum, item) => sum + item.amountMinor, 0n);
   if (command.transactionType === "WITHDRAWAL" && command.amountMinor > currentBalance) {
@@ -93,7 +122,7 @@ export async function recordSavingsTransactionInTransaction(transaction: Tx, com
     },
   });
 
-  const shouldPostJournal = command.postJournal !== false && Boolean(settlement);
+  const shouldPostJournal = command.postJournal !== false && Boolean(counterpart);
   if (shouldPostJournal) {
     if (!officeId) {
       throw new Error("Savings account owner has no office; cannot post a ledger journal");
@@ -109,22 +138,25 @@ export async function recordSavingsTransactionInTransaction(transaction: Tx, com
     const journalLines =
       command.transactionType === "DEPOSIT"
         ? [
-            { accountId: settlement!.ledgerAccountId, direction: "DEBIT" as const, amountMinor: command.amountMinor, memo: settlement!.name },
+            { accountId: counterpart!.id, direction: "DEBIT" as const, amountMinor: command.amountMinor, memo: counterpart!.name },
             { accountId: savingsLiabilityAccountId, direction: "CREDIT" as const, amountMinor: command.amountMinor, memo: current.accountNumber },
           ]
         : [
             { accountId: savingsLiabilityAccountId, direction: "DEBIT" as const, amountMinor: command.amountMinor, memo: current.accountNumber },
-            { accountId: settlement!.ledgerAccountId, direction: "CREDIT" as const, amountMinor: command.amountMinor, memo: settlement!.name },
+            { accountId: counterpart!.id, direction: "CREDIT" as const, amountMinor: command.amountMinor, memo: counterpart!.name },
           ];
     assertBalancedJournal(journalLines.map((line) => ({ ...line, currencyCode: current.currencyCode })));
 
+    const ownerName = command.payeeName?.trim() || null;
     const journal = await transaction.journal.create({
       data: {
         officeId,
         businessDate,
         referenceType: "SAVINGS_TRANSACTION",
         referenceId: record.id,
-        narration: `${command.transactionType === "DEPOSIT" ? "Deposit" : "Withdrawal"} ${current.accountNumber}`,
+        narration: command.reason?.trim() || `${command.transactionType === "DEPOSIT" ? "Deposit" : "Withdrawal"} ${current.accountNumber}`,
+        payeeType: ownerName ? "PERSON" : null,
+        payeeName: ownerName,
         idempotencyKey: `journal:${command.idempotencyKey}`,
       },
     });

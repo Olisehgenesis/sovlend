@@ -114,7 +114,7 @@ function buildPrismaMock(options: MockOptions) {
       updateMany: vi.fn(async () => ({ count: 1 })),
       findMany: vi.fn(async () => []),
     },
-    charge: { findMany: vi.fn(async () => []), updateMany: vi.fn(async () => ({ count: 0 })) },
+    charge: { findMany: vi.fn(async () => []), updateMany: vi.fn(async () => ({ count: 0 })), create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => data) },
     savingsAccount: {
       findMany: vi.fn(async () => savingsAccounts),
       findFirst: vi.fn(async ({ where }: { where?: { product?: { shortName?: string } } }) => {

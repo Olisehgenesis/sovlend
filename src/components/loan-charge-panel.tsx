@@ -1,11 +1,12 @@
 "use client";
 
 import { CheckCircle2, LoaderCircle, Plus, XCircle } from "lucide-react";
+import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
 import { toast } from "sonner";
 
 import { DataTable } from "@/components/ui/data-table";
+import { Dialog, type DialogHandle } from "@/components/ui/dialog";
 import { BrandActionButton } from "@/components/ui/brand-action-button";
 import { formatMinor } from "@/modules/money/domain/format-minor";
 
@@ -28,8 +29,6 @@ type ChargeDefinition = Readonly<{
   penalty: boolean;
 }>;
 
-const CUSTOM_CHARGE_VALUE = "custom";
-
 export function LoanChargesPanel({
   loanId,
   canManage,
@@ -44,22 +43,38 @@ export function LoanChargesPanel({
   principalMinor?: string;
 }) {
   const router = useRouter();
+  const dialogRef = useRef<DialogHandle>(null);
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [pendingCreate, setPendingCreate] = useState(false);
-  const [selectedDefinitionId, setSelectedDefinitionId] = useState<string>(chargeDefinitions[0]?.id ?? CUSTOM_CHARGE_VALUE);
-  const [amountOverride, setAmountOverride] = useState("");
+  const [selectedDefinitionIds, setSelectedDefinitionIds] = useState<Set<string>>(new Set());
+  const [formVersion, setFormVersion] = useState(0);
 
-  const selectedDefinition = useMemo(
-    () => chargeDefinitions.find((definition) => definition.id === selectedDefinitionId) ?? null,
-    [chargeDefinitions, selectedDefinitionId],
-  );
-  // Server derives the real amount from the definition on submit (including percentage-of-principal
-  // math); this is only a live preview so the operator sees what will be charged before posting.
-  const prefilledAmountMinor = selectedDefinition
-    ? selectedDefinition.calculationType === "PERCENTAGE"
-      ? (BigInt(principalMinor) * BigInt(selectedDefinition.percentageBps ?? 0)) / 10_000n
-      : BigInt(selectedDefinition.amountMinor ?? "0")
-    : 0n;
+  function definitionAmountMinor(definition: ChargeDefinition) {
+    return definition.calculationType === "PERCENTAGE"
+      ? (BigInt(principalMinor) * BigInt(definition.percentageBps ?? 0)) / 10_000n
+      : BigInt(definition.amountMinor ?? "0");
+  }
+
+  function definitionAmountLabel(definition: ChargeDefinition) {
+    if (definition.calculationType === "PERCENTAGE") {
+      return `${((definition.percentageBps ?? 0) / 100).toFixed(2)}% · ${formatMinor(definitionAmountMinor(definition), definition.currencyCode)}`;
+    }
+    return formatMinor(definitionAmountMinor(definition), definition.currencyCode);
+  }
+
+  function toggleDefinition(id: string) {
+    setSelectedDefinitionIds((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function resetDialog() {
+    setSelectedDefinitionIds(new Set());
+    setFormVersion((current) => current + 1);
+  }
 
   async function setStatus(chargeId: string, status: "PAID" | "WAIVED") {
     const confirmed = window.confirm(
@@ -84,27 +99,48 @@ export function LoanChargesPanel({
     router.refresh();
   }
 
-  async function createCharge(formData: FormData) {
-    setPendingCreate(true);
-    const isCustom = selectedDefinitionId === CUSTOM_CHARGE_VALUE;
-    const response = await fetch(`/api/loans/${loanId}/charges`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        chargeDefinitionId: isCustom ? undefined : selectedDefinitionId,
-        name: isCustom ? formData.get("name") : undefined,
-        amount: isCustom ? formData.get("amount") : amountOverride || undefined,
-        dueOn: formData.get("dueOn") || undefined,
-      }),
-    });
-    const result = await response.json().catch(() => ({}));
-    setPendingCreate(false);
-    if (!response.ok) {
-      toast.error(result.error ?? "Could not add this loan charge");
+  async function createCharges(formData: FormData) {
+    const extraName = String(formData.get("name") ?? "").trim();
+    const extraAmount = String(formData.get("amount") ?? "").trim();
+    const dueOn = String(formData.get("dueOn") ?? "").trim() || undefined;
+    const definitionIds = [...selectedDefinitionIds];
+    if (definitionIds.length === 0 && !extraName) {
+      toast.error("Choose a catalog charge, or enter an extra name and amount");
       return;
     }
-    toast.success("Charge added to the loan account");
-    setAmountOverride("");
+    if (extraName ? !extraAmount : Boolean(extraAmount)) {
+      toast.error("An extra charge needs both a name and an amount");
+      return;
+    }
+
+    setPendingCreate(true);
+    const posts: Array<Record<string, unknown>> = definitionIds.map((chargeDefinitionId) => ({
+      chargeDefinitionId,
+      dueOn,
+    }));
+    if (extraName && extraAmount) {
+      posts.push({ name: extraName, amount: extraAmount, dueOn });
+    }
+
+    let created = 0;
+    for (const body of posts) {
+      const response = await fetch(`/api/loans/${loanId}/charges`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setPendingCreate(false);
+        toast.error(result.error ?? "Could not add this loan charge");
+        return;
+      }
+      created += 1;
+    }
+    setPendingCreate(false);
+    toast.success(created === 1 ? "Charge added to the loan account" : `${created} charges added to the loan account`);
+    resetDialog();
+    dialogRef.current?.close();
     router.refresh();
   }
 
@@ -151,7 +187,7 @@ export function LoanChargesPanel({
         emptyState={
           <div className="empty-state compact-empty">
             <strong>No charges recorded</strong>
-            <p>Charges raised during approval or servicing will appear here. Use the form below to post a one-off charge.</p>
+            <p>Charges taken at disbursement and any fees you add will appear here.</p>
           </div>
         }
         getRowAriaLabel={(charge) => `Open charge ${charge.name}`}
@@ -160,66 +196,60 @@ export function LoanChargesPanel({
         rows={charges}
       />
       {canManage ? (
-        <form action={createCharge} className="entity-form compact-mapping">
-          <fieldset>
-            <legend>Add loan charge</legend>
-            <div className="form-row three">
-              <label>
-                Charge type
-                <select onChange={(event) => setSelectedDefinitionId(event.target.value)} value={selectedDefinitionId}>
-                  {chargeDefinitions.map((definition) => (
-                    <option key={definition.id} value={definition.id}>
-                      {definition.name}
-                      {definition.penalty ? " (penalty)" : ""} ·{" "}
-                      {definition.calculationType === "PERCENTAGE"
-                        ? `${((definition.percentageBps ?? 0) / 100).toFixed(2)}%`
-                        : formatMinor(BigInt(definition.amountMinor ?? "0"), definition.currencyCode)}
-                    </option>
-                  ))}
-                  <option value={CUSTOM_CHARGE_VALUE}>Custom charge…</option>
-                </select>
-              </label>
-              {selectedDefinition ? (
-                <label>
-                  Amount ({selectedDefinition.currencyCode})
-                  <input
-                    onChange={(event) => setAmountOverride(event.target.value)}
-                    placeholder={(Number(prefilledAmountMinor) / 100).toString()}
-                    step="0.01"
-                    type="number"
-                    value={amountOverride}
-                  />
-                </label>
-              ) : (
-                <>
-                  <label>
-                    Name
-                    <input name="name" placeholder="Processing fee" required />
-                  </label>
-                  <label>
-                    Amount (UGX)
-                    <input min={1} name="amount" required step="0.01" type="number" />
-                  </label>
-                </>
-              )}
-              <label>
-                Due date
-                <input name="dueOn" type="date" />
-              </label>
-            </div>
-            {selectedDefinition ? (
-              <p className="field-hint">
-                Prefilled from the charge catalog: {formatMinor(prefilledAmountMinor, selectedDefinition.currencyCode)}
-                {amountOverride ? ` (overridden to ${amountOverride})` : ""}. Manage the catalog under Backoffice → Products → Charges.
-              </p>
-            ) : null}
-          </fieldset>
+        <>
           <div className="form-actions">
-            <BrandActionButton disabled={pendingCreate} icon={pendingCreate ? <LoaderCircle className="spin" size={16} /> : <Plus size={16} />} type="submit">
+            <BrandActionButton icon={<Plus size={16} />} onClick={() => dialogRef.current?.showModal()} type="button">
               Add charge
             </BrandActionButton>
           </div>
-        </form>
+          <Dialog onClose={resetDialog} ref={dialogRef} title="Add loan charge">
+            <form action={createCharges} className="entity-form compact-mapping" key={formVersion}>
+              <fieldset>
+                <legend>Add loan charge</legend>
+                {chargeDefinitions.length === 0 ? (
+                  <p className="field-help">No catalog charges yet. Add an extra charge below, or create templates under Backoffice → Products → Charges.</p>
+                ) : (
+                  <div className="check-list">
+                    {chargeDefinitions.map((definition) => (
+                      <label className="check-row" key={definition.id}>
+                        <input
+                          checked={selectedDefinitionIds.has(definition.id)}
+                          onChange={() => toggleDefinition(definition.id)}
+                          type="checkbox"
+                        />
+                        {definition.name}
+                        {definition.penalty ? " (penalty)" : ""}
+                        {" · "}
+                        {definitionAmountLabel(definition)}
+                      </label>
+                    ))}
+                  </div>
+                )}
+                <p className="field-help">Extra charge (optional)</p>
+                <div className="form-row">
+                  <label>
+                    Name
+                    <input name="name" placeholder="Processing fee" />
+                  </label>
+                  <label>
+                    Amount (UGX)
+                    <input min={0.01} name="amount" step="0.01" type="number" />
+                  </label>
+                </div>
+                <label>
+                  Due date
+                  <input name="dueOn" type="date" />
+                </label>
+                <p className="field-hint">Leave the due date empty to take the charge at disbursement when the loan is still approved.</p>
+              </fieldset>
+              <div className="form-actions">
+                <BrandActionButton disabled={pendingCreate} icon={pendingCreate ? <LoaderCircle className="spin" size={16} /> : <Plus size={16} />} type="submit">
+                  Add charge
+                </BrandActionButton>
+              </div>
+            </form>
+          </Dialog>
+        </>
       ) : null}
     </>
   );

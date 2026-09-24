@@ -20,6 +20,7 @@ const updateSchema = z.object({
   repaymentFrequency: z.string().trim().regex(/^\d+\s+(day|days|week|weeks|month|months)$/i, "Repayment frequency must be like '1 Months'"),
   amortizationMethod: z.string().trim().min(1).max(120),
   interestMethod: z.enum(["Flat", "Declining Balance"]),
+  collectCrb: z.boolean().default(true),
 });
 
 // Archiving only flips `active`; the row is never deleted so existing loans keep their terms snapshot intact.
@@ -58,6 +59,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       repaymentFrequency: parsed.data.repaymentFrequency,
       amortizationMethod: parsed.data.amortizationMethod,
       interestMethod: parsed.data.interestMethod,
+      collectCrb: parsed.data.collectCrb,
     },
   });
   return NextResponse.json({ ok: true });

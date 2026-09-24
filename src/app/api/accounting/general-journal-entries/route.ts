@@ -19,6 +19,7 @@ const schema = z.object({
   businessDate: z.iso.date(),
   referenceNumber: z.string().trim().max(60).nullable().optional(),
   narration: z.string().trim().max(200).optional().default(""),
+  payeeName: z.string().trim().max(200).nullable().optional(),
   debits: z.array(lineSchema).min(1),
   credits: z.array(lineSchema).min(1),
   paymentDetails: z
@@ -53,6 +54,7 @@ export async function POST(request: Request) {
       businessDate: new Date(`${parsed.data.businessDate}T00:00:00.000Z`),
       referenceNumber: parsed.data.referenceNumber?.trim() || null,
       narration: parsed.data.narration ?? "",
+      payeeName: parsed.data.payeeName,
       debits: parsed.data.debits.map((line) => ({ ledgerAccountId: line.ledgerAccountId, amountMinor: BigInt(line.amountMinor) })),
       credits: parsed.data.credits.map((line) => ({ ledgerAccountId: line.ledgerAccountId, amountMinor: BigInt(line.amountMinor) })),
       paymentDetails: parsed.data.paymentDetails

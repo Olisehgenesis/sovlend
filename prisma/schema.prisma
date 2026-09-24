@@ -611,6 +611,9 @@ model LoanProduct {
   // installments imported before this feature shipped are never retroactively assessed -- see
   // penalty-assessment.ts's bounded assessment window for why that is structurally impossible.
   lateFeeRule                Json?
+  // When true (the default), disbursement withholds the 15,000 UGX CRB levy split as 5,000
+  // income + 10,000 payable. Turn off on products that should not collect CRB.
+  collectCrb                 Boolean                       @default(true)
   version                    Int                           @default(1)
   active                     Boolean                       @default(true)
   organization               Organization                  @relation(fields: [organizationId], references: [id])

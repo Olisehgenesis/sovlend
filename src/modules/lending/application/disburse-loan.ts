@@ -24,6 +24,7 @@ import {
   disbursementCashToMemberMinor,
   extraDisbursementChargesMinor,
   isStatutoryDisbursementCharge,
+  statutoryDisbursementChargeSpecs,
   type OpenLoanForPayout,
 } from "../domain/disbursement-payout";
 import { loanOutstandingMinor } from "../domain/loan-outstanding";
@@ -575,6 +576,7 @@ export async function disburseLoan(
           extraChargesMinor,
           otherLoans: otherLoanPayouts,
           liquidateLoanId: command.topUpOfLoanId,
+          collectCrb: loan.product.collectCrb,
         });
         const payout = choice.payout;
         const contributionCreditMinor = disbursementCashToMemberMinor(payout);
@@ -786,6 +788,31 @@ export async function disburseLoan(
           where: { id: { in: immediateCharges.map((charge) => charge.id) } },
           data: { status: "PAID" },
         });
+      }
+
+      const existingChargeNames = new Set(
+        (
+          await transaction.charge.findMany({
+            where: { loanId: loan.id },
+            select: { name: true },
+          })
+        ).map((charge) => charge.name.trim().toLowerCase()),
+      );
+      for (const spec of statutoryDisbursementChargeSpecs(payout)) {
+        if (existingChargeNames.has(spec.name.toLowerCase())) continue;
+        await transaction.charge.create({
+          data: {
+            clientId: loan.clientId,
+            groupId: loan.groupId,
+            loanId: loan.id,
+            name: spec.name,
+            amountMinor: spec.amountMinor,
+            currencyCode: loan.denominationCurrency,
+            status: "PAID",
+            dueOn: null,
+          },
+        });
+        existingChargeNames.add(spec.name.toLowerCase());
       }
 
       const journalLines = [

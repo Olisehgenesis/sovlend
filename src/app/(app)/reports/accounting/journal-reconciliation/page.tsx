@@ -188,7 +188,7 @@ export default async function JournalReconciliationPage({
             </div>
             <label>
               Search
-              <input defaultValue={search ?? ""} name="search" placeholder="Journal ID, transaction ID, or narration" />
+              <input defaultValue={search ?? ""} name="search" placeholder="Client name, journal ID, transaction ID, or narration" />
             </label>
           </fieldset>
           <div className="form-actions">
@@ -246,6 +246,7 @@ export default async function JournalReconciliationPage({
                     <h2>{formatReportDate(journal.businessDate)} · {journal.referenceType.replaceAll("_", " ")}</h2>
                     <p>
                       {journal.officeName} · {journalStatusLabel(journal.status)} · {journal.referenceId ?? journal.id}
+                      {journal.payeeName ? ` · ${journal.payeeName}` : ""}
                     </p>
                   </div>
                   <span className={`status ${journal.isBalanced ? "up-to-date" : "review"}`}>

@@ -5,7 +5,8 @@ import { notFound, redirect } from "next/navigation";
 
 import { Breadcrumbs } from "@/components/breadcrumbs";
 import { EntityAvatar } from "@/components/entity-avatar";
-import { AddGroupMemberForm, AddGroupNoteForm } from "@/components/group-record-forms";
+import { AddGroupMemberForm, AddGroupNoteForm, OpenGroupJournalContributionButton } from "@/components/group-record-forms";
+import { ApproveSavingsAccountButton, DepositWithdrawForm } from "@/components/client-account-panel";
 import { StaffAssignment } from "@/components/loan-officer-assignment";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
@@ -288,10 +289,22 @@ export default async function GroupDetailPage({ params, searchParams }: { params
     "UGX";
 
   const authorization = new AuthorizationService(prisma);
-  const [canManage, officeStaff] = await Promise.all([
+  const [canManage, canTransact, canApproveSavings, officeStaff, settlementAccounts] = await Promise.all([
     authorization.isAllowed({
       actorUserId: session.user.id,
       permission: permissions.clientManage,
+      organizationId: scope.organizationId,
+      officeId: group.officeId,
+    }),
+    authorization.isAllowed({
+      actorUserId: session.user.id,
+      permission: permissions.savingsTransact,
+      organizationId: scope.organizationId,
+      officeId: group.officeId,
+    }),
+    authorization.isAllowed({
+      actorUserId: session.user.id,
+      permission: permissions.savingsApprove,
       organizationId: scope.organizationId,
       officeId: group.officeId,
     }),
@@ -305,6 +318,11 @@ export default async function GroupDetailPage({ params, searchParams }: { params
       },
       select: { id: true, name: true },
       orderBy: { name: "asc" },
+    }),
+    prisma.settlementAccount.findMany({
+      where: { organizationId: scope.organizationId, active: true },
+      select: { id: true, name: true, type: true, provider: true, accountReference: true, currencyCode: true },
+      orderBy: [{ type: "asc" }, { name: "asc" }],
     }),
   ]);
 
@@ -580,8 +598,14 @@ export default async function GroupDetailPage({ params, searchParams }: { params
             <div className="panel-heading">
               <div>
                 <h2>Group savings</h2>
-                <p>These are savings accounts owned by the group itself, separate from the members&apos; personal savings on the Members tab.</p>
+                <p>These are savings accounts owned by the group itself, including the group journal contribution, separate from the members&apos; personal savings on the Members tab.</p>
               </div>
+              {canTransact && group.status === "ACTIVE" ? (
+                <OpenGroupJournalContributionButton
+                  alreadyOpen={group.savingsAccounts.some((account) => account.product?.shortName === "GGS")}
+                  groupId={group.id}
+                />
+              ) : null}
             </div>
             {group.savingsAccounts.length === 0 ? (
               <div className="empty-state compact-empty">
@@ -600,6 +624,7 @@ export default async function GroupDetailPage({ params, searchParams }: { params
                       <th>Status</th>
                       <th>Balance</th>
                       <th>Currency</th>
+                      <th></th>
                     </tr>
                   </thead>
                   <tbody>
@@ -618,6 +643,11 @@ export default async function GroupDetailPage({ params, searchParams }: { params
                           </td>
                           <td className="mono">{formatMinor(balanceMinor, account.currencyCode)}</td>
                           <td>{account.currencyCode}</td>
+                          <td>
+                            {account.status === "SUBMITTED" && canApproveSavings && account.submittedById !== session.user.id ? (
+                              <ApproveSavingsAccountButton groupId={group.id} savingsAccountId={account.id} />
+                            ) : null}
+                          </td>
                         </tr>
                       );
                     })}
@@ -625,6 +655,23 @@ export default async function GroupDetailPage({ params, searchParams }: { params
                 </table>
               </div>
             )}
+            {canTransact && group.status === "ACTIVE" && group.savingsAccounts.some((account) => account.status === "ACTIVE") ? (
+              <DepositWithdrawForm
+                currentUserName={session.user.name ?? "Signed in user"}
+                groupId={group.id}
+                loanTargets={[]}
+                savingsTargets={group.savingsAccounts
+                  .filter((account) => account.status === "ACTIVE")
+                  .map((account) => ({
+                    id: account.id,
+                    accountNumber: account.accountNumber,
+                    currencyCode: account.currencyCode,
+                    productName: displaySavingsProductName(account.product?.name),
+                    isDefault: account.product?.shortName === "GGS",
+                  }))}
+                settlementAccounts={settlementAccounts}
+              />
+            ) : null}
           </section>
         </>
       ) : null}

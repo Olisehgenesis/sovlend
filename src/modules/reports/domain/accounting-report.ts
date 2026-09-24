@@ -161,6 +161,8 @@ export type JournalReconciliationJournal = {
   referenceType: string;
   referenceId: string | null;
   narration: string;
+  payeeName: string | null;
+  payeeReference: string | null;
   status: string;
   debitTotalMinor: bigint;
   creditTotalMinor: bigint;
@@ -767,6 +769,8 @@ export async function getJournalReconciliationReport(
             OR: [
               { referenceId: { contains: search, mode: "insensitive" as const } },
               { narration: { contains: search, mode: "insensitive" as const } },
+              { payeeName: { contains: search, mode: "insensitive" as const } },
+              { payeeReference: { contains: search, mode: "insensitive" as const } },
               // Journal.id is a UUID column -- Prisma's UUID filter only supports exact equality,
               // not `contains`, so only add it when the search term is itself a full UUID.
               ...(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(search) ? [{ id: search }] : []),
@@ -782,6 +786,8 @@ export async function getJournalReconciliationReport(
       referenceType: true,
       referenceId: true,
       narration: true,
+      payeeName: true,
+      payeeReference: true,
       status: true,
       createdAt: true,
       lines: {
@@ -830,6 +836,8 @@ export async function getJournalReconciliationReport(
         referenceType: journal.referenceType,
         referenceId: journal.referenceId,
         narration: journal.narration,
+        payeeName: journal.payeeName ?? null,
+        payeeReference: journal.payeeReference ?? null,
         status: journal.status,
         debitTotalMinor,
         creditTotalMinor,
@@ -1160,6 +1168,9 @@ export function journalReconciliationReportCsv(report: JournalReconciliationRepo
         "Reference Type": journal.referenceType,
         "Reference ID": journal.referenceId ?? "",
         "Journal ID": journal.id,
+        Narration: journal.narration,
+        Payee: journal.payeeName ?? "",
+        "Payee reference": journal.payeeReference ?? "",
         Status: journal.status,
         "Account Code": line.code,
         "Account Name": line.name,
@@ -1175,6 +1186,9 @@ export function journalReconciliationReportCsv(report: JournalReconciliationRepo
       "Reference Type",
       "Reference ID",
       "Journal ID",
+      "Narration",
+      "Payee",
+      "Payee reference",
       "Status",
       "Account Code",
       "Account Name",
@@ -1210,6 +1224,8 @@ export function serializeJournalReconciliationReport(report: JournalReconciliati
       referenceType: journal.referenceType,
       referenceId: journal.referenceId,
       narration: journal.narration,
+      payeeName: journal.payeeName,
+      payeeReference: journal.payeeReference,
       status: journal.status,
       debitTotalMinor: minorToString(journal.debitTotalMinor),
       creditTotalMinor: minorToString(journal.creditTotalMinor),

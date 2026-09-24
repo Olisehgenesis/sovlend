@@ -7,6 +7,7 @@ import {
   percentOfMinor,
   disbursementOverviewRows,
   disbursementCashToMemberMinor,
+  statutoryDisbursementChargeSpecs,
 } from "./disbursement-payout";
 
 describe("disbursement payout", () => {
@@ -131,5 +132,37 @@ describe("disbursement payout", () => {
     });
     expect(payout.lifReleasedToSecurityMinor).toBe(4_500_000n);
     expect(disbursementCashToMemberMinor(payout)).toBe(37_700_000n);
+  });
+
+  it("lists processing and split CRB as named charge specs", () => {
+    const payout = buildDisbursementPayout({
+      principalMinor: 70_000_000n,
+      existingLifMinor: 0n,
+      remainingActivePrincipalMinor: 0n,
+      extraChargesMinor: 0n,
+    });
+    expect(statutoryDisbursementChargeSpecs(payout)).toEqual([
+      { name: "Processing fee", amountMinor: 1_400_000n },
+      { name: "CRB income", amountMinor: 500_000n },
+      { name: "CRB fee", amountMinor: 1_000_000n },
+    ]);
+  });
+
+  it("skips the CRB levy when the loan product does not collect it", () => {
+    const payout = buildDisbursementPayout({
+      principalMinor: 70_000_000n,
+      existingLifMinor: 0n,
+      remainingActivePrincipalMinor: 0n,
+      extraChargesMinor: 0n,
+      collectCrb: false,
+    });
+    expect(payout.crbTotalMinor).toBe(0n);
+    expect(payout.crbIncomeMinor).toBe(0n);
+    expect(payout.crbPayableMinor).toBe(0n);
+    expect(payout.withdrawableMinor).toBe(58_100_000n);
+    expect(statutoryDisbursementChargeSpecs(payout)).toEqual([
+      { name: "Processing fee", amountMinor: 1_400_000n },
+    ]);
+    expect(disbursementOverviewRows({ principalMinor: 70_000_000n, disbursed: true, collectCrb: false }).some((row) => row.key === "crb")).toBe(false);
   });
 });

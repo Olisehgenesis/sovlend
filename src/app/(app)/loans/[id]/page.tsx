@@ -33,6 +33,7 @@ import {
 } from "@/modules/lending/domain/disbursement-payout";
 import { formatMonthlyPercent } from "@/modules/lending/domain/monthly-rate";
 import { generateRepaymentSchedule, readInterestDayCount } from "@/modules/lending/domain/repayment-schedule";
+import { repaymentSplitFromAllocations } from "@/modules/lending/domain/repayment-allocation-split";
 import { formatMinor } from "@/modules/money/domain/format-minor";
 import { displaySavingsProductName } from "@/modules/savings/domain/savings-product-label";
 import { buildLoanDisbursementSavingsIdempotencyKey } from "@/modules/savings/application/savings-ledger";
@@ -207,6 +208,7 @@ export default async function LoanPage({
   const overviewChargeRows = disbursementOverviewRows({
     principalMinor: loan.principalMinor,
     disbursed: Boolean(loan.disbursedOn),
+    collectCrb: loan.product.collectCrb,
   });
   const settlementAccounts = await prisma.settlementAccount.findMany({
     where: { organizationId: scope.organizationId, currencyCode: loan.denominationCurrency, active: true },
@@ -408,6 +410,7 @@ export default async function LoanPage({
     lifAccountNumber: lifAccount?.accountNumber,
     securityAccountNumber: securityAccount?.accountNumber,
     contributionAccountNumber: contributionAccount?.accountNumber,
+    collectCrb: loan.product.collectCrb,
   };
   const isOpenLoan = ["ACTIVE", "IN_ARREARS", "OVERPAID"].includes(loan.status);
   const nextDueInstallment = [...schedule]
@@ -1222,12 +1225,17 @@ export default async function LoanPage({
                   <th>Type</th>
                   <th>Channel</th>
                   <th>Amount</th>
+                  <th>Principal</th>
+                  <th>Interest</th>
+                  <th>Maintenance</th>
                   <th>Reference</th>
                   <th>Recorded by</th>
                 </tr>
               </thead>
               <tbody>
-                {paymentTransactions.map((item) => (
+                {paymentTransactions.map((item) => {
+                  const split = repaymentSplitFromAllocations(item.allocations);
+                  return (
                   <tr key={item.id} className={item.reversedById ? "schedule-row-overdue" : ""}>
                     <td>
                       {formatUgDate(item.businessDate)}
@@ -1241,10 +1249,14 @@ export default async function LoanPage({
                     <td>
                       {formatMinor(item.denominationAmountMinor, loan.denominationCurrency)}
                     </td>
+                    <td>{formatMinor(split.principalMinor, loan.denominationCurrency)}</td>
+                    <td>{formatMinor(split.interestMinor, loan.denominationCurrency)}</td>
+                    <td>{formatMinor(split.monitoringFeeMinor, loan.denominationCurrency)}</td>
                     <td>{item.externalReference ?? "-"}</td>
                     <td>{item.recordedBy?.name ?? "-"}</td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>
