@@ -3,8 +3,9 @@ import { Webhook } from "svix";
 import { z } from "zod";
 
 import { prisma } from "@/lib/prisma";
-import { createLightningGateway } from "@/modules/investments/infrastructure/create-lightning-gateway";
+import { settleDonationLightningInvoice } from "@/modules/donations/application/settle-donation-lightning-invoice";
 import { settleLightningInvoice } from "@/modules/investments/application/settle-lightning-invoice";
+import { createLightningGateway } from "@/modules/investments/infrastructure/create-lightning-gateway";
 
 /**
  * Blink webhook payload shape (dev.blink.sv/api/webhooks). We only care about the receive events
@@ -46,19 +47,22 @@ export async function POST(request: Request) {
   if (!paymentHash) return NextResponse.json({ received: true });
 
   const invoice = await prisma.lightningInvoice.findUnique({ where: { paymentHash } });
-  if (!invoice) return NextResponse.json({ received: true });
-  if (invoice.status === "PAID") return NextResponse.json({ received: true });
+  const donationInvoice = await prisma.donationLightningInvoice.findUnique({ where: { paymentHash } });
+  const investmentPending = invoice && invoice.status !== "PAID";
+  const donationPending = donationInvoice && donationInvoice.status !== "PAID";
+  if (!investmentPending && !donationPending) return NextResponse.json({ received: true });
 
-  const settled = payload.transaction.status.toUpperCase() === "SUCCESS";
-  if (!settled) {
-    // Fall back to an explicit settlement check in case Blink ever sends this webhook for a
-    // pending/failed state -- keeps this handler correct even if that assumption changes.
-    const gateway = createLightningGateway();
-    const confirmedSettled = gateway ? await gateway.isSettled(paymentHash) : false;
-    if (!confirmedSettled) return NextResponse.json({ received: true });
-  }
+  const settled = await paymentSettled(payload.transaction.status, paymentHash);
+  if (!settled) return NextResponse.json({ received: true });
 
-  await settleLightningInvoice(prisma, invoice, paymentHash);
+  if (investmentPending && invoice) await settleLightningInvoice(prisma, invoice, paymentHash);
+  if (donationPending && donationInvoice) await settleDonationLightningInvoice(prisma, donationInvoice);
 
   return NextResponse.json({ received: true });
+}
+
+async function paymentSettled(status: string, paymentHash: string) {
+  if (status.toUpperCase() === "SUCCESS") return true;
+  const gateway = createLightningGateway();
+  return gateway ? gateway.isSettled(paymentHash) : false;
 }

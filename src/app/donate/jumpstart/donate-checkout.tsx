@@ -5,6 +5,8 @@ import { createThirdwebClient } from "thirdweb";
 import { base } from "thirdweb/chains";
 import { BuyWidget, lightTheme, ThirdwebProvider } from "thirdweb/react";
 
+import { BitcoinDonation } from "./bitcoin-donation";
+
 const PLANS = [10, 25, 100] as const;
 const USDC_ON_BASE = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
 const DEFAULT_RECEIVER = "0x83755848696619E19116BEb84d7a6dEFc016dcFd";
@@ -148,6 +150,7 @@ export function DonateCheckout({ clientId }: { clientId: string }) {
   const [formError, setFormError] = useState<string | null>(null);
   const [amount, setAmount] = useState("25");
   const [choosingPayment, setChoosingPayment] = useState(false);
+  const [bitcoinOpen, setBitcoinOpen] = useState(false);
   const chosenAmount = payableAmount(amount);
   useEffect(() => setMounted(true), []);
   useAmountOnlyRamp(Boolean(client && receiver && mounted && requestId), amount);
@@ -205,8 +208,21 @@ export function DonateCheckout({ clientId }: { clientId: string }) {
         </header>
         {requestId ? (
           <>
-            {choosingPayment ? null : <AmountChooser amount={amount} onChange={setAmount} />}
+            {bitcoinOpen && chosenAmount ? (
+              <BitcoinDonation donationId={requestId} amountUsd={chosenAmount} onBack={() => setBitcoinOpen(false)} />
+            ) : choosingPayment ? null : (
+              <>
+                <AmountChooser amount={amount} onChange={setAmount} />
+                {!client && chosenAmount ? (
+                  <button className="donate-bitcoin" type="button" onClick={() => setBitcoinOpen(true)}>
+                    <strong>Pay with Bitcoin</strong>
+                    <span>Lightning invoice</span>
+                  </button>
+                ) : null}
+              </>
+            )}
             {client && receiver && mounted ? (
+              <div className={bitcoinOpen ? "donate-ramp-hidden" : undefined}>
               <ThirdwebProvider>
               <BuyWidget
                 client={client}
@@ -239,9 +255,16 @@ export function DonateCheckout({ clientId }: { clientId: string }) {
                 }}
               />
               </ThirdwebProvider>
-            ) : (
+              </div>
+            ) : bitcoinOpen ? null : (
               <p className="donate-note">Card and crypto checkout needs a thirdweb client id in this environment.</p>
             )}
+            {!bitcoinOpen && choosingPayment && chosenAmount ? (
+              <button className="donate-bitcoin" type="button" onClick={() => setBitcoinOpen(true)}>
+                <strong>Pay with Bitcoin</strong>
+                <span>Lightning invoice</span>
+              </button>
+            ) : null}
           </>
         ) : (
           <DonationDetailsForm
@@ -256,6 +279,7 @@ export function DonateCheckout({ clientId }: { clientId: string }) {
           <p className="donate-rails">
             <span>Visa</span>
             <span>Mastercard</span>
+            <span>Bitcoin</span>
             <span>Crypto</span>
           </p>
           <a className="donate-more" href={ABOUT_URL} target="_top" rel="noopener noreferrer">

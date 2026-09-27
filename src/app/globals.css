@@ -759,6 +759,7 @@ a.statement-row-link:hover { background: var(--mint, #edf7f0); padding-left: 8px
 .donate-plan[aria-checked="true"] { color: white; background: var(--forest); border-color: var(--forest); }
 .donate-plan:focus-visible, .donate-more:focus-visible { outline: 2px solid var(--forest); outline-offset: 2px; }
 .donate-ramp { width: 100% !important; max-width: 100% !important; border: 0 !important; border-radius: 0 !important; box-shadow: none !important; }
+.donate-ramp * { min-height: 0 !important; }
 .donate-note { margin: 0; padding: 14px 22px 0; color: var(--muted); font-size: 12px; line-height: 1.45; text-align: center; }
 .donate-foot { padding: 16px 22px 18px; display: grid; gap: 12px; justify-items: center; }
 .donate-rails { margin: 0; display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; }
@@ -775,3 +776,16 @@ a.statement-row-link:hover { background: var(--mint, #edf7f0); padding-left: 8px
 .donate-continue { height: 44px; color: white; background: var(--forest); border: 0; border-radius: 6px; font-weight: 650; }
 .donate-continue:disabled { opacity: .65; }
 .donate-continue:focus-visible { outline: 2px solid var(--forest); outline-offset: 2px; }
+.donate-bitcoin { margin: 12px 22px 0; width: calc(100% - 44px); display: grid; gap: 2px; padding: 14px 16px; text-align: left; color: var(--ink); background: #f3f6f3; border: 0; border-radius: 12px; cursor: pointer; }
+.donate-bitcoin strong { font-size: 15px; font-weight: 650; }
+.donate-bitcoin span { color: var(--muted); font-size: 13px; font-weight: 500; }
+.donate-bitcoin:focus-visible, .donate-back:focus-visible, .donate-copy:focus-visible { outline: 2px solid var(--forest); outline-offset: 2px; }
+.donate-ramp-hidden { display: none !important; }
+.donate-invoice { padding: 8px 22px 8px; display: grid; justify-items: center; gap: 10px; }
+.donate-invoice img { width: 220px; height: 220px; }
+.donate-back { justify-self: start; padding: 0; color: var(--forest); background: none; border: 0; font: 650 13px var(--font-body); cursor: pointer; }
+.donate-sats { margin: 0; font: 600 18px var(--font-display), sans-serif; }
+.donate-wait { margin: 0; color: var(--muted); font-size: 13px; text-align: center; }
+.donate-copy { height: 40px; padding: 0 16px; color: var(--forest); background: white; border: 1px solid var(--forest); border-radius: 6px; font-weight: 650; cursor: pointer; }
+.donate-paid { padding: 28px 22px 12px; text-align: center; }
+.donate-paid p { margin: 0; color: var(--forest); font-weight: 650; line-height: 1.45; }

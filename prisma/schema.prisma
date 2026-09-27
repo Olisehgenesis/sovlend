@@ -1825,13 +1825,36 @@ model DonationRequest {
   country      String?
   phone        String?
   city         String?
-  status       DonationRequestStatus  @default(PENDING)
-  succeededAt  DateTime?
-  createdAt    DateTime               @default(now())
-  updatedAt    DateTime               @updatedAt
+  status            DonationRequestStatus  @default(PENDING)
+  amountUsdMinor    BigInt?
+  amountSats        BigInt?
+  succeededAt       DateTime?
+  createdAt         DateTime               @default(now())
+  updatedAt         DateTime               @updatedAt
+  lightningInvoices DonationLightningInvoice[]
 
   @@index([status, createdAt])
   @@index([email])
+}
+
+model DonationLightningInvoice {
+  id                String                 @id @default(uuid()) @db.Uuid
+  donationRequestId String                 @db.Uuid
+  provider          String
+  providerInvoiceId String                 @unique
+  bolt11            String                 @db.Text
+  paymentHash       String?                @unique
+  amountUsdMinor    BigInt
+  amountSats        BigInt
+  status            LightningInvoiceStatus @default(NEW)
+  expiresAt         DateTime
+  settledAt         DateTime?
+  donationRequest   DonationRequest        @relation(fields: [donationRequestId], references: [id], onDelete: Cascade)
+  createdAt         DateTime               @default(now())
+  updatedAt         DateTime               @updatedAt
+
+  @@index([donationRequestId, createdAt])
+  @@index([status, expiresAt])
 }
 
 model Reminder {
