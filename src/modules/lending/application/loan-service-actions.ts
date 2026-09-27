@@ -9,6 +9,8 @@ import { assertBalancedJournal } from "@/modules/ledger/domain/journal";
 import { recordSavingsTransactionInTransaction } from "@/modules/savings/application/post-savings-transaction";
 import { buildLoanDisbursementSavingsIdempotencyKey } from "@/modules/savings/application/savings-ledger";
 
+import { isLoanPaymentTransaction } from "@/lib/loan-transaction-type-variants";
+
 import { calculateLoanPayoff, type PayoffInstallment } from "../domain/loan-payoff";
 import {
   installmentDueMinor,
@@ -37,7 +39,7 @@ export function parseServiceActionPayload(actionType: LoanServiceActionType, pay
 }
 
 function isBlockingUndoTransaction(type: string) {
-  return type !== "DISBURSEMENT" && type !== "DISBURSEMENT_REVERSAL";
+  return isLoanPaymentTransaction(type);
 }
 
 function isInternalDisbursementSavingsKey(key: string | null) {
@@ -86,8 +88,8 @@ export async function requestLoanServiceAction(
 
   if (command.actionType === "UNDO_DISBURSAL") {
     if (loan.status !== "ACTIVE" || !loan.disbursedOn) throw new Error("Only active, disbursed loans can have disbursal undone");
-    const nonDisbursement = loan.transactions.filter((item) => isBlockingUndoTransaction(item.transactionType));
-    if (nonDisbursement.length > 0) throw new Error("Cannot undo disbursal after other transactions have been posted against this loan");
+    const payments = loan.transactions.filter((item) => isBlockingUndoTransaction(item.transactionType) && !item.reversedById);
+    if (payments.length > 0) throw new Error("Cannot undo disbursal after a payment has been posted against this loan");
     const disbursement = loan.transactions.find((item) => item.transactionType === "DISBURSEMENT" && !item.reversedById);
     if (!disbursement || disbursement.reversedById) throw new Error("Disbursement transaction is unavailable for reversal");
     await assertDisbursementNotCashedOut(prisma, disbursement.id);
@@ -188,8 +190,8 @@ async function executeUndoDisbursal(
     include: { transactions: true },
   });
   if (current.status !== "ACTIVE" || !current.disbursedOn) throw new Error("Loan is not in a disbursed state");
-  const nonDisbursement = current.transactions.filter((item) => isBlockingUndoTransaction(item.transactionType));
-  if (nonDisbursement.length > 0) throw new Error("Cannot undo disbursal after other transactions have been posted against this loan");
+  const payments = current.transactions.filter((item) => isBlockingUndoTransaction(item.transactionType) && !item.reversedById);
+  if (payments.length > 0) throw new Error("Cannot undo disbursal after a payment has been posted against this loan");
   const disbursement = current.transactions.find((item) => item.transactionType === "DISBURSEMENT" && !item.reversedById);
   if (!disbursement || disbursement.reversedById) throw new Error("Disbursement transaction is unavailable for reversal");
   await assertDisbursementNotCashedOut(tx, disbursement.id);
@@ -225,8 +227,8 @@ async function executeUndoDisbursal(
     },
   });
   await tx.loanTransaction.update({ where: { id: disbursement.id }, data: { reversedById: reversal.id } });
-  // Safe to remove the generated schedule: the precondition above guarantees no repayment or
-  // allocation has ever referenced these installments.
+  // Safe to remove the generated schedule: undo is refused once a payment exists, so these
+  // installments have never been allocated to.
   await tx.loanInstallment.deleteMany({ where: { loanId: current.id } });
 
   if (savingsMirrors.length > 0) {

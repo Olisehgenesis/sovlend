@@ -17,7 +17,7 @@ import { LoanTopUpButton } from "@/components/loan-top-up-button";
 import { RepaymentForm } from "@/components/repayment-form";
 import { Breadcrumbs } from "@/components/breadcrumbs";
 import { formatUgDate, transactionTypeLabel } from "./_lib/loan-records";
-import { transactionTypeVariants } from "@/lib/loan-transaction-type-variants";
+import { isLoanPaymentTransaction, transactionTypeVariants } from "@/lib/loan-transaction-type-variants";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { AuthorizationService } from "@/modules/identity/application/authorization-service";
@@ -321,7 +321,7 @@ export default async function LoanPage({
     (item) => item.transactionType === "DISBURSEMENT" && !item.reversedById,
   );
   const hasBlockingUndoTransactions = loan.transactions.some(
-    (item) => item.transactionType !== "DISBURSEMENT" && item.transactionType !== "DISBURSEMENT_REVERSAL",
+    (item) => isLoanPaymentTransaction(item.transactionType) && !item.reversedById,
   );
   const hasPendingDisbursement =
     loan.status === "ACTIVE" && Boolean(loan.disbursedOn) && Boolean(unreversedDisbursement) && !hasBlockingUndoTransactions;

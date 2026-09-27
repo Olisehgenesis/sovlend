@@ -23,6 +23,15 @@ export function transactionTypeVariants(canonical: string): string[] {
   return [canonical, ...(LEGACY_VARIANTS[canonical] ?? [])];
 }
 
+const LOAN_PAYMENT_TYPES = ["REPAYMENT", "REPAYMENT_AT_DISBURSEMENT", "RECOVERY_REPAYMENT", "PREPAYMENT", "FORECLOSURE"] as const;
+
+const loanPaymentTypes = new Set(LOAN_PAYMENT_TYPES.flatMap((type) => transactionTypeVariants(type)));
+
+/** Money the borrower paid in. Accruals, waivers, and the disbursement itself are not payments. */
+export function isLoanPaymentTransaction(type: string) {
+  return loanPaymentTypes.has(type);
+}
+
 // Both the raw Fineract-style code (`loanTransactionType.repaymentAtDisbursement`) and the
 // canonical string new transactions use (`REPAYMENT_AT_DISBURSEMENT`) must render as one
 // human-readable label (e.g. "Repayment At Disbursement") — operators should never see either

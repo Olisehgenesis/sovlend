@@ -49,7 +49,7 @@ export function UndoDisbursementButton({ loanId }: { loanId: string }) {
           <fieldset>
             <legend>Undo disbursement</legend>
             <p className="field-help">
-              This reverses the disbursement journals and savings credits as long as the member has not cashed out the proceeds. The loan returns to approved so it can be disbursed again.
+              You can undo this disbursement only when no payment has been made and the member has not withdrawn the proceeds. The loan returns to approved so it can be disbursed again.
             </p>
             <label>
               Business date
