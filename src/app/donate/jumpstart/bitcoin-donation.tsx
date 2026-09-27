@@ -3,6 +3,13 @@
 import { useEffect, useState } from "react";
 import QRCode from "qrcode";
 
+const UNAVAILABLE = "Bitcoin transfer is unavailable right now.";
+
+function donorMessage(error: string | undefined) {
+  if (!error || /blink|failed with http/i.test(error)) return UNAVAILABLE;
+  return error;
+}
+
 type Invoice = {
   id: string;
   status: string;
@@ -27,20 +34,25 @@ export function BitcoinDonation({
   useEffect(() => {
     let cancelled = false;
     async function createInvoice() {
-      const response = await fetch(`/api/donations/${donationId}/lightning`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ amountUsd }),
-      });
-      const result = (await response.json().catch(() => ({}))) as Partial<Invoice> & { error?: string };
-      if (cancelled) return;
-      if (!response.ok || !result.bolt11 || !result.amountSats || !result.expiresAt || !result.id) {
-        setError(result.error ?? "Bitcoin invoice could not be created");
-        return;
+      try {
+        const response = await fetch(`/api/donations/${donationId}/lightning`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ amountUsd }),
+        });
+        const result = (await response.json().catch(() => ({}))) as Partial<Invoice> & { error?: string };
+        if (cancelled) return;
+        if (!response.ok || !result.bolt11 || !result.amountSats || !result.expiresAt || !result.id) {
+          setError(donorMessage(result.error));
+          return;
+        }
+        const qr = await QRCode.toDataURL(result.bolt11, { width: 280, margin: 1, errorCorrectionLevel: "M" });
+        if (cancelled) return;
+        setInvoice({ id: result.id, status: result.status ?? "NEW", amountSats: result.amountSats, bolt11: result.bolt11, expiresAt: result.expiresAt, qr });
+      } catch (error) {
+        console.error("Donation Lightning invoice failed", error);
+        if (!cancelled) setError(UNAVAILABLE);
       }
-      const qr = await QRCode.toDataURL(result.bolt11, { width: 280, margin: 1, errorCorrectionLevel: "M" });
-      if (cancelled) return;
-      setInvoice({ id: result.id, status: result.status ?? "NEW", amountSats: result.amountSats, bolt11: result.bolt11, expiresAt: result.expiresAt, qr });
     }
     void createInvoice();
     return () => {

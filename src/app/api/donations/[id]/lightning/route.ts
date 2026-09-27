@@ -12,8 +12,27 @@ const amountSchema = z.object({
   amountUsd: z.string().regex(/^\d+(\.\d{1,2})?$/),
 });
 
+const UNAVAILABLE = "Bitcoin transfer is unavailable right now.";
+
+const donorMessages = new Set([
+  "Donation not found",
+  "This donation is already complete",
+  "Enter a donation amount",
+  "Too many Bitcoin invoices for this donation",
+  "That amount is too small for a Bitcoin payment",
+]);
+
 function isUuid(value: string) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+}
+
+function donorFacingError(error: unknown) {
+  const message = error instanceof Error ? error.message : "";
+  if (donorMessages.has(message)) {
+    return NextResponse.json({ error: message }, { status: message === "Donation not found" ? 404 : 400 });
+  }
+  console.error("Donation Lightning invoice failed", error);
+  return NextResponse.json({ error: UNAVAILABLE }, { status: 503 });
 }
 
 function invoiceJson(invoice: { id: string; bolt11: string; expiresAt: Date; amountSats: bigint; status: string }) {
@@ -35,7 +54,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
   const baseUrl = process.env.BETTER_AUTH_URL;
   const lightning = createLightningGateway();
-  if (!baseUrl || !lightning) return NextResponse.json({ error: "Bitcoin payments are not available right now" }, { status: 503 });
+  if (!baseUrl || !lightning) {
+    console.error("Donation Lightning invoice failed", !lightning ? "Lightning gateway is not configured" : "App URL is not configured");
+    return NextResponse.json({ error: UNAVAILABLE }, { status: 503 });
+  }
 
   try {
     const invoice = await createDonationLightningInvoice(prisma, createPriceService({ base: "BTC", quote: "USD" }), lightning, {
@@ -46,11 +68,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     return NextResponse.json(invoiceJson(invoice), { status: 201 });
   } catch (error) {
     if (error instanceof PriceUnavailableError) {
+      console.error("Donation Lightning invoice failed", error);
       return NextResponse.json({ error: "The Bitcoin price is temporarily unavailable. Try again shortly." }, { status: 503 });
     }
-    const message = error instanceof Error ? error.message : "Bitcoin invoice could not be created";
-    const status = message === "Donation not found" ? 404 : 400;
-    return NextResponse.json({ error: message }, { status });
+    return donorFacingError(error);
   }
 }
 
@@ -66,8 +87,12 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
 
   if (invoice.status === "NEW" && invoice.paymentHash && invoice.expiresAt.getTime() > Date.now() - 5 * 60_000) {
     const gateway = createLightningGateway();
-    if (gateway && (await gateway.isSettled(invoice.paymentHash))) {
-      await settleDonationLightningInvoice(prisma, invoice);
+    if (gateway) {
+      try {
+        if (await gateway.isSettled(invoice.paymentHash)) await settleDonationLightningInvoice(prisma, invoice);
+      } catch (error) {
+        console.error("Donation Lightning settlement check failed", error);
+      }
     }
   }
 
