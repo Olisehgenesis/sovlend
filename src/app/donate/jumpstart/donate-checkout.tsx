@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createThirdwebClient } from "thirdweb";
 import { base } from "thirdweb/chains";
 import { BuyWidget, lightTheme, ThirdwebProvider } from "thirdweb/react";
@@ -43,19 +43,43 @@ function ancestor(element: HTMLElement, depth: number) {
   return node;
 }
 
-function hideTokenAndWallet(root: HTMLElement) {
+function sanitizeAmount(value: string) {
+  const cleaned = value.replace(/[^\d.]/g, "");
+  const dot = cleaned.indexOf(".");
+  if (dot === -1) return cleaned.slice(0, 7);
+  const whole = cleaned.slice(0, dot).slice(0, 7);
+  const fraction = cleaned.slice(dot + 1).replace(/\./g, "").slice(0, 2);
+  return `${whole}.${fraction}`;
+}
+
+function payableAmount(value: string) {
+  if (!/^\d+(\.\d{1,2})?$/.test(value)) return null;
+  const amount = Number(value);
+  if (!Number.isFinite(amount) || amount <= 0 || amount > 100_000) return null;
+  return value;
+}
+
+function writeInputValue(input: HTMLInputElement, value: string) {
+  if (input.value === value) return;
+  const prototype = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value");
+  const tracker = (input as HTMLInputElement & { _valueTracker?: { setValue: (next: string) => void } })._valueTracker;
+  tracker?.setValue(input.value);
+  prototype?.set?.call(input, value);
+  input.dispatchEvent(new Event("input", { bubbles: true }));
+}
+
+function hideTokenAndWallet(root: HTMLElement, dollars: string) {
+  const inputs = [...root.querySelectorAll("input")];
+  for (const input of inputs) {
+    if (input.dataset.donateRole) continue;
+    const size = Number.parseFloat(getComputedStyle(input).fontSize);
+    if (size >= 20) input.dataset.donateRole = "token";
+    else if (input.placeholder === "0.0") input.dataset.donateRole = "fiat";
+  }
+
   const payLabel = [...root.querySelectorAll("span")].find((span) => span.textContent?.trim() === "Pay");
-  if (!payLabel) return;
-
-  const payHeader = ancestor(payLabel, 4);
-  if (payHeader) payHeader.style.display = "none";
-
-  const payCard = ancestor(payLabel, 5);
-  payCard?.querySelectorAll("button").forEach((button) => {
-    const label = button.textContent?.replace(/\s/g, "") ?? "";
-    if (/^\$?\d+(\.\d+)?$/.test(label)) return;
-    button.style.display = "none";
-  });
+  const payCard = payLabel ? ancestor(payLabel, 5) : null;
+  if (payCard) payCard.style.display = "none";
 
   const toLabel = [...root.querySelectorAll("span")].find((span) => span.textContent?.trim() === "To");
   const toCard = toLabel ? ancestor(toLabel, 3) : null;
@@ -64,35 +88,34 @@ function hideTokenAndWallet(root: HTMLElement) {
     if (toCard.previousElementSibling instanceof HTMLElement) toCard.previousElementSibling.style.display = "none";
   }
 
-  const inputs = [...root.querySelectorAll("input")];
-  const tokenInput = inputs.find((input) => Number.parseFloat(getComputedStyle(input).fontSize) >= 20);
-  const dollarInput = inputs.find((input) => input !== tokenInput);
-  if (tokenInput) tokenInput.style.setProperty("display", "none", "important");
-  if (dollarInput) {
-    dollarInput.style.fontSize = "24px";
-    dollarInput.style.height = "32px";
-    dollarInput.style.fontWeight = "500";
-    dollarInput.style.color = "#17211b";
-  }
-
-  if (root.dataset.amountReady === "true") return;
-  const preset = [...root.querySelectorAll("button")].find((button) => button.textContent?.replace(/\s/g, "") === "$25");
-  if (!preset || preset.disabled) return;
-  preset.click();
-  root.dataset.amountReady = "true";
+  const fiat = root.querySelector<HTMLInputElement>('input[data-donate-role="fiat"]');
+  if (fiat) writeInputValue(fiat, payableAmount(dollars) ?? "0");
 }
 
-function useAmountOnlyRamp(enabled: boolean) {
+function useAmountOnlyRamp(enabled: boolean, amount: string) {
+  const amountRef = useRef(amount);
+  amountRef.current = amount;
+
+  useEffect(() => {
+    if (!enabled) return;
+    const card = document.querySelector(".donate-card");
+    if (!card) return;
+
+    const apply = () => {
+      const root = card.querySelector<HTMLElement>(".donate-ramp");
+      if (root) hideTokenAndWallet(root, amountRef.current);
+    };
+    apply();
+    const observer = new MutationObserver(apply);
+    observer.observe(card, { childList: true, subtree: true, characterData: true });
+    return () => observer.disconnect();
+  }, [enabled]);
+
   useEffect(() => {
     if (!enabled) return;
     const root = document.querySelector<HTMLElement>(".donate-ramp");
-    if (!root) return;
-
-    hideTokenAndWallet(root);
-    const observer = new MutationObserver(() => hideTokenAndWallet(root));
-    observer.observe(root, { childList: true, subtree: true, characterData: true });
-    return () => observer.disconnect();
-  }, [enabled]);
+    if (root) hideTokenAndWallet(root, amount);
+  }, [amount, enabled]);
 }
 
 type DonationDetails = {
@@ -123,25 +146,47 @@ export function DonateCheckout({ clientId }: { clientId: string }) {
   const [requestId, setRequestId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  const [amount, setAmount] = useState("25");
+  const [choosingPayment, setChoosingPayment] = useState(false);
+  const chosenAmount = payableAmount(amount);
   useEffect(() => setMounted(true), []);
-  useAmountOnlyRamp(Boolean(client && receiver && mounted && requestId));
+  useAmountOnlyRamp(Boolean(client && receiver && mounted && requestId), amount);
+
+  useEffect(() => {
+    if (!requestId) return;
+    const card = document.querySelector(".donate-card");
+    if (!card) return;
+    const sync = () => {
+      const ramp = card.querySelector(".donate-ramp");
+      setChoosingPayment(Boolean(ramp?.textContent?.includes("Choose Payment Method")));
+    };
+    sync();
+    const observer = new MutationObserver(sync);
+    observer.observe(card, { childList: true, subtree: true, characterData: true });
+    return () => observer.disconnect();
+  }, [requestId]);
 
   async function saveRequest(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setSaving(true);
     setFormError(null);
-    const response = await fetch("/api/donations", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(details),
-    });
-    const result = await response.json();
-    setSaving(false);
-    if (!response.ok) {
-      setFormError(result.error ?? "Could not save this donation");
-      return;
+    try {
+      const response = await fetch("/api/donations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(details),
+      });
+      const result = (await response.json().catch(() => ({}))) as { id?: string; error?: string };
+      if (!response.ok || !result.id) {
+        setFormError(result.error ?? "Could not save this donation");
+        return;
+      }
+      setRequestId(result.id);
+    } catch {
+      setFormError("Could not save this donation");
+    } finally {
+      setSaving(false);
     }
-    setRequestId(result.id);
   }
 
   function updateDetail<Key extends keyof DonationDetails>(key: Key, value: DonationDetails[Key]) {
@@ -154,10 +199,15 @@ export function DonateCheckout({ clientId }: { clientId: string }) {
         <header className="donate-intro">
           <h1 id="donate-title">Make a donation</h1>
           <p>No matter how small or great.</p>
+          <p className="donate-cause">
+            {requestId && chosenAmount ? `You are contributing $${chosenAmount} to Jumpstart.` : "You are contributing to Jumpstart."}
+          </p>
         </header>
         {requestId ? (
-          client && receiver && mounted ? (
-            <ThirdwebProvider>
+          <>
+            {choosingPayment ? null : <AmountChooser amount={amount} onChange={setAmount} />}
+            {client && receiver && mounted ? (
+              <ThirdwebProvider>
               <BuyWidget
                 client={client}
                 chain={base}
@@ -188,10 +238,11 @@ export function DonateCheckout({ clientId }: { clientId: string }) {
                   connectModal: { size: "compact", title: "Pay with crypto" },
                 }}
               />
-            </ThirdwebProvider>
-          ) : (
-            <DonatePreview />
-          )
+              </ThirdwebProvider>
+            ) : (
+              <p className="donate-note">Card and crypto checkout needs a thirdweb client id in this environment.</p>
+            )}
+          </>
         ) : (
           <DonationDetailsForm
             details={details}
@@ -276,26 +327,38 @@ function DonationDetailsForm({
   );
 }
 
-function DonatePreview() {
-  const [amount, setAmount] = useState<(typeof PLANS)[number]>(25);
-
+function AmountChooser({ amount, onChange }: { amount: string; onChange: (value: string) => void }) {
   return (
-    <>
-      <div className="donate-plans" role="radiogroup" aria-label="Donation amount in US dollars">
+    <div className="donate-amount">
+      <div className="donate-plans" role="radiogroup" aria-label="Suggested donation amounts in US dollars">
         {PLANS.map((plan) => (
           <button
             key={plan}
             type="button"
             className="donate-plan"
             role="radio"
-            aria-checked={amount === plan}
-            onClick={() => setAmount(plan)}
+            aria-checked={amount === String(plan)}
+            onClick={() => onChange(String(plan))}
           >
             ${plan}
           </button>
         ))}
       </div>
-      <p className="donate-note">Card and crypto checkout needs a thirdweb client id in this environment.</p>
-    </>
+      <label className="donate-custom">
+        Amount
+        <span className="donate-custom-field">
+          <span aria-hidden="true">$</span>
+          <input
+            name="amount"
+            inputMode="decimal"
+            autoComplete="off"
+            placeholder="Any amount"
+            aria-label="Donation amount in US dollars"
+            value={amount}
+            onChange={(event) => onChange(sanitizeAmount(event.target.value))}
+          />
+        </span>
+      </label>
+    </div>
   );
 }
