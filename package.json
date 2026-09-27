@@ -44,6 +44,10 @@
     "@dicebear/collection": "^9.4.2",
     "@dicebear/core": "^9.4.2",
     "@prisma/client": "6.16.2",
+    "@x402/core": "^2.27.0",
+    "@x402/evm": "^2.27.0",
+    "@x402/extensions": "^2.27.0",
+    "@x402/svm": "^2.27.0",
     "archiver": "^7.0.1",
     "better-auth": "^1.7.2",
     "bullmq": "^6.3.2",
@@ -57,6 +61,7 @@
     "recharts": "^3.10.1",
     "sonner": "^2.0.8",
     "svix": "^2.4.0",
+    "thirdweb": "^5.121.4",
     "zod": "^4.5.4"
   },
   "devDependencies": {
