@@ -756,3 +756,14 @@ a.statement-row-link:hover { background: var(--mint, #edf7f0); padding-left: 8px
 .donate-rails { margin: 0; display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; }
 .donate-rails span { padding: 4px 8px; color: var(--muted); background: var(--paper); border: 1px solid var(--line); border-radius: 4px; font: 500 11px var(--font-mono), monospace; }
 .donate-more { color: var(--forest); font-size: 13px; font-weight: 650; text-underline-offset: 3px; }
+.donate-form { padding: 16px 22px 4px; display: grid; gap: 12px; }
+.donate-form label { display: grid; gap: 6px; color: #445048; font-size: 12px; font-weight: 650; }
+.donate-form input, .donate-form textarea { width: 100%; padding: 10px 12px; color: var(--ink); background: white; border: 1px solid #cfd7d1; border-radius: 6px; font: 14px var(--font-body); }
+.donate-form textarea { min-height: 72px; resize: vertical; }
+.donate-form input:focus, .donate-form textarea:focus { border-color: var(--forest); outline: 2px solid var(--mint); }
+.donate-check { display: flex; align-items: center; gap: 8px; color: var(--ink); font-size: 13px; font-weight: 650; }
+.donate-check input { width: 16px; height: 16px; padding: 0; accent-color: var(--forest); }
+.donate-extra { display: grid; gap: 12px; }
+.donate-continue { height: 44px; color: white; background: var(--forest); border: 0; border-radius: 6px; font-weight: 650; }
+.donate-continue:disabled { opacity: .65; }
+.donate-continue:focus-visible { outline: 2px solid var(--forest); outline-offset: 2px; }

@@ -1811,6 +1811,29 @@ model Notification {
   @@index([audienceType, audienceId, readAt, createdAt(sort: Desc)])
 }
 
+enum DonationRequestStatus {
+  PENDING
+  SUCCEEDED
+}
+
+model DonationRequest {
+  id           String                 @id @default(uuid()) @db.Uuid
+  name         String
+  email        String
+  message      String?
+  moreBiodata  Boolean                @default(false)
+  country      String?
+  phone        String?
+  city         String?
+  status       DonationRequestStatus  @default(PENDING)
+  succeededAt  DateTime?
+  createdAt    DateTime               @default(now())
+  updatedAt    DateTime               @updatedAt
+
+  @@index([status, createdAt])
+  @@index([email])
+}
+
 model Reminder {
   id               String          @id @default(uuid()) @db.Uuid
   loanId           String          @db.Uuid

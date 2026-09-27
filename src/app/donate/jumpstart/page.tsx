@@ -8,6 +8,6 @@ export const metadata: Metadata = {
 };
 
 export default function JumpstartDonatePage() {
-  const clientId = process.env.THIRDWEB_CLIENT_ID || process.env.NEXT_PUBLIC_THIRDWEB_CLIENT_ID || "";
+  const clientId = process.env["THIRDWEB_CLIENT_ID"] || process.env["NEXT_PUBLIC_THIRDWEB_CLIENT_ID"] || "";
   return <DonateCheckout clientId={clientId} />;
 }

@@ -95,12 +95,58 @@ function useAmountOnlyRamp(enabled: boolean) {
   }, [enabled]);
 }
 
+type DonationDetails = {
+  name: string;
+  email: string;
+  message: string;
+  moreBiodata: boolean;
+  country: string;
+  phone: string;
+  city: string;
+};
+
+const emptyDetails: DonationDetails = {
+  name: "",
+  email: "",
+  message: "",
+  moreBiodata: false,
+  country: "",
+  phone: "",
+  city: "",
+};
+
 export function DonateCheckout({ clientId }: { clientId: string }) {
   const client = useMemo(() => (clientId ? createThirdwebClient({ clientId }) : null), [clientId]);
   const receiver = receiverAddress();
   const [mounted, setMounted] = useState(false);
+  const [details, setDetails] = useState<DonationDetails>(emptyDetails);
+  const [requestId, setRequestId] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
   useEffect(() => setMounted(true), []);
-  useAmountOnlyRamp(Boolean(client && receiver && mounted));
+  useAmountOnlyRamp(Boolean(client && receiver && mounted && requestId));
+
+  async function saveRequest(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setSaving(true);
+    setFormError(null);
+    const response = await fetch("/api/donations", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(details),
+    });
+    const result = await response.json();
+    setSaving(false);
+    if (!response.ok) {
+      setFormError(result.error ?? "Could not save this donation");
+      return;
+    }
+    setRequestId(result.id);
+  }
+
+  function updateDetail<Key extends keyof DonationDetails>(key: Key, value: DonationDetails[Key]) {
+    setDetails((current) => ({ ...current, [key]: value }));
+  }
 
   return (
     <main className="donate-page">
@@ -109,38 +155,51 @@ export function DonateCheckout({ clientId }: { clientId: string }) {
           <h1 id="donate-title">Make a donation</h1>
           <p>No matter how small or great.</p>
         </header>
-        {client && receiver && mounted ? (
-          <ThirdwebProvider>
-            <BuyWidget
-              client={client}
-              chain={base}
-              tokenAddress={USDC_ON_BASE}
-              amount="25"
-              amountEditable
-              tokenEditable={false}
-              presetOptions={[10, 25, 100]}
-              currency="USD"
-              paymentMethods={["crypto", "card"]}
-              receiverAddress={receiver}
-              title=""
-              buttonLabel="Next"
-              theme={theme}
-              showThirdwebBranding
-              className="donate-ramp"
-              style={{ width: "100%", border: "none", borderRadius: 0, boxShadow: "none" }}
-              purchaseData={{ purpose: "jumpstart-donation" }}
-              connectOptions={{
-                appMetadata: {
-                  name: "Jumpstart",
-                  url: "https://jumpstartafrica.org",
-                  description: "Donate to Jumpstart Africa",
-                },
-                connectModal: { size: "compact", title: "Pay with crypto" },
-              }}
-            />
-          </ThirdwebProvider>
+        {requestId ? (
+          client && receiver && mounted ? (
+            <ThirdwebProvider>
+              <BuyWidget
+                client={client}
+                chain={base}
+                tokenAddress={USDC_ON_BASE}
+                amount="25"
+                amountEditable
+                tokenEditable={false}
+                presetOptions={[10, 25, 100]}
+                currency="USD"
+                paymentMethods={["crypto", "card"]}
+                receiverAddress={receiver}
+                title=""
+                buttonLabel="Next"
+                theme={theme}
+                showThirdwebBranding
+                className="donate-ramp"
+                style={{ width: "100%", border: "none", borderRadius: 0, boxShadow: "none" }}
+                purchaseData={{ purpose: "jumpstart-donation", donationRequestId: requestId }}
+                onSuccess={() => {
+                  void fetch(`/api/donations/${requestId}/succeed`, { method: "POST" });
+                }}
+                connectOptions={{
+                  appMetadata: {
+                    name: "Jumpstart",
+                    url: "https://jumpstartafrica.org",
+                    description: "Donate to Jumpstart Africa",
+                  },
+                  connectModal: { size: "compact", title: "Pay with crypto" },
+                }}
+              />
+            </ThirdwebProvider>
+          ) : (
+            <DonatePreview />
+          )
         ) : (
-          <DonatePreview />
+          <DonationDetailsForm
+            details={details}
+            saving={saving}
+            error={formError}
+            onChange={updateDetail}
+            onSubmit={saveRequest}
+          />
         )}
         <footer className="donate-foot">
           <p className="donate-rails">
@@ -154,6 +213,66 @@ export function DonateCheckout({ clientId }: { clientId: string }) {
         </footer>
       </section>
     </main>
+  );
+}
+
+function DonationDetailsForm({
+  details,
+  saving,
+  error,
+  onChange,
+  onSubmit,
+}: {
+  details: DonationDetails;
+  saving: boolean;
+  error: string | null;
+  onChange: <Key extends keyof DonationDetails>(key: Key, value: DonationDetails[Key]) => void;
+  onSubmit: (event: React.FormEvent<HTMLFormElement>) => void;
+}) {
+  return (
+    <form className="donate-form" onSubmit={onSubmit}>
+      <label>
+        Name
+        <input name="name" autoComplete="name" required value={details.name} onChange={(event) => onChange("name", event.target.value)} />
+      </label>
+      <label>
+        Email
+        <input name="email" type="email" autoComplete="email" required value={details.email} onChange={(event) => onChange("email", event.target.value)} />
+      </label>
+      <label>
+        Message
+        <textarea name="message" rows={3} value={details.message} onChange={(event) => onChange("message", event.target.value)} />
+      </label>
+      <label className="donate-check">
+        <input
+          name="moreBiodata"
+          type="checkbox"
+          checked={details.moreBiodata}
+          onChange={(event) => onChange("moreBiodata", event.target.checked)}
+        />
+        Give more about yourself
+      </label>
+      {details.moreBiodata ? (
+        <div className="donate-extra">
+          <label>
+            Country
+            <input name="country" autoComplete="country-name" value={details.country} onChange={(event) => onChange("country", event.target.value)} />
+          </label>
+          <label>
+            Phone
+            <input name="phone" type="tel" autoComplete="tel" value={details.phone} onChange={(event) => onChange("phone", event.target.value)} />
+          </label>
+          <label>
+            City
+            <input name="city" autoComplete="address-level2" value={details.city} onChange={(event) => onChange("city", event.target.value)} />
+          </label>
+        </div>
+      ) : null}
+      {error ? <p className="donate-note">{error}</p> : null}
+      <button className="donate-continue" type="submit" disabled={saving}>
+        {saving ? "Saving" : "Continue"}
+      </button>
+    </form>
   );
 }
 
