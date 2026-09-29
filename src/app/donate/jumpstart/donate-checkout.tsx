@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createThirdwebClient } from "thirdweb";
 import { base } from "thirdweb/chains";
 import { BuyWidget, lightTheme, ThirdwebProvider } from "thirdweb/react";
@@ -140,7 +140,17 @@ const emptyDetails: DonationDetails = {
   city: "",
 };
 
-export function DonateCheckout({ clientId }: { clientId: string }) {
+function leaveToJumpstart(returnUrl: string) {
+  const origin = new URL(returnUrl).origin;
+  if (window.parent !== window) {
+    window.parent.postMessage({ source: "sovlend-donate", type: "succeeded" }, origin);
+  }
+  window.setTimeout(() => {
+    window.top?.location.assign(returnUrl);
+  }, 600);
+}
+
+export function DonateCheckout({ clientId, returnUrl }: { clientId: string; returnUrl: string | null }) {
   const client = useMemo(() => (clientId ? createThirdwebClient({ clientId }) : null), [clientId]);
   const receiver = receiverAddress();
   const [mounted, setMounted] = useState(false);
@@ -152,6 +162,9 @@ export function DonateCheckout({ clientId }: { clientId: string }) {
   const [choosingPayment, setChoosingPayment] = useState(false);
   const [bitcoinOpen, setBitcoinOpen] = useState(false);
   const chosenAmount = payableAmount(amount);
+  const finishDonation = useCallback(() => {
+    if (returnUrl) leaveToJumpstart(returnUrl);
+  }, [returnUrl]);
   useEffect(() => setMounted(true), []);
   useAmountOnlyRamp(Boolean(client && receiver && mounted && requestId), amount);
 
@@ -200,6 +213,11 @@ export function DonateCheckout({ clientId }: { clientId: string }) {
     <main className="donate-page">
       <section className="donate-card" aria-labelledby="donate-title">
         <header className="donate-intro">
+          {returnUrl ? (
+            <a className="donate-back" href={returnUrl} target="_top">
+              Back
+            </a>
+          ) : null}
           <h1 id="donate-title">Make a donation</h1>
           <p>No matter how small or great.</p>
           <p className="donate-cause">
@@ -209,7 +227,13 @@ export function DonateCheckout({ clientId }: { clientId: string }) {
         {requestId ? (
           <>
             {bitcoinOpen && chosenAmount ? (
-              <BitcoinDonation donationId={requestId} amountUsd={chosenAmount} onBack={() => setBitcoinOpen(false)} />
+              <BitcoinDonation
+                donationId={requestId}
+                amountUsd={chosenAmount}
+                onBack={() => setBitcoinOpen(false)}
+                onPaid={finishDonation}
+                backLabel={returnUrl ? "Other ways to pay" : "Back"}
+              />
             ) : choosingPayment ? null : (
               <>
                 <AmountChooser amount={amount} onChange={setAmount} />
@@ -243,7 +267,7 @@ export function DonateCheckout({ clientId }: { clientId: string }) {
                 style={{ width: "100%", border: "none", borderRadius: 0, boxShadow: "none" }}
                 purchaseData={{ purpose: "jumpstart-donation", donationRequestId: requestId }}
                 onSuccess={() => {
-                  void fetch(`/api/donations/${requestId}/succeed`, { method: "POST" });
+                  void fetch(`/api/donations/${requestId}/succeed`, { method: "POST" }).finally(finishDonation);
                 }}
                 connectOptions={{
                   appMetadata: {
