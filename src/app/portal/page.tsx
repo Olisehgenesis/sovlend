@@ -1,177 +1,113 @@
-import { Landmark, PiggyBank } from "lucide-react";
 import Link from "next/link";
 
-import { prisma } from "@/lib/prisma";
+import { ActivityList } from "@/components/portal/activity-list";
+import { BalanceSpark } from "@/components/portal/balance-spark";
+import { EntityAvatar } from "@/components/entity-avatar";
+import { PortalIcon } from "@/components/portal/portal-icon";
 import { formatMinor } from "@/modules/money/domain/format-minor";
-import { displaySavingsProductName } from "@/modules/savings/domain/savings-product-label";
-import { loanOutstandingMinor } from "@/modules/lending/domain/loan-outstanding";
 
 import { getPortalClient } from "./_lib/portal-context";
+import { loadWallet } from "./_lib/wallet";
 
-function loanStatusTone(status: string) {
-  switch (status) {
-    case "ACTIVE":
-    case "OVERPAID":
-    case "CLOSED":
-      return "up-to-date";
-    case "IN_ARREARS":
-    case "WRITTEN_OFF":
-      return "in-arrears";
-    default:
-      return "review";
-  }
-}
+const dueFormat = new Intl.DateTimeFormat("en-UG", {
+  day: "numeric",
+  month: "short",
+  timeZone: "Africa/Kampala",
+});
 
 export default async function PortalDashboardPage() {
   const { client } = await getPortalClient();
-
-  const [loans, savingsAccounts] = await Promise.all([
-    prisma.loan.findMany({
-      where: { clientId: client.id },
-      include: {
-        product: { select: { name: true } },
-        installments: {
-          select: {
-            principalDueMinor: true,
-            interestDueMinor: true,
-            feesDueMinor: true,
-            penaltiesDueMinor: true,
-            monitoringFeeDueMinor: true,
-            principalPaidMinor: true,
-            interestPaidMinor: true,
-            feesPaidMinor: true,
-            penaltiesPaidMinor: true,
-            monitoringFeePaidMinor: true,
-            principalWaivedMinor: true,
-            interestWaivedMinor: true,
-            feesWaivedMinor: true,
-            penaltiesWaivedMinor: true,
-            monitoringFeeWaivedMinor: true,
-            dueOn: true,
-          },
-        },
-        charges: { select: { name: true, amountMinor: true, status: true, dueOn: true } },
-      },
-      orderBy: { createdAt: "desc" },
-    }),
-    prisma.savingsAccount.findMany({
-      where: { clientId: client.id },
-      include: {
-        product: { select: { name: true } },
-        transactions: { select: { amountMinor: true } },
-      },
-      orderBy: { createdAt: "desc" },
-    }),
-  ]);
+  const wallet = await loadWallet(client.id, 6);
+  const name = [client.firstName, client.middleName, client.lastName].filter(Boolean).join(" ");
 
   return (
-    <div className="directory-page portal-page">
-      <header className="directory-header">
-        <div>
-          <p className="eyebrow">Your account</p>
-          <h1>Welcome, {client.firstName}</h1>
-          <p>
-            {client.accountNumber} · {client.office.name}
-          </p>
-        </div>
-      </header>
+    <div className="portal-home">
+      <div>
+        <header className="portal-hello">
+          <p>Hi {client.firstName}</p>
+          <h1>Welcome back</h1>
+        </header>
 
-      <section className="panel">
-        <div className="panel-heading">
-          <div>
-            <h2>
-              <Landmark size={17} /> Your loans
-            </h2>
-            <p>{loans.length} loan account(s) on record</p>
+        <section className="portal-card" aria-label="Your balances">
+          <div className="portal-card-face">
+            <EntityAvatar seed={client.accountNumber} name={name} genderCode={client.genderCode} size={40} />
+            <span>
+              <strong>{name}</strong>
+              <small>{client.accountNumber}</small>
+            </span>
           </div>
-        </div>
-        {loans.length === 0 ? (
-          <div className="empty-state compact-empty">
-            <strong>No loans yet</strong>
-            <p>Loans you take out will appear here.</p>
+          <strong className="portal-balance">{formatMinor(wallet.savingsTotal, wallet.savingsCurrency)}</strong>
+          <span>Savings you hold</span>
+          <div className="portal-actions">
+            <Link href="/portal/activity">Activity</Link>
+            <a href="#accounts">Accounts</a>
           </div>
-        ) : (
-          <div className="table-scroll">
-            <table className="clickable-rows">
-              <thead>
-                <tr>
-                  <th>Account</th>
-                  <th>Product</th>
-                  <th>Status</th>
-                  <th>Principal</th>
-                  <th>Outstanding</th>
-                </tr>
-              </thead>
-              <tbody>
-                {loans.map((loan) => {
-                  const outstanding = loanOutstandingMinor(loan.installments, loan, loan.charges);
-                  return (
-                    <tr key={loan.id}>
-                      <td>
-                        <strong className="mono">{loan.accountNumber}</strong>
-                        <Link className="row-link" href={`/portal/loans/${loan.id}`} aria-label={`Open loan ${loan.accountNumber}`} />
-                      </td>
-                      <td>{loan.product.name}</td>
-                      <td>
-                        <span className={`status ${loanStatusTone(loan.status)}`}>{loan.status.replaceAll("_", " ")}</span>
-                      </td>
-                      <td className="mono">{formatMinor(loan.principalMinor, loan.denominationCurrency)}</td>
-                      <td className="mono">{formatMinor(outstanding, loan.denominationCurrency)}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
+        </section>
 
-      <section className="panel">
-        <div className="panel-heading">
-          <div>
-            <h2>
-              <PiggyBank size={17} /> Your savings accounts
-            </h2>
-            <p>{savingsAccounts.length} account(s) on record</p>
-          </div>
+        <div className="portal-tiles">
+          <article>
+            <span>To repay</span>
+            <strong>{formatMinor(wallet.owedTotal, wallet.owedCurrency)}</strong>
+            <small>{wallet.nextDue ? `Next ${dueFormat.format(wallet.nextDue.when)}` : "Nothing due"}</small>
+          </article>
+          <article>
+            <span>This month</span>
+            <strong>{formatMinor(wallet.monthIn, wallet.savingsCurrency)}</strong>
+            <small>Out {formatMinor(wallet.monthOut, wallet.savingsCurrency)}</small>
+          </article>
         </div>
-        {savingsAccounts.length === 0 ? (
-          <div className="empty-state compact-empty">
-            <strong>No savings accounts yet</strong>
-            <p>Savings, share and deposit accounts will appear here once opened.</p>
+
+        <section className="portal-accounts" id="accounts" aria-labelledby="portal-accounts-title">
+          <h2 id="portal-accounts-title">Your accounts</h2>
+          {wallet.accounts.length === 0 ? (
+            <p className="portal-empty">
+              <strong>No accounts yet</strong>
+              Loans and savings opened for you will appear here.
+            </p>
+          ) : (
+            <ul className="portal-panel">
+              {wallet.accounts.map((account) => (
+                <li key={account.href}>
+                  <Link href={account.href}>
+                    <PortalIcon seed={account.seed} />
+                    <span>
+                      <strong>{account.title}</strong>
+                      <small>{account.detail}</small>
+                    </span>
+                    <b>
+                      <small>{account.amountLabel}</small>
+                      {formatMinor(account.amountMinor, account.currency)}
+                    </b>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+
+        <section className="portal-feed portal-feed-mobile" aria-labelledby="portal-activity-title">
+          <div className="portal-feed-head">
+            <h2 id="portal-activity-title">Recent activity</h2>
+            {wallet.activityTotal > wallet.activity.length ? <Link href="/portal/activity">See all</Link> : null}
           </div>
-        ) : (
-          <div className="table-scroll">
-            <table className="clickable-rows">
-              <thead>
-                <tr>
-                  <th>Account</th>
-                  <th>Product</th>
-                  <th>Status</th>
-                  <th>Balance</th>
-                </tr>
-              </thead>
-              <tbody>
-                {savingsAccounts.map((account) => {
-                  const balanceMinor = account.transactions.reduce((sum, transaction) => sum + transaction.amountMinor, 0n);
-                  return (
-                    <tr key={account.id}>
-                      <td>
-                        <strong className="mono">{account.accountNumber}</strong>
-                        <Link className="row-link" href={`/portal/savings/${account.accountNumber}`} aria-label={`Open savings account ${account.accountNumber}`} />
-                      </td>
-                      <td>{displaySavingsProductName(account.product?.name, "—")}</td>
-                      <td>
-                        <span className={`status ${account.status === "ACTIVE" ? "up-to-date" : "review"}`}>{account.status.replaceAll("_", " ")}</span>
-                      </td>
-                      <td className="mono">{formatMinor(balanceMinor, account.currencyCode)}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+          <div className="portal-panel">
+            <ActivityList items={wallet.activity} />
           </div>
-        )}
+        </section>
+      </div>
+
+      <section className="portal-overview" aria-labelledby="portal-overview-title">
+        <header>
+          <h2 id="portal-overview-title">Your balance</h2>
+          <p>Savings over the last six months</p>
+        </header>
+        <BalanceSpark points={wallet.spark} />
+        <strong>{formatMinor(wallet.savingsTotal, wallet.savingsCurrency)}</strong>
+        <div className="portal-feed-head">
+          <h2>Recent activity</h2>
+          {wallet.activityTotal > wallet.activity.length ? <Link href="/portal/activity">See all</Link> : null}
+        </div>
+        <ActivityList items={wallet.activity} />
       </section>
     </div>
   );

@@ -1,46 +1,38 @@
-import { CircleDollarSign } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
+import { PortalIcon } from "@/components/portal/portal-icon";
+import { isLoanPaymentTransaction, transactionTypeLabel, transactionTypeVariants } from "@/lib/loan-transaction-type-variants";
+import { prisma } from "@/lib/prisma";
 import { formatMinor } from "@/modules/money/domain/format-minor";
-import { transactionTypeLabel } from "@/lib/loan-transaction-type-variants";
 import {
-  installmentDueMinor,
   installmentOutstandingMinor,
   installmentPaidMinor,
-  installmentWaivedMinor,
   installmentsWithCharges,
   loanOutstandingMinor,
-  loanWrittenOffMinor,
 } from "@/modules/lending/domain/loan-outstanding";
 
 import { getPortalClient } from "../../_lib/portal-context";
 
-function loanStatusTone(status: string) {
-  switch (status) {
-    case "ACTIVE":
-    case "OVERPAID":
-    case "CLOSED":
-      return "up-to-date";
-    case "IN_ARREARS":
-    case "WRITTEN_OFF":
-      return "in-arrears";
-    default:
-      return "review";
-  }
+const disbursementTypes = new Set(transactionTypeVariants("DISBURSEMENT"));
+const dueFormat = new Intl.DateTimeFormat("en-UG", { day: "numeric", month: "short", year: "numeric", timeZone: "Africa/Kampala" });
+
+function plainStatus(status: string) {
+  return status
+    .replaceAll("_", " ")
+    .toLowerCase()
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
-// `Date.toLocaleDateString()` uses the server/browser default locale, which renders as
-// ambiguous M/D/YYYY (e.g. "7/13/2026"). Use an explicit "13 Jul 2026"-style format instead.
-const portalDateFormatter = new Intl.DateTimeFormat("en-UG", { dateStyle: "medium" });
-function formatPortalDate(value: Date | null | undefined) {
-  return value ? portalDateFormatter.format(value) : null;
+function loanTone(type: string) {
+  if (disbursementTypes.has(type)) return "in";
+  if (isLoanPaymentTransaction(type)) return "out";
+  return "note";
 }
 
 export default async function PortalLoanPage({ params }: { params: Promise<{ id: string }> }) {
   const { client } = await getPortalClient();
   const { id } = await params;
-  const { prisma } = await import("@/lib/prisma");
 
   const loan = await prisma.loan.findFirst({
     where: { id, clientId: client.id },
@@ -48,146 +40,92 @@ export default async function PortalLoanPage({ params }: { params: Promise<{ id:
       product: true,
       installments: { orderBy: { installmentNumber: "asc" } },
       charges: { select: { name: true, amountMinor: true, status: true, dueOn: true } },
-      transactions: { orderBy: { businessDate: "desc" }, take: 25 },
+      transactions: { orderBy: { businessDate: "desc" }, take: 40 },
     },
   });
   if (!loan) notFound();
 
   const schedule = installmentsWithCharges(loan.installments, loan.charges);
-  const totals = schedule.reduce(
-    (sum, item) => ({
-      due: sum.due + installmentDueMinor(item),
-      paid: sum.paid + installmentPaidMinor(item),
-      waived: sum.waived + installmentWaivedMinor(item),
-    }),
-    { due: 0n, paid: 0n, waived: 0n },
-  );
-  const writtenOff = loanWrittenOffMinor(loan);
   const outstanding = loanOutstandingMinor(schedule, loan);
 
   return (
-    <div className="directory-page portal-page">
-      <header className="directory-header">
-        <div>
-          <p className="eyebrow">Loan account</p>
-          <h1>{loan.accountNumber}</h1>
-          <p>{loan.product.name}</p>
-        </div>
-        <div className="header-actions">
-          <span className={`status status-prominent ${loanStatusTone(loan.status)}`}>{loan.status.replaceAll("_", " ")}</span>
-          <Link className="secondary-action" href="/portal">
-            Back
-          </Link>
-        </div>
+    <div className="portal-detail">
+      <Link className="portal-back" href="/portal">
+        Back
+      </Link>
+      <header className="portal-hello">
+        <p>{loan.product.name}</p>
+        <h1>{loan.accountNumber}</h1>
+        <small>{plainStatus(loan.status)}</small>
       </header>
-
-      <section className="loan-summary-metrics">
-        <article>
-          <span>Principal</span>
-          <strong>{formatMinor(loan.principalMinor, loan.denominationCurrency)}</strong>
-        </article>
-        <article>
-          <span>Total scheduled</span>
-          <strong>{formatMinor(totals.due, loan.denominationCurrency)}</strong>
-        </article>
-        <article>
-          <span>Total paid</span>
-          <strong>{formatMinor(totals.paid, loan.denominationCurrency)}</strong>
-        </article>
-        <article>
-          <span>Outstanding</span>
-          <strong>{formatMinor(outstanding, loan.denominationCurrency)}</strong>
-        </article>
+      <section className="portal-card" aria-label="Loan balance">
+        <span>To repay</span>
+        <strong>{formatMinor(outstanding, loan.denominationCurrency)}</strong>
+        <div className="portal-card-row">
+          <span className="portal-chip">Borrowed {formatMinor(loan.principalMinor, loan.denominationCurrency)}</span>
+          {loan.maturesOn ? <span className="portal-chip">Matures {dueFormat.format(loan.maturesOn)}</span> : null}
+        </div>
       </section>
 
-      <section className="panel">
-        <div className="panel-heading">
-          <div>
-            <h2>Repayment schedule</h2>
-            <p>
-              {schedule.length} installments · matures {loan.maturesOn ? formatPortalDate(loan.maturesOn) : "not set"}
-            </p>
-          </div>
-        </div>
+      <section className="portal-schedule" aria-labelledby="loan-schedule">
+        <h2 id="loan-schedule">Repayment schedule</h2>
         {schedule.length === 0 ? (
-          <div className="empty-state compact-empty">
-            <CircleDollarSign size={26} />
+          <p className="portal-empty">
             <strong>No schedule yet</strong>
-            <p>The schedule is created at disbursement.</p>
-          </div>
+            The schedule is created when the loan is disbursed.
+          </p>
         ) : (
-          <div className="table-scroll table-scroll-capped">
-            <table>
-              <thead>
-                <tr>
-                  <th className="row-index">#</th>
-                  <th>Due</th>
-                  <th>Principal</th>
-                  <th>Interest</th>
-                  <th>Fees</th>
-                  <th>Monitoring fee</th>
-                  <th>Penalties</th>
-                  <th>Paid</th>
-                  <th>Outstanding</th>
-                </tr>
-              </thead>
-              <tbody>
-                {schedule.map((item) => {
-                  const paid = installmentPaidMinor(item);
-                  const rowOutstanding = installmentOutstandingMinor(item);
-                  return (
-                    <tr key={item.id}>
-                      <td className="row-index">{item.installmentNumber}</td>
-                      <td>{formatPortalDate(item.dueOn)}</td>
-                      <td>{formatMinor(item.principalDueMinor, loan.denominationCurrency)}</td>
-                      <td>{formatMinor(item.interestDueMinor, loan.denominationCurrency)}</td>
-                      <td>{formatMinor(item.feesDueMinor, loan.denominationCurrency)}</td>
-                      <td>{formatMinor(item.monitoringFeeDueMinor ?? 0n, loan.denominationCurrency)}</td>
-                      <td>{formatMinor(item.penaltiesDueMinor, loan.denominationCurrency)}</td>
-                      <td>{formatMinor(paid, loan.denominationCurrency)}</td>
-                      <td>{formatMinor(rowOutstanding, loan.denominationCurrency)}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+          <ol>
+            {schedule.map((item) => {
+              const rowOutstanding = installmentOutstandingMinor(item);
+              const paid = installmentPaidMinor(item);
+              return (
+                <li key={item.id} data-open={rowOutstanding > 0n ? "true" : "false"}>
+                  <span>{item.installmentNumber}</span>
+                  <span>
+                    <strong>{dueFormat.format(item.dueOn)}</strong>
+                    <small>Paid {formatMinor(paid, loan.denominationCurrency)}</small>
+                  </span>
+                  <b>{formatMinor(rowOutstanding, loan.denominationCurrency)}</b>
+                </li>
+              );
+            })}
+          </ol>
         )}
       </section>
 
-      <section className="panel">
-        <div className="panel-heading">
-          <div>
-            <h2>Recent transactions</h2>
-            <p>Most recent 25 · immutable account activity</p>
-          </div>
+      <section className="portal-feed" aria-labelledby="loan-activity">
+        <div className="portal-feed-head">
+          <h2 id="loan-activity">Transactions</h2>
         </div>
         {loan.transactions.length === 0 ? (
-          <div className="empty-state compact-empty">
-            <CircleDollarSign size={26} />
+          <p className="portal-empty">
             <strong>No transactions</strong>
-          </div>
+            Disbursements and repayments will show up here.
+          </p>
         ) : (
-          <div className="table-scroll table-scroll-capped">
-            <table>
-              <thead>
-                <tr>
-                  <th>Date</th>
-                  <th>Type</th>
-                  <th>Amount</th>
-                </tr>
-              </thead>
-              <tbody>
-                {loan.transactions.map((item) => (
-                  <tr key={item.id}>
-                    <td>{formatPortalDate(item.businessDate)}</td>
-                    <td>{transactionTypeLabel(item.transactionType)}</td>
-                    <td>{formatMinor(item.denominationAmountMinor, loan.denominationCurrency)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <ul className="portal-feed-list">
+            {loan.transactions.map((item) => {
+              const tone = loanTone(item.transactionType);
+              const title = transactionTypeLabel(item.transactionType);
+              const amount = item.denominationAmountMinor < 0n ? -item.denominationAmountMinor : item.denominationAmountMinor;
+              return (
+                <li key={item.id}>
+                  <div>
+                    <PortalIcon seed={title} />
+                    <span>
+                      <strong>{title}</strong>
+                      <small>{dueFormat.format(item.businessDate)}</small>
+                    </span>
+                    <b className={`portal-amount ${tone}`}>
+                      {tone === "in" ? "+" : tone === "out" ? "−" : ""}
+                      {formatMinor(amount, loan.denominationCurrency)}
+                    </b>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
         )}
       </section>
     </div>

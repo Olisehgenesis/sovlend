@@ -1,9 +1,14 @@
 import Link from "next/link";
 
+import { EntityAvatar } from "@/components/entity-avatar";
+import { portalIconSrc } from "@/components/portal/portal-icon";
+import { PortalNav } from "@/components/portal/portal-nav";
 import { PortalSignOutButton } from "@/components/portal-sign-out-button";
 import { SovLendMark } from "@/components/sovlend-mark";
 
 import { getPortalClient } from "./_lib/portal-context";
+
+export const metadata = { title: "Your wallet" };
 
 export default async function PortalLayout({ children }: { children: React.ReactNode }) {
   const { client } = await getPortalClient();
@@ -14,19 +19,21 @@ export default async function PortalLayout({ children }: { children: React.React
       <header className="portal-header">
         <Link className="portal-brand" href="/portal">
           <SovLendMark />
-          <span>SovLend</span>
+          <span>Wallet</span>
         </Link>
         <div className="portal-header-user">
-          <span>
-            <strong>{name}</strong>
-            <small>
-              {client.accountNumber} · {client.office.name}
-            </small>
+          <EntityAvatar seed={client.accountNumber} name={name} genderCode={client.genderCode} size={36} />
+          <span className="portal-header-name">
+            <strong>{client.firstName}</strong>
+            <small>{client.accountNumber}</small>
           </span>
           <PortalSignOutButton />
         </div>
       </header>
-      <main className="portal-content">{children}</main>
+      <div className="portal-body">
+        <PortalNav walletIcon={portalIconSrc("sovlend-wallet")} activityIcon={portalIconSrc("sovlend-activity")} />
+        <main className="portal-main">{children}</main>
+      </div>
     </div>
   );
 }

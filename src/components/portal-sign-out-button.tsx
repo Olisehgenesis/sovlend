@@ -20,8 +20,9 @@ export function PortalSignOutButton() {
   }
 
   return (
-    <button className="secondary-action" disabled={pending} onClick={signOut} type="button">
-      {pending ? <LoaderCircle className="spin" size={15} /> : <LogOut size={15} />} Sign out
+    <button className="portal-sign-out" disabled={pending} onClick={signOut} type="button">
+      {pending ? <LoaderCircle className="spin" size={16} /> : <LogOut size={16} />}
+      <span>Sign out</span>
     </button>
   );
 }
