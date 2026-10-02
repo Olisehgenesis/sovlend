@@ -9,7 +9,7 @@ import { assertBalancedJournal } from "@/modules/ledger/domain/journal";
 import { recordSavingsTransactionInTransaction } from "@/modules/savings/application/post-savings-transaction";
 import { buildLoanDisbursementSavingsIdempotencyKey } from "@/modules/savings/application/savings-ledger";
 
-import { isLoanPaymentTransaction } from "@/lib/loan-transaction-type-variants";
+import { isLoanPaymentTransaction, transactionTypeVariants } from "@/lib/loan-transaction-type-variants";
 
 import { calculateLoanPayoff, type PayoffInstallment } from "../domain/loan-payoff";
 import {
@@ -84,7 +84,16 @@ export async function requestLoanServiceAction(
   const loan = await prisma.loan.findUnique({ where: { id: command.loanId }, include: { office: true, transactions: true } });
   if (!loan) throw new Error("Loan not found");
 
-  await new AuthorizationService(prisma).assertAllowed({ actorUserId: command.actorUserId, permission: permissions.loanReverse, organizationId: loan.office.organizationId, officeId: loan.officeId });
+  const authorization = new AuthorizationService(prisma);
+  const permissionContext = { actorUserId: command.actorUserId, organizationId: loan.office.organizationId, officeId: loan.officeId };
+  if (command.actionType === "TRANSACTION_REVERSAL") {
+    const canManageReversals = await authorization.isAllowed({ ...permissionContext, permission: permissions.loanReverse });
+    if (!canManageReversals) {
+      await authorization.assertAllowed({ ...permissionContext, permission: permissions.loanRepaymentReverseRequest });
+    }
+  } else {
+    await authorization.assertAllowed({ ...permissionContext, permission: permissions.loanReverse });
+  }
 
   if (command.actionType === "UNDO_DISBURSAL") {
     if (loan.status !== "ACTIVE" || !loan.disbursedOn) throw new Error("Only active, disbursed loans can have disbursal undone");
@@ -101,7 +110,7 @@ export async function requestLoanServiceAction(
     const reversalPayload = payload as ReversalPayload;
     const transaction = loan.transactions.find((item) => item.id === reversalPayload.transactionId);
     if (!transaction) throw new Error("Transaction does not belong to this loan");
-    if (transaction.transactionType !== "REPAYMENT") throw new Error("Only repayment transactions can be reversed through this workflow");
+    if (!transactionTypeVariants("REPAYMENT").includes(transaction.transactionType)) throw new Error("Only repayment transactions can be reversed through this workflow");
     if (transaction.reversedById) throw new Error("Transaction has already been reversed");
   }
 
@@ -384,7 +393,7 @@ async function executeFullSettlement(tx: Tx, loanId: string, payload: PrepayPayl
 async function executeTransactionReversal(tx: Tx, loanId: string, payload: ReversalPayload, requestId: string, actorUserId: string) {
   const original = await tx.loanTransaction.findUniqueOrThrow({ where: { id: payload.transactionId }, include: { allocations: true } });
   if (original.loanId !== loanId) throw new Error("Transaction does not belong to this loan");
-  if (original.transactionType !== "REPAYMENT") throw new Error("Only repayment transactions can be reversed through this workflow");
+  if (!transactionTypeVariants("REPAYMENT").includes(original.transactionType)) throw new Error("Only repayment transactions can be reversed through this workflow");
   if (original.reversedById) throw new Error("Transaction has already been reversed");
   if (!original.settlementAccountId) throw new Error("Original transaction has no settlement account on record");
 

@@ -15,6 +15,7 @@ import { type LoanPreviewInput } from "@/components/loan-preview-panel";
 import { RecordPaymentButton } from "@/components/record-payment-button";
 import { LoanTopUpButton } from "@/components/loan-top-up-button";
 import { RepaymentForm } from "@/components/repayment-form";
+import { CancelRepaymentButton } from "@/components/cancel-repayment-button";
 import { Breadcrumbs } from "@/components/breadcrumbs";
 import { formatUgDate, transactionTypeLabel } from "./_lib/loan-records";
 import { isLoanPaymentTransaction, transactionTypeVariants } from "@/lib/loan-transaction-type-variants";
@@ -34,6 +35,7 @@ import {
 import { formatMonthlyPercent } from "@/modules/lending/domain/monthly-rate";
 import { generateRepaymentSchedule, readInterestDayCount } from "@/modules/lending/domain/repayment-schedule";
 import { repaymentSplitFromAllocations } from "@/modules/lending/domain/repayment-allocation-split";
+import { installmentPaymentTiming } from "@/modules/lending/domain/repayment-timeliness";
 import { formatMinor } from "@/modules/money/domain/format-minor";
 import { displaySavingsProductName } from "@/modules/savings/domain/savings-product-label";
 import { buildLoanDisbursementSavingsIdempotencyKey } from "@/modules/savings/application/savings-ledger";
@@ -120,7 +122,16 @@ export default async function LoanPage({
       },
       installments: { orderBy: { installmentNumber: "asc" } },
       transactions: {
-        include: { allocations: true, recordedBy: { select: { name: true } } },
+        include: {
+          allocations: true,
+          recordedBy: { select: { name: true } },
+          reversedBy: {
+            select: {
+              businessDate: true,
+              recordedBy: { select: { name: true } },
+            },
+          },
+        },
         orderBy: { createdAt: "desc" },
       },
     },
@@ -138,6 +149,12 @@ export default async function LoanPage({
   const canRequestServiceActions = await authorization.isAllowed({
     actorUserId: session.user.id,
     permission: permissions.loanReverse,
+    organizationId: scope.organizationId,
+    officeId: loan.officeId,
+  });
+  const canRequestRepaymentReversal = await authorization.isAllowed({
+    actorUserId: session.user.id,
+    permission: permissions.loanRepaymentReverseRequest,
     organizationId: scope.organizationId,
     officeId: loan.officeId,
   });
@@ -233,6 +250,16 @@ export default async function LoanPage({
     include: { requestedBy: { select: { name: true } }, decidedBy: { select: { name: true } } },
     orderBy: { requestedAt: "desc" },
   });
+  const hasPendingServiceAction = serviceRequests.some((request) => request.status === "PENDING");
+  const pendingRepaymentReversalIds = new Set(
+    serviceRequests.flatMap((request) => {
+      if (request.status !== "PENDING" || request.actionType !== "TRANSACTION_REVERSAL") return [];
+      const payload = request.payload;
+      if (!payload || typeof payload !== "object" || Array.isArray(payload)) return [];
+      const transactionId = payload.transactionId;
+      return typeof transactionId === "string" ? [transactionId] : [];
+    }),
+  );
   const savingsAccounts = loan.clientId || loan.groupId
     ? await prisma.savingsAccount.findMany({
         where: {
@@ -420,18 +447,67 @@ export default async function LoanPage({
       id: item.id,
       label: `${formatUgDate(item.businessDate)} · ${formatMinor(item.denominationAmountMinor, loan.denominationCurrency)}${item.externalReference ? ` · ${item.externalReference}` : ""}`,
     }));
-  // Money the borrower actually paid in — excludes ACCRUAL (internal daily interest bookkeeping,
-  // not a borrower action) and DISBURSEMENT (money going out). Legacy loans migrated from
-  // Fineract store the raw type code (e.g. `loanTransactionType.repayment`) instead of the
-  // canonical string, so match both forms via transactionTypeVariants.
-  const paymentTransactionTypes = new Set(
-    ["REPAYMENT", "REPAYMENT_AT_DISBURSEMENT", "RECOVERY_REPAYMENT"].flatMap((type) =>
-      transactionTypeVariants(type),
-    ),
-  );
+  // This includes prepayments and foreclosures: both are borrower payments allocated against
+  // installments, and should remain visible on a closed loan's schedule.
   const paymentTransactions = loan.transactions.filter((item) =>
-    paymentTransactionTypes.has(item.transactionType),
+    isLoanPaymentTransaction(item.transactionType),
   );
+  const installmentPaymentHistory = new Map<
+    string,
+    Array<{
+      id: string;
+      businessDate: Date;
+      amountMinor: bigint;
+      recordedByName: string | null;
+      cancelledByName: string | null;
+      cancelledOn: Date | null;
+      cancelled: boolean;
+    }>
+  >();
+  for (const transaction of paymentTransactions) {
+    for (const allocation of transaction.allocations) {
+      const history = installmentPaymentHistory.get(allocation.installmentId) ?? [];
+      history.push({
+        id: transaction.id,
+        businessDate: transaction.businessDate,
+        amountMinor:
+          allocation.principalMinor +
+          allocation.interestMinor +
+          allocation.feesMinor +
+          allocation.monitoringFeeMinor +
+          allocation.penaltiesMinor,
+        recordedByName: transaction.recordedBy?.name ?? null,
+        cancelledByName: transaction.reversedBy?.recordedBy?.name ?? null,
+        cancelledOn: transaction.reversedBy?.businessDate ?? null,
+        cancelled: Boolean(transaction.reversedById),
+      });
+      installmentPaymentHistory.set(allocation.installmentId, history);
+    }
+  }
+  const canRequestPaymentCancellation =
+    canRequestServiceActions || canRequestRepaymentReversal;
+  const paymentTimingLabels = {
+    PAID_EARLY: "Paid early",
+    PAID_ON_TIME: "Paid on time",
+    PAID_LATE: "Paid late",
+    PART_PAID: "Part-paid",
+    PART_PAID_LATE: "Part-paid · overdue",
+    OVERDUE: "Overdue",
+    UPCOMING: "Upcoming",
+    WAIVED: "Waived",
+    TIMING_UNAVAILABLE: "Paid · timing unavailable",
+  } as const;
+  const paymentTimingClasses = {
+    PAID_EARLY: "up-to-date",
+    PAID_ON_TIME: "up-to-date",
+    PAID_LATE: "in-arrears",
+    PART_PAID: "review",
+    PART_PAID_LATE: "in-arrears",
+    OVERDUE: "in-arrears",
+    UPCOMING: "review",
+    WAIVED: "review",
+    TIMING_UNAVAILABLE: "review",
+  } as const;
   return (
     <main className="directory-page">
       <Breadcrumbs
@@ -1091,7 +1167,7 @@ export default async function LoanPage({
               decidedByName: item.decidedBy?.name ?? null,
               decidedAt: item.decidedAt ? new Intl.DateTimeFormat("en-UG", { dateStyle: "medium", timeStyle: "short" }).format(item.decidedAt) : null,
               decisionNote: item.decisionNote,
-              canDecide: item.status === "PENDING" && item.requestedById !== session.user.id,
+              canDecide: canRequestServiceActions && item.status === "PENDING" && item.requestedById !== session.user.id,
               isOwnRequest: item.requestedById === session.user.id,
             }))}
           />
@@ -1107,6 +1183,7 @@ export default async function LoanPage({
                 {schedule.length} installments · matures{" "}
                 {loan.maturesOn ? formatUgDate(loan.maturesOn) : "not set"}
               </p>
+              <p>Payment history includes the payment date and staff member who recorded it. Cancelled payments remain visible but do not count toward totals.</p>
             </div>
           </div>
           {schedule.length === 0 ? (
@@ -1129,19 +1206,31 @@ export default async function LoanPage({
                     <th>Penalties</th>
                     <th>Paid</th>
                     <th>Outstanding</th>
+                    <th>Payment history</th>
+                    <th>Payment timing</th>
                   </tr>
                 </thead>
                 <tbody>
                   {schedule.map((item) => {
                     const paid = installmentPaidMinor(item);
                     const rowOutstanding = installmentOutstandingMinor(item);
-                    // Paid = fully settled; overdue = still owed past its due date; upcoming =
-                    // still owed but the due date hasn't arrived yet.
+                    const history = (installmentPaymentHistory.get(item.id) ?? [])
+                      .slice()
+                      .sort((left, right) => left.businessDate.getTime() - right.businessDate.getTime());
+                    const activePaymentEvidence = history
+                      .filter((payment) => !payment.cancelled)
+                      .map((payment) => ({
+                        amountMinor: payment.amountMinor,
+                        businessDate: payment.businessDate,
+                      }));
+                    const timing = installmentPaymentTiming(item, activePaymentEvidence, today);
                     const rowStatus =
-                      rowOutstanding <= 0n
-                        ? "schedule-row-paid"
-                        : item.dueOn < today
-                          ? "schedule-row-overdue"
+                      timing === "PAID_LATE" ||
+                      timing === "PART_PAID_LATE" ||
+                      timing === "OVERDUE"
+                        ? "schedule-row-overdue"
+                        : rowOutstanding <= 0n
+                          ? "schedule-row-paid"
                           : "schedule-row-upcoming";
                     return (
                       <tr key={item.id} className={rowStatus}>
@@ -1190,6 +1279,30 @@ export default async function LoanPage({
                         <td>
                           {formatMinor(rowOutstanding, loan.denominationCurrency)}
                         </td>
+                        <td>
+                          {history.length === 0 ? (
+                            <span className="muted-text">No payments recorded</span>
+                          ) : (
+                            history.map((payment, index) => (
+                              <div key={`${payment.id}-${index}`}>
+                                <Link className="green-link" href={`/loans/${loan.id}/transactions/${payment.id}`}>
+                                  {formatUgDate(payment.businessDate)} · {formatMinor(payment.amountMinor, loan.denominationCurrency)}
+                                </Link>
+                                {" · "}{payment.recordedByName ?? "Staff unknown"}
+                                {payment.cancelled ? (
+                                  <span className="muted-text">
+                                    {" · Cancelled"}{payment.cancelledOn ? ` ${formatUgDate(payment.cancelledOn)}` : ""}{payment.cancelledByName ? ` by ${payment.cancelledByName}` : ""}
+                                  </span>
+                                ) : null}
+                              </div>
+                            ))
+                          )}
+                        </td>
+                        <td>
+                          <span className={`status ${paymentTimingClasses[timing]}`}>
+                            {paymentTimingLabels[timing]}
+                          </span>
+                        </td>
                       </tr>
                     );
                   })}
@@ -1227,6 +1340,8 @@ export default async function LoanPage({
                   <th>Maintenance</th>
                   <th>Reference</th>
                   <th>Recorded by</th>
+                  <th>Cancellation</th>
+                  <th></th>
                 </tr>
               </thead>
               <tbody>
@@ -1240,7 +1355,7 @@ export default async function LoanPage({
                     </td>
                     <td>
                       {transactionTypeLabel(item.transactionType)}
-                      {item.reversedById ? " (reversed)" : ""}
+                      {item.reversedById ? " (cancelled)" : ""}
                     </td>
                     <td>{item.settlementChannel}</td>
                     <td>
@@ -1251,6 +1366,25 @@ export default async function LoanPage({
                     <td>{formatMinor(split.monitoringFeeMinor, loan.denominationCurrency)}</td>
                     <td>{item.externalReference ?? "-"}</td>
                     <td>{item.recordedBy?.name ?? "-"}</td>
+                    <td>
+                      {item.reversedBy ? (
+                        <>
+                          Cancelled {formatUgDate(item.reversedBy.businessDate)}
+                          {" by "}{item.reversedBy.recordedBy?.name ?? "unknown staff"}
+                        </>
+                      ) : "-"}
+                    </td>
+                    <td>
+                      {pendingRepaymentReversalIds.has(item.id) ? (
+                        <span className="muted-text">Cancellation pending approval</span>
+                      ) : hasPendingServiceAction ? (
+                        <span className="muted-text">Another servicing action is pending</span>
+                      ) : canRequestPaymentCancellation &&
+                        !item.reversedById &&
+                        transactionTypeVariants("REPAYMENT").includes(item.transactionType) ? (
+                          <CancelRepaymentButton loanId={loan.id} transactionId={item.id} />
+                        ) : null}
+                    </td>
                   </tr>
                   );
                 })}

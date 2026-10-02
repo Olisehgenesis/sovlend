@@ -38,7 +38,7 @@ const actionLabels: Record<string, string> = {
   UNDO_DISBURSAL: "Undo disbursal",
   PREPAY: "Prepay loan",
   FORECLOSURE: "Foreclosure",
-  TRANSACTION_REVERSAL: "Reverse transaction",
+  TRANSACTION_REVERSAL: "Cancel repayment",
 };
 
 export function LoanServiceActionsPanel({

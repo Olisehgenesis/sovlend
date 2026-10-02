@@ -7,6 +7,7 @@ export const permissions = {
   loanDisburse: "LOAN_DISBURSE",
   loanDisburseBtcOverCap: "LOAN_DISBURSE_BTC_OVER_CAP",
   loanRepayment: "LOAN_REPAYMENT_RECORD",
+  loanRepaymentReverseRequest: "LOAN_REPAYMENT_REVERSE_REQUEST",
   loanClose: "LOAN_CLOSE",
   loanWriteOff: "LOAN_WRITE_OFF",
   loanReverse: "LOAN_REVERSE",
@@ -92,7 +93,7 @@ export const defaultPermissionGroups: Record<string, readonly PermissionCode[]> 
   // decision, Branch Manager is the top operational role in this system (no separate super-admin
   // permission group exists per-org -- the platform-level "admin" user role sits above this).
   "Branch Manager": Object.values(permissions),
-  Teller: [permissions.clientView, permissions.loanView, permissions.loanRepayment, permissions.savingsView, permissions.savingsTransact, permissions.reportView, permissions.reportClientStatement, permissions.reportSavingsAccountListing, permissions.reportSavingsTransactions],
+  Teller: [permissions.clientView, permissions.loanView, permissions.loanRepayment, permissions.loanRepaymentReverseRequest, permissions.savingsView, permissions.savingsTransact, permissions.reportView, permissions.reportClientStatement, permissions.reportSavingsAccountListing, permissions.reportSavingsTransactions],
   "Loan Officer": [permissions.clientView, permissions.clientManage, permissions.loanView, permissions.loanApply, permissions.reportView, permissions.reportActiveLoans, permissions.reportCollectionByOfficer, permissions.reportCollectionsLog, permissions.reportAging, permissions.reportUnassignedLoans, permissions.reportClientListing, permissions.reportClientStatement, permissions.reportSavingsAccountListing],
   "Treasury Signer": [permissions.treasuryView, permissions.treasuryApprove, permissions.ledgerView, permissions.auditView, ...accountingReportPermissions, permissions.reportOutstandingBalances, permissions.reportProvisioning],
   Auditor: [permissions.clientView, permissions.loanView, permissions.savingsView, permissions.treasuryView, permissions.ledgerView, permissions.reportView, permissions.auditView, ...allReportPermissions],

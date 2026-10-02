@@ -11,6 +11,7 @@ const descriptions: Record<string, string> = {
   [permissions.loanDisburse]: "Disburse approved loans",
   [permissions.loanDisburseBtcOverCap]: "Approve or execute BTC loan disbursements above the cashier daily cap",
   [permissions.loanRepayment]: "Record loan repayments",
+  [permissions.loanRepaymentReverseRequest]: "Request cancellation of a loan repayment (maker-checker)",
   [permissions.loanClose]: "Close fully settled loans",
   [permissions.loanWriteOff]: "Write off loans through controlled approval",
   [permissions.loanReverse]: "Reverse eligible loan transactions",

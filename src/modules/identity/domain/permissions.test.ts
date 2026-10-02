@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { hasPermission, permissions, type PermissionAssignment } from "./permissions";
+import { defaultPermissionGroups, hasPermission, permissions, type PermissionAssignment } from "./permissions";
 
 const assignment: PermissionAssignment = {
   permissionCodes: [permissions.loanApprove],
@@ -17,6 +17,13 @@ const assignment: PermissionAssignment = {
 describe("branch permissions", () => {
   it("allows child-branch approval within the assigned limit", () => {
     expect(hasPermission([assignment], { permission: permissions.loanApprove, organizationId: "org-1", officeId: "sub-branch", officeAncestorIds: ["branch-1"], actorUserId: "manager", amountMinor: 4_000_000n, currencyCode: "UGX", now: new Date("2026-09-01") })).toBe(true);
+  });
+
+  describe("Teller permissions", () => {
+    it("allows requesting repayment cancellations without granting approval rights", () => {
+      expect(defaultPermissionGroups.Teller).toContain(permissions.loanRepaymentReverseRequest);
+      expect(defaultPermissionGroups.Teller).not.toContain(permissions.loanReverse);
+    });
   });
 
   it("rejects approvals above the manager limit", () => {
