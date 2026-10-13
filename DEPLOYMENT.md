@@ -45,6 +45,12 @@ Use the same ordered `-f` file list for deployment that started the running
 containers. Do not print the resolved Compose configuration: runtime overrides
 can contain decrypted credentials and private connection settings.
 
+The production Caddy container reaches the web service as `web:3000` over its
+internal frontend network. Do not assume the web container's host port is
+available: another application may own `127.0.0.1:3000`. Preserve that service.
+When needed, remove the web host-port publication in a release override with
+`ports: !reset []`; the internal Caddy-to-web route continues to use port 3000.
+
 ## Prepare and validate locally
 
 Start from the intended branch and inspect the exact changes:
@@ -79,7 +85,7 @@ cd /root/apps/sovlend
 git status --short --branch
 docker ps --format 'table {{.Names}}\t{{.Status}}\t{{.Image}}'
 docker inspect sovlend-postgres-1 --format '{{.State.Status}} {{.State.Health.Status}}'
-curl -fsS http://127.0.0.1:3000/api/health
+docker exec sovlend-caddy-1 wget -qO- http://web:3000/api/health
 ```
 
 The production web and worker must be able to reach PostgreSQL. A green web
@@ -133,10 +139,17 @@ verified backup and healthy database:
 dotenvx run -f .env -- docker compose run --rm migrate
 ```
 
-For a routine application-only release, build and replace only the web and
-worker containers. The explicit `uploads-init` run is required when deploying
-with `--no-deps`; it repairs the shared upload-volume ownership for UID/GID
-`1001:1001`.
+For a routine application-only release, build on the server from the current
+checkout and replace only the web and worker containers. Versioned runtime
+overrides may pin the old image tags and an older build context; building alone
+does not update those pins. Tag the new images immutably, then create a
+release-specific override outside the checkout that names the new image tags.
+Do not replace or edit the existing private runtime override. If host port 3000
+is occupied, include `ports: !reset []` for `web` in the release override; Caddy
+reaches the container over its frontend network.
+
+The explicit `uploads-init` run is required when deploying with `--no-deps`; it
+repairs the shared upload-volume ownership for UID/GID `1001:1001`.
 
 ```bash
 dotenvx run -f .env -- docker compose build web worker
@@ -144,8 +157,10 @@ dotenvx run -f .env -- docker compose run --rm --no-deps uploads-init
 dotenvx run -f .env -- docker compose up -d --no-deps --wait --wait-timeout 180 web worker
 ```
 
-If the running containers use a runtime override, include its existing path in
-each command using `-f` in the same order as the container labels.
+Include every existing runtime override and the new release image override in
+each command using `-f` in the same order as the container labels. Use
+`--no-build` during `up` after verifying the immutable image tags in the
+resolved configuration.
 
 Do not use `--no-deps` for a release that requires a migration until the
 migration has completed successfully. Do not run permission reseeds,
@@ -154,13 +169,13 @@ them and their impact is understood.
 
 ## Verify after deployment
 
-Confirm the web and worker are running, the local health endpoint responds,
+Confirm the web and worker are running, Caddy can reach the web health endpoint,
 and a real read-only database query succeeds:
 
 ```bash
 docker ps --filter name=sovlend-web --filter name=sovlend-worker \
   --format 'table {{.Names}}\t{{.Status}}\t{{.Image}}'
-curl -fsS http://127.0.0.1:3000/api/health
+docker exec sovlend-caddy-1 wget -qO- http://web:3000/api/health
 dotenvx run -f .env -- docker compose exec -T worker node -e \
   'const {PrismaClient}=require("@prisma/client"); const db=new PrismaClient(); db.$queryRaw`SELECT 1`.then(()=>console.log("database query ok")).catch(e=>{console.error("database query failed");process.exitCode=1}).finally(()=>db.$disconnect())'
 ```
@@ -169,6 +184,17 @@ Also inspect the web/worker logs for startup errors and manually verify the
 changed page/API with an authorized account. For General Ledger releases, verify
 the all-account report and its date filters; do not treat the public health
 endpoint as a substitute for checking the report itself.
+
+### Report currency units
+
+Human-readable report screens and downloaded report CSVs must show major
+currency units. CSV report builders use the shared
+`src/modules/reports/domain/report-csv.ts` converter for monetary columns;
+counts, percentages, dates, and rates remain unchanged. The API JSON contract
+intentionally retains integer minor-unit values in fields named `*Minor`.
+Do not mistake those machine-readable JSON values for the human-facing report
+amounts, and do not change that API contract without an explicit compatibility
+decision.
 
 ## Rollback
 
