@@ -59,13 +59,11 @@ docker compose --env-file .env.example config
 
 ## Production
 
-1. Put strong generated secrets in `.env`; never commit it.
-2. Set `SOVLEND_DOMAIN` to the production hostname.
-3. Set `BETTER_AUTH_URL` to the exact HTTPS origin and generate a high-entropy `BETTER_AUTH_SECRET` of at least 32 characters.
-4. Set `B2_APPLICATION_KEY_ID`, `B2_APPLICATION_KEY`, and `B2_BUCKET` so the backup container can upload named SQL dumps.
-5. Run database migrations as an explicit release step.
-6. Start with `docker compose up -d --build`.
-7. Test a full database restore before onboarding real users.
+Read [DEPLOYMENT.md](DEPLOYMENT.md) before production work. Production uses an
+encrypted dotenvx environment and requires wrapping all Docker Compose commands
+with `dotenvx run`; bare Compose commands can recreate services with encrypted
+ciphertext in place of their real environment values. Keep `.env.keys` and
+server-specific overrides private.
 
 Passkeys require HTTPS in production. `localhost` is the only supported insecure development origin.
 

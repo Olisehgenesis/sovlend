@@ -7,3 +7,8 @@ This version has breaking changes — APIs, conventions, and file structure may 
 This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
 
 <!-- END:nextjs-agent-rules -->
+
+Before any production change or deployment, read [DEPLOYMENT.md](DEPLOYMENT.md)
+and [docs/ENV_SECURITY.md](docs/ENV_SECURITY.md). In particular, never run
+bare `docker compose` against an encrypted production `.env`; always use the
+documented dotenvx wrapper and preserve server-local changes.
