@@ -7,8 +7,10 @@ import { prisma } from "@/lib/prisma";
 import { PermissionDeniedError } from "@/modules/identity/application/authorization-service";
 import { PAYEE_TYPES } from "@/modules/ledger/domain/journal";
 import { disburseLoanAndPayOffPrevious } from "@/modules/lending/application/disburse-loan";
+import { processingFeeBpsSchema } from "@/modules/lending/domain/processing-fee";
 
 const schema = z.object({
+  processingFeeBps: processingFeeBpsSchema.optional(),
   savingsAccountId: z.string().uuid().optional(),
   paymentMethodSettlementAccountId: z.string().uuid().optional(),
   businessDate: z.iso.date(),
@@ -28,6 +30,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   try {
     const { disbursement, payoff } = await disburseLoanAndPayOffPrevious(prisma, {
       loanId: (await params).id,
+      processingFeeBps: parsed.data.processingFeeBps,
       actorUserId: session.user.id,
       savingsAccountId: parsed.data.savingsAccountId,
       paymentMethodSettlementAccountId: parsed.data.paymentMethodSettlementAccountId,

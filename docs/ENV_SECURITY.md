@@ -101,6 +101,21 @@ dotenvx run -f .env -- docker compose up -d
 A bare `docker compose ...` (no `dotenvx run` wrapper) should be treated as a deploy bug, not a
 convenience shortcut -- it will eventually recreate a container with ciphertext env vars.
 
+### Upload volume ownership
+
+Web and worker containers run as UID/GID `1001:1001`. The `uploads-init` service creates
+the document and loan-export directories and assigns the shared `document-uploads`
+volume to that user before either service starts. This also repairs ownership after
+restoring files created by a different host user. Do not make uploads world-writable
+or run the web app as root.
+
+When deploying with `--no-deps`, run `uploads-init` explicitly first:
+
+```bash
+dotenvx run -f .env -- docker compose run --rm --no-deps uploads-init
+dotenvx run -f .env -- docker compose up -d --no-deps web worker
+```
+
 ## Current variables
 
 See `.env.example` for the full, documented list (database/cache, auth, price providers, the

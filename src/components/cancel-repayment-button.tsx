@@ -11,9 +11,11 @@ import { Dialog, type DialogHandle } from "@/components/ui/dialog";
 export function CancelRepaymentButton({
   loanId,
   transactionId,
+  canCancelDirectly = false,
 }: {
   loanId: string;
   transactionId: string;
+  canCancelDirectly?: boolean;
 }) {
   const router = useRouter();
   const dialogRef = useRef<DialogHandle>(null);
@@ -40,7 +42,7 @@ export function CancelRepaymentButton({
       toast.error(result.error ?? "Could not request repayment cancellation");
       return;
     }
-    toast.success("Repayment cancellation submitted for approval");
+    toast.success(result.status === "APPROVED" ? "Repayment cancelled" : "Repayment cancellation submitted for approval");
     dialogRef.current?.close();
     router.refresh();
   }
@@ -52,13 +54,13 @@ export function CancelRepaymentButton({
         onClick={() => dialogRef.current?.showModal()}
         type="button"
       >
-        <RotateCcw size={15} /> Request cancellation
+        <RotateCcw size={15} /> {canCancelDirectly ? "Cancel repayment" : "Request cancellation"}
       </button>
-      <Dialog ref={dialogRef} title="Request repayment cancellation">
+      <Dialog ref={dialogRef} title={canCancelDirectly ? "Cancel repayment" : "Request repayment cancellation"}>
         <form action={submitRequest} className="entity-form compact-mapping">
           <p>
-            The original payment will stay in the audit trail. If approved, a
-            reversal will remove it from the loan balance and payment totals.
+            The original payment will stay in the audit trail. {canCancelDirectly ? "Confirming will immediately" : "Approval will"} restore the amount owed on the loan
+            and undo any related savings overpayment. A settled loan will reopen if a balance remains.
           </p>
           <label>
             Cancellation date
@@ -79,7 +81,7 @@ export function CancelRepaymentButton({
               icon={pending ? <LoaderCircle className="spin" size={18} /> : undefined}
               type="submit"
             >
-              Submit for approval
+              {canCancelDirectly ? "Confirm cancellation" : "Submit for approval"}
             </BrandActionButton>
           </div>
         </form>

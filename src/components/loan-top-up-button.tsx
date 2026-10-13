@@ -28,7 +28,7 @@ export function LoanTopUpButton({
   return (
     <>
       <button className="secondary-action" onClick={() => dialogRef.current?.showModal()} type="button">
-        <PiggyBank size={16} /> Top up
+        <PiggyBank size={16} /> Top up savings
       </button>
       <Dialog ref={dialogRef} title="Top up savings">
         <DepositWithdrawForm

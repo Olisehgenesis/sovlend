@@ -11,6 +11,31 @@ This document captures:
 
 Implementation roadmap: see docs/loan-parity-roadmap.md.
 
+### Repayment cancellation
+
+`LOAN_REPAYMENT_REVERSE_REQUEST` allows requesting cancellation; `LOAN_REVERSE` allows
+a different user to approve it. The opt-in `LOAN_REPAYMENT_REVERSE` permission allows
+immediate repayment cancellation and deciding other or own repayment cancellation
+requests. It is not seeded into default roles. Other servicing actions retain
+maker-checker approval. Direct cancellation requires a reason and records the request,
+decision, acting user, and reversal in the audit trail.
+
+Cancellation reverses the original posted journal exactly, restores installment paid
+balances, withdraws any associated overpayment savings credit, and restores any
+savings-funded repayment debit in one serializable transaction. If the savings credit
+cannot be recovered, the whole cancellation fails without changing the loan. Payments
+without a reconcilable journal/allocation trail must be reconciled before cancellation.
+A closed loan with restored outstanding debt reopens as active or in arrears, allowing
+it to be selected for liquidation from a new loan's disbursement proceeds.
+
+An SSH operator can use `src/scripts/grant-repayment-cancellation.ts` to add the
+exception for one named user in their own office without changing shared roles.
+Required flags are `--user-id`, `--expected-name`, `--office-id`, and `--reason`.
+It defaults to dry-run; `--apply` writes an audited grant. Optionally,
+`--approve-request` together with `--expected-payment-minor` executes that user's
+specific pending repayment cancellation through the same application service,
+recording SSH/on-behalf execution in the decision note. It never disburses a loan.
+
 ## Sources Used
 - Legacy pages inspected with Playwright:
   - https://ilendloans.net/?tenantIdentifier=jumpstart#/account/activeloans
@@ -520,3 +545,69 @@ Export must support full extraction for any one loan and bulk extraction for all
 
 ### Current SovLend export gap
 - Resolved by Agent 6: async export job API (`LoanExportJob`) supports SINGLE_LOAN/FILTERED/PORTFOLIO scopes, CSV zip (all 13 datasets above) and nested JSON package formats, manifest with as-of date/scope/per-dataset counts, idempotency keys, office-scope + permission enforcement, and async processing via BullMQ worker. UI at `/loans/exports`.
+# Application guarantors
+
+For new UGX disbursements, CRB is compulsory: UGX 15,000 is deducted from proceeds,
+split into UGX 10,000 credited to UMRA payable (existing liability account
+`202021`, "CRB fee") and UGX 5,000 credited to CRB income (`202020`). This records
+a liability owed to UMRA, not an external remittance. Product settings cannot
+disable the levy; legacy disabled settings do not bypass new deductions.
+Existing posted journals are not changed. CRB is collected once at disbursement,
+not included in repayment dues, and catalog CRB charges are not deducted twice.
+Loan processing is automatically deducted at the product's configured percentage
+of approved principal (existing products initially remain 2%). Set a group
+product to 5% if required; there is no implicit rate based on the borrower type.
+New applications capture the product rate. Submitted applications can override
+it through Edit application, and authorized disbursers can override it in the
+disbursement preview. The preview and server use the same percentage; the final
+rate is stored in the loan terms and the disbursement audit alongside the approved
+rate. Rates accept 0-100% with up to two decimal places; deductions exceeding
+principal are rejected. Changes do not rewrite previously disbursed loans.
+
+Approved, undisbursed UGX loans also have a Fees tab. Authorized disbursers can
+save a processing rate there without disbursing; Overview and the payout preview
+then read the saved loan rate. Updates are office-scoped, audited, and reject
+stale edits/concurrent disbursement. CRB and LIF remain policy deductions, not
+editable percentages in this tab. Posted/disbursed loans are read-only.
+The Return to draft tab is available to all branch managers, general managers,
+and admins within their assigned office scope, regardless of loan approval limits.
+Other users require loan approval permission within their amount/currency limit.
+It is only available
+before disbursement and rejects loans with transactions or installments. A reason
+and confirmation are required. The loan number and evidence remain; old approvals
+are marked revoked, not deleted. Drafts can be edited and submitted for fresh
+approval, which updates the same loan rather than issuing a duplicate account.
+Disbursement is blocked in draft state. Returning to draft does not undo a
+disbursement or change posted financial records.
+
+A loan may carry an explicitly audited `lifExempt: true` term. This excludes
+that loan's principal from the 15% LIF requirement, with no LIF hold or release
+at its disbursement. Existing LIF savings remain unchanged. The exemption is
+retained through draft/reapproval and respected when calculating LIF for later
+loans; it does not change the product or other loans. Overview, Fees, and payout
+preview display the exemption consistently.
+
+The loan header distinguishes **Top up savings** (a savings deposit) from
+**Top up loan** (a new application with the borrower preselected). To use new
+loan proceeds to settle an existing loan, choose **Disburse as top-up** on the
+approved loan's header or in the disbursement type selector, then select the
+existing loan. Standard disbursement keeps the old loan. The preview deducts
+the payoff from proceeds; creating an application alone does not pay it off.
+The application details show these compulsory deductions separately from
+additional selected charges, including before approval; no extra catalog
+processing charge needs to be selected.
+
+Submitted applications have a Guarantors panel with an Add/Edit modal. Select an
+existing client within your permitted offices (the borrower cannot guarantee their
+own loan), or enter an external person's details. Profiles include names, phone,
+relationship, date of birth, gender, identification, address, occupation, employer,
+and bio. Linking a client does not edit their client biodata.
+Open a guarantor profile to upload/download their own supporting documents (15MB
+per file). Profile and document records persist through approval and are linked
+from the approved loan's Guarantors tab. Pre-approval JSON snapshots are migrated
+to profile rows; imported legacy loan guarantors remain unchanged.
+Adding/editing guarantors and uploading documents requires `LOAN_APPLICATION_CREATE`
+in the application's office. Records are audited and locked against concurrent
+edits/approval; approval copies them into the loan's Guarantors tab atomically.
+Approved applications cannot edit profiles or upload documents, but retain access
+to the reviewed biodata and documents within organization/office scope.

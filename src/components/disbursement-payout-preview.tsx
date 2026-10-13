@@ -10,6 +10,7 @@ export type DisbursementPayoutLoanOption = Readonly<{
   accountNumber: string;
   principalMinor: string;
   outstandingMinor: string;
+  lifExempt?: boolean;
 }>;
 
 export type DisbursementPayoutContext = Readonly<{
@@ -22,6 +23,8 @@ export type DisbursementPayoutContext = Readonly<{
   securityAccountNumber?: string | null;
   contributionAccountNumber?: string | null;
   collectCrb?: boolean;
+  processingFeeBps?: number;
+  lifExempt?: boolean;
 }>;
 
 function asMinor(value: string) {
@@ -53,9 +56,12 @@ export function DisbursementPayoutPreview({
         id: loan.id,
         principalMinor: asMinor(loan.principalMinor),
         outstandingMinor: asMinor(loan.outstandingMinor),
+        lifExempt: loan.lifExempt,
       })),
       liquidateLoanId,
       collectCrb: context.collectCrb,
+      processingFeeBps: context.processingFeeBps,
+      lifExempt: context.lifExempt,
     });
   } catch (caught) {
     error = caught instanceof Error ? caught.message : "Could not build this disbursement preview.";
@@ -78,11 +84,11 @@ export function DisbursementPayoutPreview({
           <dd>{money(payout.principalMinor)}</dd>
         </div>
         <div>
-          <dt>LIF 15%</dt>
-          <dd>{money(payout.lifRequiredMinor)}</dd>
+          <dt>{context.lifExempt ? "LIF exempt" : "LIF 15%"}</dt>
+          <dd>{money(context.lifExempt ? 0n : payout.lifRequiredMinor)}</dd>
         </div>
         <div>
-          <dt>Processing 2%</dt>
+          <dt>Processing {(context.processingFeeBps ?? 200) / 100}%</dt>
           <dd>{money(payout.processingFeeMinor)}</dd>
         </div>
         {payout.crbTotalMinor > 0n ? (
@@ -105,9 +111,9 @@ export function DisbursementPayoutPreview({
             </tr>
             <tr>
               <th>
-                Loan insurance fund (15%)
+                {context.lifExempt ? "Loan insurance fund — exempt" : "Loan insurance fund (15%)"}
                 <span className="field-hint">
-                  Required {money(payout.lifRequiredMinor)} · already on LIF {money(payout.existingLifMinor)}
+                  {context.lifExempt ? "No LIF deduction or release for this loan. Existing LIF savings remain unchanged." : `Required ${money(payout.lifRequiredMinor)} · already on LIF ${money(payout.existingLifMinor)}`}
                   {context.lifAccountNumber ? ` · ${context.lifAccountNumber}` : ""}
                 </span>
               </th>
@@ -121,7 +127,7 @@ export function DisbursementPayoutPreview({
             </tr>
             <tr>
               <th>
-                Processing fee (2%)
+                Processing fee ({(context.processingFeeBps ?? 200) / 100}%)
                 <span className="field-hint">Income on the income statement</span>
               </th>
               <td className="numeric">−{money(payout.processingFeeMinor)}</td>
@@ -129,9 +135,9 @@ export function DisbursementPayoutPreview({
             {payout.crbTotalMinor > 0n ? (
             <tr>
               <th>
-                CRB 15,000
+                CRB 15,000 (compulsory)
                 <span className="field-hint">
-                  {money(payout.crbPayableMinor)} payable to the association of loan lenders · {money(payout.crbIncomeMinor)} income
+                  {money(payout.crbPayableMinor)} payable to UMRA (CRB fee, GL 202021) · {money(payout.crbIncomeMinor)} our income (GL 202020)
                 </span>
               </th>
               <td className="numeric">−{money(payout.crbTotalMinor)}</td>
@@ -148,7 +154,7 @@ export function DisbursementPayoutPreview({
                 <th>
                   Liquidate {selected.accountNumber}
                   <span className="field-hint">
-                    {choice.fullyClosesPrevious
+                    {context.lifExempt ? "This loan is LIF-exempt. Existing LIF savings remain unchanged." : choice.fullyClosesPrevious
                       ? "Previous loan is paid off from these proceeds. LIF is reset to 15% of the new loan only."
                       : "Proceeds are not enough to close the previous loan. LIF stays at 15% of both active loans."}
                   </span>

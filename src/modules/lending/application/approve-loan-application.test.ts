@@ -14,9 +14,11 @@ type MockOptions = Readonly<{
   actorSystemRole: "ADMIN" | "GENERAL_MANAGER" | "BRANCH_MANAGER" | "LOAN_OFFICER";
   actorUserId: string;
   submittedById: string;
+  guarantors?: unknown;
+  returningDraft?: boolean;
 }>;
 
-function buildPrismaMock({ actorSystemRole, actorUserId, submittedById }: MockOptions) {
+function buildPrismaMock({ actorSystemRole, actorUserId, submittedById, guarantors, returningDraft }: MockOptions) {
   const captures: Record<string, unknown> = {
     approvalData: null,
     loanData: null,
@@ -36,7 +38,10 @@ function buildPrismaMock({ actorSystemRole, actorUserId, submittedById }: MockOp
     fundId: null,
     termsSnapshot: null,
     chargesSnapshot: null,
-    collateralSnapshot: null,
+    collateralSnapshot: null as unknown,
+    guarantorsSnapshot: guarantors ?? null,
+    updatedAt: new Date("2026-10-07T00:00:00Z"),
+    loan: returningDraft ? { id: "draft-loan", status: "DRAFT", disbursedOn: null, termsSnapshot: { lifExempt: true }, updatedAt: new Date("2026-10-07"), accountNumber: "EXISTING-L4", collateralItems: [] as { id: string; type: string; description: string | null; _count: { documents: number; notes: number } }[] } : null,
     office: {
       organizationId: "org-1",
     },
@@ -46,6 +51,7 @@ function buildPrismaMock({ actorSystemRole, actorUserId, submittedById }: MockOp
       principalMaxMinor: 1_000_000n,
       annualRateBps: 2_400,
       monitoringFeeAnnualRateBps: 0,
+      processingFeeBps: 500,
       repaymentCount: 12,
       repaymentFrequency: "MONTHLY",
       amortizationMethod: "EQUAL_INSTALLMENTS",
@@ -69,17 +75,24 @@ function buildPrismaMock({ actorSystemRole, actorUserId, submittedById }: MockOp
       }),
     },
     loan: {
+      updateMany: vi.fn(async ({ data }: { data: unknown }) => { captures.loanData = data; return { count: 1 }; }),
       create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => {
         captures.loanData = data;
         return { id: "loan-1", ...data };
       }),
     },
     charge: {
+      deleteMany: vi.fn(async () => ({ count: 0 })),
       createMany: vi.fn(async () => ({ count: 0 })),
     },
     loanCollateral: {
       createMany: vi.fn(async () => ({ count: 0 })),
+      update: vi.fn(async () => ({})),
+      create: vi.fn(async () => ({})),
+      delete: vi.fn(async () => ({})),
     },
+    guarantor: { deleteMany: vi.fn(async () => ({ count: 0 })), createMany: vi.fn(async ({ data }: { data: unknown }) => { captures.guarantorData = data; return { count: 1 }; }) },
+    guarantorProfile: { findMany: vi.fn(async () => (guarantors ?? []) as { id: string; firstName: string; lastName: string; phone: string; relationship: string; dateOfBirth: Date; clientId?: string }[]) },
     auditEvent: {
       create: vi.fn(async () => ({})),
     },
@@ -100,10 +113,46 @@ function buildPrismaMock({ actorSystemRole, actorUserId, submittedById }: MockOp
     $transaction: vi.fn(async (callback: (tx: typeof transaction) => unknown) => callback(transaction)),
   } as unknown as PrismaClient;
 
-  return { prisma, captures, loanApplicationFindUnique };
+  return { prisma, captures, loanApplicationFindUnique, transaction };
 }
 
 describe("approveLoanApplication", () => {
+  it("reapproves the same draft loan number instead of creating another account", async () => {
+    const { prisma, captures, transaction } = buildPrismaMock({ actorSystemRole: "BRANCH_MANAGER", actorUserId: "reviewer", submittedById: "maker", returningDraft: true });
+    await approveLoanApplication(prisma, { applicationId: "app", actorUserId: "reviewer", approvedPrincipalMinor: 450000n });
+    expect(captures.loanData).toMatchObject({ accountNumber: "EXISTING-L4", status: "APPROVED", principalMinor: 450000n, termsSnapshot: { lifExempt: true } });
+    expect(transaction.loan.create).not.toHaveBeenCalled();
+    expect(transaction.approval.create).toHaveBeenCalledOnce();
+    expect(transaction.charge.deleteMany).toHaveBeenCalledWith({ where: { loanId: "draft-loan", status: "PENDING" } });
+    expect(transaction.guarantor.deleteMany).toHaveBeenCalledWith({ where: { loanId: "draft-loan" } });
+  });
+  it("rejects a stale draft loan and does not replace its guarantees", async () => {
+    const { prisma, transaction } = buildPrismaMock({ actorSystemRole: "BRANCH_MANAGER", actorUserId: "reviewer", submittedById: "maker", returningDraft: true });
+    transaction.loan.updateMany.mockResolvedValueOnce({ count: 0 });
+    await expect(approveLoanApplication(prisma, { applicationId: "app", actorUserId: "reviewer", approvedPrincipalMinor: 450000n })).rejects.toThrow("Draft loan changed");
+    expect(transaction.guarantor.deleteMany).not.toHaveBeenCalled();
+  });
+  it("keeps collateral IDs and evidence and rejects removal of documented collateral", async () => {
+    const { prisma, transaction, loanApplicationFindUnique } = buildPrismaMock({ actorSystemRole: "BRANCH_MANAGER", actorUserId: "reviewer", submittedById: "maker", returningDraft: true });
+    const original = await loanApplicationFindUnique();
+    const loan = { ...original.loan!, collateralItems: [{ id: "collateral", type: "Land", description: "Plot", _count: { documents: 1, notes: 1 } }] };
+    loanApplicationFindUnique.mockResolvedValueOnce({ ...original, loan, collateralSnapshot: [{ type: "Land", description: "Plot", estimatedValueMinor: "1000000" }] });
+    await approveLoanApplication(prisma, { applicationId: "app", actorUserId: "reviewer", approvedPrincipalMinor: 450000n });
+    expect(transaction.loanCollateral.update).toHaveBeenCalledWith({ where: { id: "collateral" }, data: { type: "Land", description: "Plot", estimatedValueMinor: 1000000n, valuationCurrencyCode: "UGX" } });
+    expect(transaction.loanCollateral.delete).not.toHaveBeenCalled();
+    loanApplicationFindUnique.mockResolvedValueOnce({ ...original, loan });
+    await expect(approveLoanApplication(prisma, { applicationId: "app", actorUserId: "reviewer", approvedPrincipalMinor: 450000n })).rejects.toThrow("Collateral with documents or notes");
+    expect(transaction.loanCollateral.delete).not.toHaveBeenCalled();
+  });
+  it("copies reviewed guarantors to the approved loan and checks the reviewed version", async () => {
+    const { prisma, captures } = buildPrismaMock({
+      actorSystemRole: "BRANCH_MANAGER", actorUserId: "reviewer", submittedById: "maker",
+      guarantors: [{ id: "profile-1", clientId: "client-2", firstName: "Jane", lastName: "Doe", phone: "0700000000", relationship: "Sister", dateOfBirth: new Date("1990-01-01T00:00:00Z") }],
+    });
+    await approveLoanApplication(prisma, { applicationId: "application", actorUserId: "reviewer", approvedPrincipalMinor: 450_000n });
+    expect(captures.guarantorData).toEqual([{ loanId: "loan-1", profileId: "profile-1", guarantorType: "EXISTING_CLIENT", firstName: "Jane", lastName: "Doe", phone: "0700000000", relationship: "Sister", dateOfBirth: new Date("1990-01-01T00:00:00Z") }]);
+    expect(captures.loanApplicationUpdateArgs).toMatchObject({ where: { updatedAt: new Date("2026-10-07T00:00:00Z") } });
+  });
   beforeEach(() => {
     vi.clearAllMocks();
   });
@@ -141,6 +190,7 @@ describe("approveLoanApplication", () => {
       loanOfficerId: "branch-manager-1",
       principalMinor: 450_000n,
       status: "APPROVED",
+      termsSnapshot: { processingFeeBps: 500 },
     });
   });
 
@@ -181,10 +231,14 @@ describe("approveLoanApplication", () => {
       termsSnapshot: null,
       chargesSnapshot: null,
       collateralSnapshot: null,
+      guarantorsSnapshot: null,
+      updatedAt: new Date("2026-10-07T00:00:00Z"),
+      loan: null,
       office: {
         organizationId: "org-1",
       },
       product: {
+        processingFeeBps: 500,
         denominationCurrency: "UGX",
         principalMinMinor: 100_000n,
         principalMaxMinor: 1_000_000n,

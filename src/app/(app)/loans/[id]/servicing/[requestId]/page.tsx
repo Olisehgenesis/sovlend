@@ -118,7 +118,7 @@ export default async function LoanServiceRequestPage({
         <div className="panel-heading">
           <div>
             <h2>Request details</h2>
-            <p>Maker-checker audit trail for this high-risk action.</p>
+            <p>Request, decision, and transaction audit trail. Direct repayment cancellation requires explicit permission.</p>
           </div>
           <span
             className={`status status-prominent ${request.status === "APPROVED" ? "up-to-date" : request.status === "REJECTED" ? "in-arrears" : "review"}`}

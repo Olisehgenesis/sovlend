@@ -49,6 +49,7 @@ enum LoanApplicationStatus {
 }
 
 enum LoanStatus {
+  DRAFT
   APPROVED
   ACTIVE
   IN_ARREARS
@@ -405,6 +406,7 @@ model Client {
   charges             Charge[]
   groupMemberships    GroupMember[]
   btcAccounts         ClientBtcAccount[]
+  guarantorProfiles   GuarantorProfile[]
   createdAt           DateTime             @default(now())
   updatedAt           DateTime             @updatedAt
 
@@ -600,6 +602,7 @@ model LoanProduct {
   principalMaxMinor          BigInt
   annualRateBps              Int
   monitoringFeeAnnualRateBps Int                           @default(0)
+  processingFeeBps           Int                           @default(200)
   repaymentCount             Int
   repaymentFrequency         String
   amortizationMethod         String
@@ -714,6 +717,8 @@ model LoanApplication {
   // Collateral items captured on the Charges step (type/value/description) — copied onto
   // LoanCollateral rows on approval.
   collateralSnapshot     Json?
+  guarantorsSnapshot     Json?
+  guarantorProfiles      GuarantorProfile[]
   submittedAt            DateTime?
   approvedAt             DateTime?
   client                 Client?                   @relation(fields: [clientId], references: [id])
@@ -834,6 +839,7 @@ model Approval {
   application   LoanApplication @relation(fields: [applicationId], references: [id])
   reviewer      User            @relation(fields: [reviewerId], references: [id])
   decidedAt     DateTime        @default(now())
+  revokedAt     DateTime?
 
   @@index([applicationId, decidedAt])
 }
@@ -1023,6 +1029,8 @@ model LoanCollateral {
 model Guarantor {
   id            String    @id @default(uuid()) @db.Uuid
   loanId        String    @db.Uuid
+  profileId     String?   @db.Uuid
+  profile       GuarantorProfile? @relation(fields: [profileId], references: [id])
   externalId    Int?      @unique
   guarantorType String    @default("EXTERNAL")
   firstName     String?
@@ -1036,6 +1044,43 @@ model Guarantor {
   updatedAt     DateTime  @updatedAt
 
   @@index([loanId])
+}
+
+model GuarantorProfile {
+  id            String @id @default(uuid()) @db.Uuid
+  applicationId String @db.Uuid
+  clientId      String? @db.Uuid
+  firstName     String
+  lastName      String
+  phone         String
+  relationship  String?
+  dateOfBirth   DateTime? @db.Date
+  gender        String?
+  nationalId    String?
+  address       String?
+  occupation    String?
+  employer      String?
+  bio           String?
+  application   LoanApplication @relation(fields: [applicationId], references: [id])
+  client        Client? @relation(fields: [clientId], references: [id])
+  documents     GuarantorDocument[]
+  guarantees    Guarantor[]
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  @@index([applicationId])
+  @@index([clientId])
+}
+
+model GuarantorDocument {
+  id            String @id @default(uuid()) @db.Uuid
+  profileId     String @db.Uuid
+  uploadedById  String
+  name          String
+  sha256        String
+  mediaType     String
+  profile       GuarantorProfile @relation(fields: [profileId], references: [id])
+  createdAt     DateTime @default(now())
+  @@index([profileId])
 }
 
 model LoanServiceRequest {

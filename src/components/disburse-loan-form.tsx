@@ -10,6 +10,7 @@ import { BrandActionButton } from "@/components/ui/brand-action-button";
 import { LoanPreviewPanel, type LoanPreviewInput } from "@/components/loan-preview-panel";
 import { PAYEE_TYPE_LABELS, PAYEE_TYPES, payeeReferencePlaceholder, type PayeeType } from "@/modules/ledger/domain/journal";
 import { formatMinor } from "@/modules/money/domain/format-minor";
+import { processingFeePercentSchema } from "@/modules/lending/domain/processing-fee";
 
 type SettlementAccountOption = Readonly<{
   id: string;
@@ -39,6 +40,7 @@ export function DisburseLoanForm({
   preview,
   payout,
   onSuccess,
+  initialAsTopUp = false,
 }: {
   loanId: string;
   settlementAccounts: SettlementAccountOption[];
@@ -47,10 +49,13 @@ export function DisburseLoanForm({
   preview?: LoanPreviewInput;
   payout?: DisbursementPayoutContext;
   onSuccess?: () => void;
+  initialAsTopUp?: boolean;
 }) {
   const router = useRouter();
   const [pending, setPending] = useState(false);
-  const [payOffPrevious, setPayOffPrevious] = useState(false);
+  const [processingPercent, setProcessingPercent] = useState(String((payout?.processingFeeBps ?? 200) / 100));
+  const parsedProcessing = processingFeePercentSchema.safeParse(processingPercent === "" ? NaN : processingPercent);
+  const [payOffPrevious, setPayOffPrevious] = useState(initialAsTopUp && payoffLoanOptions.length > 0);
   const [selectedTopUpLoanId, setSelectedTopUpLoanId] = useState(payoffLoanOptions[0]?.id ?? "");
   const [payeeType, setPayeeType] = useState<PayeeType | "">("");
   const defaultSavingsAccountId = useMemo(
@@ -66,6 +71,7 @@ export function DisburseLoanForm({
   const referencePlaceholder = payeeReferencePlaceholder(payeeType);
 
   async function disburse(formData: FormData) {
+    if (!parsedProcessing.success) { toast.error("Enter a processing percentage from 0 to 100, with at most two decimal places"); return; }
     const savingsAccountId = String(formData.get("savingsAccountId") || defaultSavingsAccountId || "");
     const paymentMethodSettlementAccountId = String(formData.get("paymentMethodSettlementAccountId") || "");
     const topUpOfLoanId = payOffPrevious ? String(formData.get("topUpOfLoanId") || "") : "";
@@ -76,6 +82,7 @@ export function DisburseLoanForm({
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         savingsAccountId,
+        processingFeeBps: payout?.currency === "UGX" ? Math.round(parsedProcessing.data * 100) : undefined,
         paymentMethodSettlementAccountId: paymentMethodSettlementAccountId || undefined,
         businessDate: formData.get("businessDate"),
         externalReference: formData.get("externalReference") || undefined,
@@ -101,17 +108,31 @@ export function DisburseLoanForm({
     onSuccess?.();
   }
 
-  const submitDisabled = pending;
+  const submitDisabled = pending || (payout?.currency === "UGX" && !parsedProcessing.success);
 
   return (
     <form action={disburse} className="entity-form compact-mapping">
+      {payoffLoanOptions.length > 0 ? (
+        <fieldset disabled={pending}>
+          <legend>Disbursement type</legend>
+          <label className="check-row"><input type="radio" name="disbursementType" checked={!payOffPrevious} onChange={() => setPayOffPrevious(false)} />Standard disbursement — keep the existing loan</label>
+          <label className="check-row"><input type="radio" name="disbursementType" checked={payOffPrevious} onChange={() => setPayOffPrevious(true)} />Disburse as top-up — deduct the existing loan balance from proceeds</label>
+          {payOffPrevious ? <label>Existing loan to pay off<select name="topUpOfLoanId" value={selectedTopUpLoanId} required onChange={event => setSelectedTopUpLoanId(event.target.value)}>{payoffLoanOptions.map(option => <option key={option.id} value={option.id}>{option.accountNumber} · outstanding {formatMinor(BigInt(option.outstandingMinor), option.currencyCode)}</option>)}</select></label> : null}
+          <p className="field-hint">{payout?.lifExempt ? "This loan is LIF-exempt. Existing LIF savings remain unchanged in either option." : "The preview recalculates LIF and cash payable for the chosen option."} If proceeds cannot clear the existing loan, the preview shows the partial payment and remaining cash.</p>
+        </fieldset>
+      ) : null}
+      {payout?.currency === "UGX" || preview?.currency === "UGX" ? (
+        <p className="field-hint"><strong>Processing at the selected rate and compulsory CRB UGX 15,000 are deducted from proceeds.</strong> Do not add them again as extra charges. CRB splits into UGX 10,000 payable to UMRA (GL 202021) and UGX 5,000 income (GL 202020). They are not added to the repayment schedule.</p>
+      ) : null}
       {payout ? (
         <fieldset>
           <legend>Disbursement preview</legend>
+          {payout.currency === "UGX" ? <label>Processing fee % for this loan<input type="number" min={0} max={100} step="0.01" required value={processingPercent} disabled={pending} onChange={(event) => setProcessingPercent(event.target.value)} /><small>Changing this updates the preview and actual deduction for this loan only. The change is recorded in the disbursement audit.</small></label> : null}
+          {!parsedProcessing.success ? <p role="alert">Enter a valid processing percentage before disbursing.</p> :
           <DisbursementPayoutPreview
-            context={payout}
+            context={{ ...payout, processingFeeBps: Math.round(parsedProcessing.data * 100) }}
             liquidateLoanId={payOffPrevious ? selectedTopUpLoanId || payoffLoanOptions[0]?.id : null}
-          />
+          />}
         </fieldset>
       ) : null}
       {preview ? (
@@ -179,43 +200,9 @@ export function DisburseLoanForm({
           <input name="payeeReference" maxLength={200} placeholder={referencePlaceholder} />
         </label>
       </fieldset>
-      {payoffLoanOptions.length > 0 ? (
-        <fieldset>
-          <legend>Existing loan</legend>
-          <label className="check-row">
-            <input
-              checked={payOffPrevious}
-              onChange={(event) => setPayOffPrevious(event.target.checked)}
-              type="checkbox"
-            />
-            Liquidate a previous loan from these proceeds
-          </label>
-          <p className="field-hint">
-            Leave this unchecked to keep both loans. LIF then holds 15% of each active loan. If you
-            liquidate, surplus LIF moves to loan security payable.
-          </p>
-          {payOffPrevious ? (
-            <label>
-              Loan to liquidate
-              <select
-                name="topUpOfLoanId"
-                onChange={(event) => setSelectedTopUpLoanId(event.target.value)}
-                required
-                value={selectedTopUpLoanId || payoffLoanOptions[0]?.id}
-              >
-                {payoffLoanOptions.map((option) => (
-                  <option key={option.id} value={option.id}>
-                    {option.accountNumber} · outstanding {formatMinor(BigInt(option.outstandingMinor), option.currencyCode)}
-                  </option>
-                ))}
-              </select>
-            </label>
-          ) : null}
-        </fieldset>
-      ) : null}
       <div className="form-actions">
         <BrandActionButton disabled={submitDisabled} icon={pending ? <LoaderCircle className="spin" size={18} /> : <PiggyBank size={18} />} type="submit">
-          Disburse loan
+          {payOffPrevious ? "Disburse as top-up" : "Disburse loan"}
         </BrandActionButton>
       </div>
     </form>

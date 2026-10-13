@@ -44,6 +44,7 @@ const actionLabels: Record<string, string> = {
 export function LoanServiceActionsPanel({
   loanId,
   canRequest,
+  canCancelDirectly = false,
   hasPendingDisbursement,
   isOpenLoan,
   settlementAccounts,
@@ -53,6 +54,7 @@ export function LoanServiceActionsPanel({
 }: {
   loanId: string;
   canRequest: boolean;
+  canCancelDirectly?: boolean;
   hasPendingDisbursement: boolean;
   isOpenLoan: boolean;
   settlementAccounts: ReadonlyArray<{ id: string; name: string; type: string }>;
@@ -113,7 +115,7 @@ export function LoanServiceActionsPanel({
     const result = await response.json().catch(() => ({}));
     setPendingCreate(false);
     if (!response.ok) { toast.error(result.error ?? `Could not submit the ${actionLabel(actionType).toLowerCase()} request`); return; }
-    toast.success(`${actionLabel(actionType)} request submitted for approval`);
+    toast.success(result.status === "APPROVED" ? `${actionLabel(actionType)} executed` : `${actionLabel(actionType)} request submitted for approval`);
     closeRequestDialog();
     router.refresh();
   }
@@ -143,8 +145,8 @@ export function LoanServiceActionsPanel({
   return (
     <>
       <aside className="configuration-note">
-        <strong><ShieldAlert size={14} /> Maker-checker required</strong>
-        <span>High-risk actions must be requested by one user and approved by a different user before they take effect.</span>
+        <strong><ShieldAlert size={14} /> Audited servicing</strong>
+        <span>{canCancelDirectly ? "You can cancel repayments directly and approve repayment cancellation requests, including your own. Other servicing actions still require a different approver." : "High-risk actions require a different approver unless the user has explicit direct repayment cancellation permission."}</span>
       </aside>
       {requests.length === 0 ? (
         <div className="empty-state compact-empty">
@@ -283,7 +285,7 @@ export function LoanServiceActionsPanel({
               ) : null}
               <div className="form-actions">
                 <BrandActionButton disabled={pendingCreate} icon={pendingCreate ? <LoaderCircle className="spin" size={18} /> : undefined} type="submit">
-                  Submit for approval
+                  {canCancelDirectly && actionType === "TRANSACTION_REVERSAL" ? "Confirm cancellation" : "Submit for approval"}
                 </BrandActionButton>
               </div>
             </form>

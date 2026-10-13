@@ -6,9 +6,11 @@ import { auth } from "@/lib/auth";
 import { canManageProducts } from "@/lib/can-manage-products";
 import { prisma } from "@/lib/prisma";
 import { annualBpsFromMonthlyPercent } from "@/modules/lending/domain/monthly-rate";
+import { processingFeePercentSchema } from "@/modules/lending/domain/processing-fee";
 
 const archiveSchema = z.object({ active: z.boolean() });
 const updateSchema = z.object({
+  processingFeePercent: processingFeePercentSchema.optional(),
   name: z.string().trim().min(1).max(150),
   shortName: z.string().trim().min(1).max(20),
   denominationCurrency: z.string().trim().min(3).max(10).default("UGX"),
@@ -20,7 +22,7 @@ const updateSchema = z.object({
   repaymentFrequency: z.string().trim().regex(/^\d+\s+(day|days|week|weeks|month|months)$/i, "Repayment frequency must be like '1 Months'"),
   amortizationMethod: z.string().trim().min(1).max(120),
   interestMethod: z.enum(["Flat", "Declining Balance"]),
-  collectCrb: z.boolean().default(true),
+  collectCrb: z.literal(true, { error: "CRB is compulsory and cannot be disabled" }).default(true),
 });
 
 // Archiving only flips `active`; the row is never deleted so existing loans keep their terms snapshot intact.
@@ -60,6 +62,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       amortizationMethod: parsed.data.amortizationMethod,
       interestMethod: parsed.data.interestMethod,
       collectCrb: parsed.data.collectCrb,
+      ...(parsed.data.processingFeePercent !== undefined ? { processingFeeBps: Math.round(parsed.data.processingFeePercent * 100) } : {}),
     },
   });
   return NextResponse.json({ ok: true });

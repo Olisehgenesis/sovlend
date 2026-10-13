@@ -105,8 +105,8 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     return NextResponse.json({ error: "Loan application not found" }, { status: 404 });
   }
 
-  if (application.status !== "SUBMITTED") {
-    return NextResponse.json({ error: "Only submitted applications awaiting review can be edited" }, { status: 409 });
+  if (application.status !== "SUBMITTED" && application.status !== "DRAFT") {
+    return NextResponse.json({ error: "Only draft or submitted applications can be edited" }, { status: 409 });
   }
 
   try {
@@ -197,12 +197,6 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   const eventHash = createHash("sha256").update(JSON.stringify({ correlationId, action: "loan.application.edited", metadata })).digest("hex");
 
   const updated = await prisma.$transaction(async (transaction) => {
-    const current = await transaction.loanApplication.findUniqueOrThrow({
-      where: { id: application.id },
-      select: { status: true },
-    });
-    if (current.status !== "SUBMITTED") throw new Error("Application was changed by another operation");
-
     const data: Prisma.LoanApplicationUpdateInput = {};
     if (hasOwn(payload, "proposedPrincipalMinor") && parsed.data.proposedPrincipalMinor) data.proposedPrincipalMinor = BigInt(parsed.data.proposedPrincipalMinor);
     if (hasOwn(payload, "purpose")) data.purpose = parsed.data.purpose || null;
@@ -214,7 +208,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     if (hasOwn(payload, "charges")) data.chargesSnapshot = buildChargeSnapshot(parsed.data.charges ?? []);
     if (hasOwn(payload, "collateral")) data.collateralSnapshot = buildCollateralSnapshot(parsed.data.collateral ?? []);
 
-    await transaction.loanApplication.update({ where: { id: application.id }, data });
+    await transaction.loanApplication.update({ where: { id: application.id, status: application.status, updatedAt: application.updatedAt }, data });
 
     await transaction.auditEvent.create({
       data: {
@@ -237,8 +231,12 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     });
 
     return transaction.loanApplication.findUniqueOrThrow({ where: { id: application.id } });
+  }).catch((error: unknown) => {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2025") return null;
+    throw error;
   });
 
+  if (!updated) return NextResponse.json({ error: "Application changed. Refresh and try again" }, { status: 409 });
   return NextResponse.json({
     id: updated.id,
     status: updated.status,

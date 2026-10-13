@@ -87,8 +87,12 @@ export type TrialBalanceReport = {
 export type GeneralLedgerEntry = {
   id: string;
   journalId: string;
+  account: ReportAccount;
   businessDate: Date;
   officeName: string;
+  payeeType: string | null;
+  payeeName: string | null;
+  payeeReference: string | null;
   referenceType: string;
   referenceId: string | null;
   narration: string;
@@ -99,11 +103,21 @@ export type GeneralLedgerEntry = {
   runningBalanceSide: BalanceSide;
 };
 
+export type GeneralLedgerAccountBalance = {
+  account: ReportAccount;
+  openingBalanceMinor: bigint;
+  debitTotalMinor: bigint;
+  creditTotalMinor: bigint;
+  closingBalanceMinor: bigint;
+  closingBalanceSide: BalanceSide;
+};
+
 export type GeneralLedgerReport = {
   startDate: Date;
   endDate: Date;
   officeId: string | null;
   account: ReportAccount | null;
+  accountBalances: GeneralLedgerAccountBalance[];
   journalCount: number;
   lineCount: number;
   hasActivity: boolean;
@@ -281,7 +295,15 @@ export function thisWeekDateRange(now = new Date()) {
   return { startDate, endDate: today };
 }
 
-export type ReportDatePreset = "today" | "week" | "month";
+export function thisYearDateRange(now = new Date()) {
+  const endDate = todayDate(now);
+  return {
+    startDate: new Date(Date.UTC(endDate.getUTCFullYear(), 0, 1)),
+    endDate,
+  };
+}
+
+export type ReportDatePreset = "today" | "week" | "month" | "year";
 
 export function resolveDatePreset(now = new Date(), preset: ReportDatePreset) {
   if (preset === "today") {
@@ -289,6 +311,7 @@ export function resolveDatePreset(now = new Date(), preset: ReportDatePreset) {
     return { startDate: today, endDate: today };
   }
   if (preset === "week") return thisWeekDateRange(now);
+  if (preset === "year") return thisYearDateRange(now);
   return currentMonthDateRange(now);
 }
 
@@ -551,6 +574,18 @@ export async function getTrialBalanceReport(
   };
 }
 
+export async function getGeneralLedgerJournal(db: ReportPrisma, scope: UserDataScope, journalId: string) {
+  return db.journal.findFirst({
+    where: { id: journalId, status: "POSTED", office: { organizationId: scope.organizationId }, ...officeWhere(scope) },
+    include: {
+      office: true,
+      lines: { include: { account: true }, orderBy: { createdAt: "asc" } },
+      reversalOf: { select: { id: true } },
+      reversedBy: { select: { id: true } },
+    },
+  });
+}
+
 export async function getGeneralLedgerReport(
   db: ReportPrisma,
   scope: UserDataScope,
@@ -559,14 +594,17 @@ export async function getGeneralLedgerReport(
   const accounts = await listAccountingReportAccounts(db);
   const selectedAccount = filters.accountId
     ? accounts.find((account) => account.id === filters.accountId) ?? null
-    : (accounts[0] ?? null);
+    : null;
+  if (filters.accountId && !selectedAccount) throw new Error("Invalid account filter");
+  const reportAccounts = selectedAccount ? [selectedAccount] : accounts;
 
-  if (!selectedAccount) {
+  if (reportAccounts.length === 0) {
     return {
       startDate: filters.startDate,
       endDate: filters.endDate,
       officeId: filters.officeId,
       account: null,
+      accountBalances: [],
       journalCount: 0,
       lineCount: 0,
       hasActivity: false,
@@ -580,7 +618,8 @@ export async function getGeneralLedgerReport(
 
   const lines = await db.journalLine.findMany({
     where: {
-      accountId: selectedAccount.id,
+      ...(selectedAccount ? { accountId: selectedAccount.id } : {}),
+      account: DETAIL_ACCOUNT_WHERE,
       journal: {
         status: "POSTED",
         businessDate: { gte: filters.startDate, lte: filters.endDate },
@@ -595,17 +634,38 @@ export async function getGeneralLedgerReport(
       amountMinor: true,
       memo: true,
       createdAt: true,
+      account: {
+        select: { id: true, code: true, name: true, type: true, currencyCode: true },
+      },
       journal: {
         select: {
           businessDate: true,
           createdAt: true,
           office: { select: { name: true } },
+          payeeType: true,
+          payeeName: true,
+          payeeReference: true,
           referenceType: true,
           referenceId: true,
           narration: true,
         },
       },
     },
+  });
+
+  const openingLines = await db.journalLine.groupBy({
+    by: ["accountId", "direction"],
+    where: {
+      ...(selectedAccount ? { accountId: selectedAccount.id } : {}),
+      account: DETAIL_ACCOUNT_WHERE,
+      journal: {
+        status: "POSTED",
+        businessDate: { lt: filters.startDate },
+        office: { organizationId: scope.organizationId },
+        ...(filters.officeId ? { officeId: filters.officeId } : officeWhere(scope)),
+      },
+    },
+    _sum: { amountMinor: true },
   });
 
   lines.sort((left, right) => {
@@ -618,21 +678,53 @@ export async function getGeneralLedgerReport(
     return left.id.localeCompare(right.id);
   });
 
-  let runningBalanceMinor = 0n;
+  const runningBalances = new Map<string, bigint>();
+  const openingBalances = new Map<string, bigint>();
+  const periodDebitTotals = new Map<string, bigint>();
+  const periodCreditTotals = new Map<string, bigint>();
+  const accountById = new Map(reportAccounts.map((account) => [account.id, account]));
   let debitTotalMinor = 0n;
   let creditTotalMinor = 0n;
   const journalIds = new Set<string>();
 
-  const entries = lines.map((line) => {
+  for (const line of openingLines) {
+    const account = accountById.get(line.accountId);
+    const amountMinor = line._sum.amountMinor ?? 0n;
+    if (!account || amountMinor === 0n) continue;
+    const openingBalance =
+      (openingBalances.get(account.id) ?? 0n) +
+      signedAmountForAccount(account.type, line.direction, amountMinor);
+    openingBalances.set(account.id, openingBalance);
+    runningBalances.set(account.id, openingBalance);
+  }
+
+  const entries: GeneralLedgerEntry[] = [];
+
+  for (const line of lines) {
+    const account = accountById.get(line.account.id);
+    if (!account) continue;
+    const previousBalance = runningBalances.get(account.id) ?? 0n;
+    const runningBalanceMinor =
+      previousBalance + signedAmountForAccount(account.type, line.direction, line.amountMinor);
+    runningBalances.set(account.id, runningBalanceMinor);
+
     journalIds.add(line.journalId);
-    if (line.direction === "DEBIT") debitTotalMinor += line.amountMinor;
-    else creditTotalMinor += line.amountMinor;
-    runningBalanceMinor += signedAmountForAccount(selectedAccount.type, line.direction, line.amountMinor);
-    return {
+    if (line.direction === "DEBIT") {
+      debitTotalMinor += line.amountMinor;
+      periodDebitTotals.set(account.id, (periodDebitTotals.get(account.id) ?? 0n) + line.amountMinor);
+    } else {
+      creditTotalMinor += line.amountMinor;
+      periodCreditTotals.set(account.id, (periodCreditTotals.get(account.id) ?? 0n) + line.amountMinor);
+    }
+    entries.push({
       id: line.id,
       journalId: line.journalId,
+      account,
       businessDate: line.journal.businessDate,
       officeName: line.journal.office.name,
+      payeeType: line.journal.payeeType,
+      payeeName: line.journal.payeeName,
+      payeeReference: line.journal.payeeReference,
       referenceType: line.journal.referenceType,
       referenceId: line.journal.referenceId,
       narration: line.journal.narration,
@@ -640,23 +732,44 @@ export async function getGeneralLedgerReport(
       amountMinor: line.amountMinor,
       memo: line.memo,
       runningBalanceMinor,
-      runningBalanceSide: balanceSideForAccount(selectedAccount.type, runningBalanceMinor),
-    };
+      runningBalanceSide: balanceSideForAccount(account.type, runningBalanceMinor),
+    });
+  }
+
+  const accountsWithActivity = new Set([
+    ...entries.map((entry) => entry.account.id),
+    ...[...openingBalances].filter(([, amount]) => amount !== 0n).map(([id]) => id),
+  ]);
+  const accountBalances = reportAccounts.flatMap((account) => {
+    if (!accountsWithActivity.has(account.id) && account.id !== selectedAccount?.id) return [];
+    const closingBalanceMinor = runningBalances.get(account.id) ?? 0n;
+    return [{
+      account,
+      openingBalanceMinor: openingBalances.get(account.id) ?? 0n,
+      debitTotalMinor: periodDebitTotals.get(account.id) ?? 0n,
+      creditTotalMinor: periodCreditTotals.get(account.id) ?? 0n,
+      closingBalanceMinor,
+      closingBalanceSide: balanceSideForAccount(account.type, closingBalanceMinor),
+    }];
   });
+  const selectedAccountBalance = selectedAccount
+    ? accountBalances.find((balance) => balance.account.id === selectedAccount.id)
+    : null;
 
   return {
     startDate: filters.startDate,
     endDate: filters.endDate,
     officeId: filters.officeId,
     account: selectedAccount,
+    accountBalances,
     journalCount: journalIds.size,
-    lineCount: lines.length,
-    hasActivity: lines.length > 0,
+    lineCount: entries.length,
+    hasActivity: entries.length > 0,
     entries,
     debitTotalMinor,
     creditTotalMinor,
-    closingBalanceMinor: runningBalanceMinor,
-    closingBalanceSide: balanceSideForAccount(selectedAccount.type, runningBalanceMinor),
+    closingBalanceMinor: selectedAccountBalance?.closingBalanceMinor ?? 0n,
+    closingBalanceSide: selectedAccountBalance?.closingBalanceSide ?? "ZERO",
   };
 }
 
@@ -1022,6 +1135,12 @@ export function generalLedgerReportCsv(report: GeneralLedgerReport) {
   return rowsToCsv(
     report.entries.map((entry) => ({
       Date: dateToString(entry.businessDate),
+      "Account Type": entry.account.type,
+      "GL Account Code": entry.account.code,
+      "GL Account Name": entry.account.name,
+      Currency: entry.account.currencyCode,
+      "Vendor/Client": entry.payeeName ?? "",
+      "Payee Reference": entry.payeeReference ?? "",
       "Reference Type": entry.referenceType,
       "Reference ID": entry.referenceId ?? "",
       "Journal ID": entry.journalId,
@@ -1034,6 +1153,12 @@ export function generalLedgerReportCsv(report: GeneralLedgerReport) {
     })),
     [
       "Date",
+      "Account Type",
+      "GL Account Code",
+      "GL Account Name",
+      "Currency",
+      "Vendor/Client",
+      "Payee Reference",
       "Reference Type",
       "Reference ID",
       "Journal ID",
@@ -1061,6 +1186,20 @@ export function serializeGeneralLedgerReport(report: GeneralLedgerReport) {
           currencyCode: report.account.currencyCode,
         }
       : null,
+    accountBalances: report.accountBalances.map((balance) => ({
+      account: {
+        id: balance.account.id,
+        code: balance.account.code,
+        name: balance.account.name,
+        type: balance.account.type,
+        currencyCode: balance.account.currencyCode,
+      },
+      openingBalanceMinor: minorToString(balance.openingBalanceMinor),
+      debitTotalMinor: minorToString(balance.debitTotalMinor),
+      creditTotalMinor: minorToString(balance.creditTotalMinor),
+      closingBalanceMinor: minorToString(balance.closingBalanceMinor),
+      closingBalanceSide: balance.closingBalanceSide,
+    })),
     journalCount: report.journalCount,
     lineCount: report.lineCount,
     hasActivity: report.hasActivity,
@@ -1071,8 +1210,18 @@ export function serializeGeneralLedgerReport(report: GeneralLedgerReport) {
     entries: report.entries.map((entry) => ({
       id: entry.id,
       journalId: entry.journalId,
+      account: {
+        id: entry.account.id,
+        code: entry.account.code,
+        name: entry.account.name,
+        type: entry.account.type,
+        currencyCode: entry.account.currencyCode,
+      },
       businessDate: dateToString(entry.businessDate),
       officeName: entry.officeName,
+      payeeType: entry.payeeType,
+      payeeName: entry.payeeName,
+      payeeReference: entry.payeeReference,
       referenceType: entry.referenceType,
       referenceId: entry.referenceId,
       narration: entry.narration,
@@ -1295,6 +1444,7 @@ function emptyGeneralLedgerReport(startDate: Date, endDate: Date, officeId: stri
     endDate,
     officeId,
     account: null,
+    accountBalances: [],
     journalCount: 0,
     lineCount: 0,
     hasActivity: false,

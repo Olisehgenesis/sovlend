@@ -27,6 +27,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   return NextResponse.json({
     guarantors: loan.guarantors.map((guarantor) => ({
       id: guarantor.id,
+      profileId: guarantor.profileId,
       externalId: guarantor.externalId,
       guarantorType: guarantor.guarantorType,
       firstName: guarantor.firstName,

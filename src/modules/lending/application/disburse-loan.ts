@@ -18,6 +18,7 @@ import {
 
 import {
   LIF_SAVINGS_SHORT_NAME,
+  isLoanLifExempt,
   MEMBER_CONTRIBUTION_SAVINGS_SHORT_NAME,
   SECURITY_SAVINGS_SHORT_NAME,
   buildDisbursementPayoutChoice,
@@ -42,6 +43,8 @@ const FIAT_FRESH_WINDOW_MS = 36 * 60 * 60 * 1_000;
 const DAY_IN_MS = 24 * 60 * 60 * 1_000;
 
 const termsSchema = z.object({
+  processingFeeBps: z.number().int().min(0).max(10000).default(200),
+  lifExempt: z.boolean().default(false),
   annualRateBps: z.number().int().nonnegative(),
   monitoringFeeAnnualRateBps: z.number().int().nonnegative().default(0),
   repaymentCount: z.number().int().positive(),
@@ -51,6 +54,7 @@ const termsSchema = z.object({
 });
 
 export type LoanDisbursementCommand = {
+  processingFeeBps?: number;
   loanId: string;
   actorUserId: string;
   // Which of the client's/group's savings accounts receives the net proceeds. Optional when
@@ -429,7 +433,7 @@ export async function disburseLoan(
         ?.systemRole,
     ) &&
     (loan.application.submittedById === command.actorUserId ||
-      loan.application.approvals.some((approval) => approval.reviewerId === command.actorUserId))
+      loan.application.approvals.some((approval) => !approval.revokedAt && approval.reviewerId === command.actorUserId))
   ) {
     throw new Error(
       "Maker-checker violation: application makers and approvers cannot disburse this loan",
@@ -482,6 +486,7 @@ export async function disburseLoan(
   }
 
   const terms = termsSchema.parse(loan.termsSnapshot);
+  const appliedProcessingFeeBps = termsSchema.shape.processingFeeBps.parse(command.processingFeeBps ?? terms.processingFeeBps);
 
   const authorization = new AuthorizationService(prisma);
 
@@ -556,6 +561,7 @@ export async function disburseLoan(
               select: {
                 id: true,
                 principalMinor: true,
+                termsSnapshot: true,
                 principalWrittenOffMinor: true,
                 interestWrittenOffMinor: true,
                 feesWrittenOffMinor: true,
@@ -568,6 +574,7 @@ export async function disburseLoan(
         const otherLoanPayouts: OpenLoanForPayout[] = otherLoans.map((item) => ({
           id: item.id,
           principalMinor: item.principalMinor,
+          lifExempt: isLoanLifExempt(item.termsSnapshot),
           outstandingMinor: loanOutstandingMinor(item.installments, item, item.charges),
         }));
         const choice = buildDisbursementPayoutChoice({
@@ -577,6 +584,8 @@ export async function disburseLoan(
           otherLoans: otherLoanPayouts,
           liquidateLoanId: command.topUpOfLoanId,
           collectCrb: loan.product.collectCrb,
+          processingFeeBps: appliedProcessingFeeBps,
+          lifExempt: terms.lifExempt,
         });
         const payout = choice.payout;
         const contributionCreditMinor = disbursementCashToMemberMinor(payout);
@@ -660,9 +669,10 @@ export async function disburseLoan(
         }
 
         const changed = await transaction.loan.updateMany({
-          where: { id: loan.id, status: "APPROVED", disbursedOn: null },
+          where: { id: loan.id, status: "APPROVED", disbursedOn: null, updatedAt: loan.updatedAt },
           data: {
             status: "ACTIVE",
+            termsSnapshot: { ...(loan.termsSnapshot as Record<string, Prisma.InputJsonValue>), processingFeeBps: appliedProcessingFeeBps },
             disbursedOn: command.businessDate,
             maturesOn: schedule.at(-1)?.dueOn,
             topUpOfLoanId: command.topUpOfLoanId ?? null,
@@ -849,7 +859,7 @@ export async function disburseLoan(
                 currencyCode: loan.denominationCurrency,
                 direction: "CREDIT" as const,
                 amountMinor: payout.crbPayableMinor,
-                memo: "CRB payable",
+                memo: "CRB payable to UMRA",
               },
             ]
           : []),
@@ -925,8 +935,11 @@ export async function disburseLoan(
         feesMinor: extraChargesMinor.toString(),
         netProceedsMinor: netProceedsMinor.toString(),
         lifHeldMinor: payout.lifHeldFromProceedsMinor.toString(),
+        lifExempt: terms.lifExempt,
         lifReleasedMinor: payout.lifReleasedToSecurityMinor.toString(),
         processingFeeMinor: payout.processingFeeMinor.toString(),
+        processingFeeBps: appliedProcessingFeeBps,
+        approvedProcessingFeeBps: terms.processingFeeBps,
         crbTotalMinor: payout.crbTotalMinor.toString(),
         externalReference: command.externalReference ?? null,
         topUpOfLoanId: command.topUpOfLoanId ?? null,

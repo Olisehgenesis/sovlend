@@ -15,6 +15,7 @@ import {
   normalizeDateRange,
   parseDateInput,
   resolveAccountFilter,
+  resolveDatePreset,
   resolveOfficeFilter,
   serializeGeneralLedgerReport,
 } from "@/modules/reports/domain/accounting-report";
@@ -44,22 +45,27 @@ export async function GET(request: Request) {
   if (requestedOfficeId && !officeId) {
     return NextResponse.json({ error: "Invalid office filter" }, { status: 400 });
   }
-
   const requestedAccountId = url.searchParams.get("accountId");
-  const validAccountId = resolveAccountFilter(accounts, requestedAccountId);
-  if (requestedAccountId && !validAccountId) {
+  const accountId = resolveAccountFilter(accounts, requestedAccountId);
+  if (requestedAccountId && !accountId) {
     return NextResponse.json({ error: "Invalid account filter" }, { status: 400 });
   }
 
-  const { startDate, endDate } = normalizeDateRange(
-    parseDateInput(url.searchParams.get("startDate"), defaults.startDate),
-    parseDateInput(url.searchParams.get("endDate"), defaults.endDate),
-  );
+  const requestedPreset = url.searchParams.get("preset");
+  const preset = requestedPreset === "week" || requestedPreset === "month" || requestedPreset === "year"
+    ? requestedPreset
+    : null;
+  const { startDate, endDate } = preset
+    ? resolveDatePreset(new Date(), preset)
+    : normalizeDateRange(
+        parseDateInput(url.searchParams.get("startDate"), defaults.startDate),
+        parseDateInput(url.searchParams.get("endDate"), defaults.endDate),
+      );
   const report = await getGeneralLedgerReport(prisma, scope, {
     startDate,
     endDate,
     officeId,
-    accountId: validAccountId ?? accounts[0]?.id ?? null,
+    accountId,
   });
 
   if (url.searchParams.get("format")?.toLowerCase() === "csv") {

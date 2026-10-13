@@ -6,6 +6,7 @@ import { permissions } from "@/modules/identity/domain/permissions";
 import { canSelfApproveLoanApplication } from "@/modules/lending/application/loan-application-access";
 import { readChargeSnapshot, readCollateralSnapshot } from "@/modules/lending/application/loan-application-payload";
 import { nextSubAccountNumber } from "@/modules/lending/domain/sub-account-numbering";
+import { isLoanLifExempt } from "@/modules/lending/domain/disbursement-payout";
 
 export async function approveLoanApplication(
   prisma: PrismaClient,
@@ -17,7 +18,8 @@ export async function approveLoanApplication(
       office: { select: { organizationId: true } },
       client: { select: { accountNumber: true } },
       group: { select: { accountNumber: true } },
-      product: { select: { denominationCurrency: true, principalMinMinor: true, principalMaxMinor: true, annualRateBps: true, monitoringFeeAnnualRateBps: true, repaymentCount: true, repaymentFrequency: true, amortizationMethod: true, interestMethod: true, version: true } },
+      loan: { include: { collateralItems: { include: { _count: { select: { documents: true, notes: true } } } } } },
+      product: { select: { denominationCurrency: true, principalMinMinor: true, principalMaxMinor: true, annualRateBps: true, monitoringFeeAnnualRateBps: true, processingFeeBps: true, repaymentCount: true, repaymentFrequency: true, amortizationMethod: true, interestMethod: true, version: true } },
     },
   });
   if (!application) throw new Error("Loan application not found");
@@ -43,7 +45,7 @@ export async function approveLoanApplication(
 
   return prisma.$transaction(async (transaction) => {
     const updated = await transaction.loanApplication.updateMany({
-      where: { id: application.id, status: "SUBMITTED" },
+      where: { id: application.id, status: "SUBMITTED", updatedAt: application.updatedAt },
       data: { status: "APPROVED", approvedPrincipalMinor: command.approvedPrincipalMinor, approvedAt: new Date() },
     });
     if (updated.count !== 1) throw new Error("Application was changed by another operation");
@@ -51,9 +53,13 @@ export async function approveLoanApplication(
     await transaction.approval.create({ data: { applicationId: application.id, reviewerId: command.actorUserId, decision: "APPROVED", reason: command.reason } });
     // New loans open as a numbered sub-account of the borrower (client or group) instead of
     // an unrelated random code, e.g. client "000000926" -> first loan "000000926L", second "000000926L2".
+    const existingLoan = application.loan;
+    if (existingLoan && (existingLoan.status !== "DRAFT" || existingLoan.disbursedOn)) throw new Error("Only an undisbursed draft loan can be reapproved");
     const baseAccountNumber = application.client?.accountNumber ?? application.group?.accountNumber;
     let accountNumber: string;
-    if (baseAccountNumber) {
+    if (existingLoan) {
+      accountNumber = existingLoan.accountNumber;
+    } else if (baseAccountNumber) {
       const existingLoanCount = await transaction.loan.count({
         where: application.clientId ? { clientId: application.clientId } : { groupId: application.groupId! },
       });
@@ -66,8 +72,7 @@ export async function approveLoanApplication(
     // defaults so the created loan's schedule reflects what was actually reviewed and approved,
     // not just the raw product template.
     const termsOverride = (application.termsSnapshot ?? {}) as Record<string, unknown>;
-    const loan = await transaction.loan.create({
-      data: {
+    const loanData = {
         applicationId: application.id,
         clientId: application.clientId,
         groupId: application.groupId,
@@ -85,16 +90,30 @@ export async function approveLoanApplication(
           principalMaxMinor: application.product.principalMaxMinor.toString(),
           annualRateBps: application.product.annualRateBps,
           monitoringFeeAnnualRateBps: application.product.monitoringFeeAnnualRateBps,
+          processingFeeBps: application.product.processingFeeBps ?? 200,
           repaymentCount: application.product.repaymentCount,
           repaymentFrequency: application.product.repaymentFrequency,
           amortizationMethod: application.product.amortizationMethod,
           interestMethod: application.product.interestMethod,
           productVersion: application.product.version,
           ...termsOverride,
+          ...(existingLoan ? { lifExempt: isLoanLifExempt(existingLoan.termsSnapshot) } : {}),
         },
-        status: "APPROVED",
-      },
-    });
+        status: "APPROVED" as const,
+    };
+    let loan;
+    if (existingLoan) {
+      const changed = await transaction.loan.updateMany({
+        where: { id: existingLoan.id, status: "DRAFT", disbursedOn: null, updatedAt: existingLoan.updatedAt },
+        data: loanData,
+      });
+      if (changed.count !== 1) throw new Error("Draft loan changed. Refresh before approving");
+      loan = { id: existingLoan.id };
+      await transaction.charge.deleteMany({ where: { loanId: loan.id, status: "PENDING" } });
+      await transaction.guarantor.deleteMany({ where: { loanId: loan.id } });
+    } else {
+      loan = await transaction.loan.create({ data: loanData });
+    }
 
     const chargeSelections = readChargeSnapshot(application.chargesSnapshot);
     if (chargeSelections.length > 0) {
@@ -112,7 +131,23 @@ export async function approveLoanApplication(
     }
 
     const collateralItems = readCollateralSnapshot(application.collateralSnapshot);
-    if (collateralItems.length > 0) {
+    if (existingLoan) {
+      const retained = new Set<string>();
+      for (const item of collateralItems) {
+        const old = existingLoan.collateralItems.find(row => !retained.has(row.id) && row.type === (item.type?.trim() || "Other") && row.description === (item.description?.trim() || null));
+        const data = { type: item.type?.trim() || "Other", description: item.description?.trim() || null, estimatedValueMinor: item.estimatedValueMinor ? BigInt(item.estimatedValueMinor) : null, valuationCurrencyCode: application.product.denominationCurrency };
+        if (old) {
+          retained.add(old.id);
+          await transaction.loanCollateral.update({ where: { id: old.id }, data });
+        } else {
+          await transaction.loanCollateral.create({ data: { loanId: loan.id, ...data } });
+        }
+      }
+      for (const old of existingLoan.collateralItems.filter(row => !retained.has(row.id))) {
+        if (old._count.documents || old._count.notes) throw new Error("Collateral with documents or notes must be retained when reapproving the draft");
+        await transaction.loanCollateral.delete({ where: { id: old.id } });
+      }
+    } else if (collateralItems.length > 0) {
       await transaction.loanCollateral.createMany({
         data: collateralItems.map((item) => ({
           loanId: loan.id,
@@ -120,6 +155,19 @@ export async function approveLoanApplication(
           description: item.description?.trim() || null,
           estimatedValueMinor: item.estimatedValueMinor ? BigInt(item.estimatedValueMinor) : null,
           valuationCurrencyCode: application.product.denominationCurrency,
+        })),
+      });
+    }
+
+    const guarantors = await transaction.guarantorProfile.findMany({ where: { applicationId: application.id } });
+    if (guarantors.length > 0) {
+      await transaction.guarantor.createMany({
+        data: guarantors.map((guarantor) => ({
+          firstName: guarantor.firstName, lastName: guarantor.lastName, phone: guarantor.phone,
+          relationship: guarantor.relationship, profileId: guarantor.id,
+          loanId: loan.id,
+          guarantorType: guarantor.clientId ? "EXISTING_CLIENT" : "EXTERNAL",
+          dateOfBirth: guarantor.dateOfBirth,
         })),
       });
     }

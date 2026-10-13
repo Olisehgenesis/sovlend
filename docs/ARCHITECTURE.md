@@ -62,6 +62,20 @@ Modules share small primitives such as money and identifiers. Domain code must n
 
 ## Ledger Reconciliation Monitoring
 
+The General Ledger defaults to all active UGX detail accounts, not the first account
+in the chart. It filters posted entries by organization, permitted offices, and
+business-date range. Opening balances include earlier postings, and running balances
+are calculated separately per account. Page, JSON, and CSV use the same report
+service; the API also retains explicit `accountId` filtering and rejects invalid
+accounts. Week, month, and year presets provide wider activity ranges.
+The searchable GL account filter preserves dates and office filters in CSV/JSON
+exports. Account names link to `/reports/accounting/general-ledger/accounts/[accountId]`
+for opening, period movement, closing, and per-account running balances. Journal
+links open `/reports/accounting/general-ledger/entries/[journalId]`, showing all
+debit/credit legs, narration, payee details, and linked original/reversal entries.
+Both detail routes require General Ledger permission and retain organization and
+office data scope; they do not require a separate journal-reconciliation permission.
+
 `src/scripts/reconcile-ledger.ts` (`pnpm run reconcile:ledger`) is a **read-only** diagnostic
 script that checks the Financial Invariants above hold in practice. It only ever calls
 `prisma.<model>.findMany`/`count` -- never a write -- so it is safe to run repeatedly against a

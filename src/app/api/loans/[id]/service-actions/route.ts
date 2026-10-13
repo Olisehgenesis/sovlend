@@ -4,8 +4,9 @@ import { z } from "zod";
 
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { PermissionDeniedError } from "@/modules/identity/application/authorization-service";
+import { AuthorizationService, PermissionDeniedError } from "@/modules/identity/application/authorization-service";
 import { getUserDataScope } from "@/modules/identity/application/data-scope";
+import { permissions } from "@/modules/identity/domain/permissions";
 import { loanServiceActionTypes, requestLoanServiceAction } from "@/modules/lending/application/loan-service-actions";
 
 const createSchema = z.object({
@@ -31,6 +32,12 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     include: { requestedBy: { select: { name: true } }, decidedBy: { select: { name: true } } },
     orderBy: { requestedAt: "desc" },
   });
+  const authorization = new AuthorizationService(prisma);
+  const context = { actorUserId: session.user.id, organizationId: scope.organizationId, officeId: loan.officeId };
+  const [canManageReversals, canCancelDirectly] = await Promise.all([
+    authorization.isAllowed({ ...context, permission: permissions.loanReverse }),
+    authorization.isAllowed({ ...context, permission: permissions.loanRepaymentReverse }),
+  ]);
 
   return NextResponse.json({
     requests: requests.map((item) => ({
@@ -44,7 +51,10 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
       decidedByName: item.decidedBy?.name ?? null,
       decidedAt: item.decidedAt?.toISOString() ?? null,
       decisionNote: item.decisionNote,
-      canDecide: item.status === "PENDING" && item.requestedById !== session.user.id,
+      canDecide: item.status === "PENDING" && (
+        (item.actionType === "TRANSACTION_REVERSAL" && canCancelDirectly) ||
+        (canManageReversals && item.requestedById !== session.user.id)
+      ),
       isOwnRequest: item.requestedById === session.user.id,
     })),
   });

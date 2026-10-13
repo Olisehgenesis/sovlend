@@ -119,6 +119,15 @@ export function AppHeader({
     },
   ];
 
+  navSections.push({
+    id: "donations",
+    label: "Donations",
+    items: [
+      { type: "link", href: "/donations", label: "Donations overview" },
+      { type: "link", href: "/donate/jumpstart", label: "Public donation page" },
+    ],
+  });
+
   if (admin || canPostLedger) {
     navSections.push({
       id: "accounting",
@@ -187,6 +196,7 @@ export function AppHeader({
       items: [
         { type: "link", href: "/backoffice", label: "Admin panel" },
         { type: "link", href: "/backoffice/investors", label: "Investor access requests" },
+        { type: "link", href: "/donations", label: "Donations" },
         { type: "link", href: "/backoffice/products", label: "Products" },
         { type: "link", href: "/admin/users", label: "Users & access" },
         { type: "link", href: "/settings/team", label: "Team & permissions" },

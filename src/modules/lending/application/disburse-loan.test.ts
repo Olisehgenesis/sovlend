@@ -44,6 +44,8 @@ vi.mock("../domain/repayment-schedule", () => ({
 import { disburseLoan } from "./disburse-loan";
 
 type MockOptions = Readonly<{
+  lifExempt?: boolean;
+  collectCrb?: boolean;
   feeIncomeAccountId?: string | null;
   admissionFeeIncomeAccountId?: string | null;
   processingFeeIncomeAccountId?: string | null;
@@ -128,6 +130,7 @@ function buildPrismaMock(options: MockOptions = {}) {
     principalMinor: options.principalMinor ?? 70_000_000n,
     denominationCurrency: "UGX",
     termsSnapshot: {
+      lifExempt: options.lifExempt ?? false,
       annualRateBps: 1_200,
       monitoringFeeAnnualRateBps: 0,
       repaymentCount: 1,
@@ -139,6 +142,7 @@ function buildPrismaMock(options: MockOptions = {}) {
       approvals: [{ reviewerId: "checker-1" }],
     },
     product: {
+      collectCrb: options.collectCrb ?? true,
       accountingMapping: {
         principalReceivableAccountId: "ledger-principal",
         feeIncomeAccountId:
@@ -158,7 +162,7 @@ function buildPrismaMock(options: MockOptions = {}) {
 
   const transaction = {
     loan: {
-      updateMany: vi.fn(async () => ({ count: 1 })),
+      updateMany: vi.fn(async (args: unknown) => { captures.loanUpdate = args; return { count: 1 }; }),
       findMany: vi.fn(async () =>
         (options.otherActiveLoans ?? []).map((item) => ({
           id: item.id,
@@ -353,6 +357,34 @@ function expectBalanced(lines: unknown[]) {
 }
 
 describe("disburseLoan", () => {
+  it("posts no LIF hold or release for an exempt loan and preserves a balanced journal", async () => {
+    const { prisma, captures } = buildPrismaMock({ lifExempt: true, principalMinor: 300000000n, existingLifMinor: 45000000n });
+    await disburseLoan(prisma, {
+      loanId: "loan-1", actorUserId: "operator-1", businessDate: new Date("2026-09-08T00:00:00Z"),
+      idempotencyKey: "82e8d8fb-0e46-4164-a2ff-6a6d01ab17f0",
+    });
+    expect(captures.loanTransactionData).toMatchObject({ settlementAmountMinor: 292500000n });
+    expect((captures.savingsTransactions as Record<string, unknown>[]).some(row => row.savingsAccountId === "savings-lif")).toBe(false);
+    expect(captures.auditEvents).toEqual(expect.arrayContaining([expect.objectContaining({ action: "loan.disbursed", metadata: expect.objectContaining({ lifExempt: true, lifHeldMinor: "0", lifReleasedMinor: "0" }) })]));
+    expectBalanced(captures.journalLines as unknown[]);
+  });
+  it("posts a 6% per-loan override, persists the rate, and audits the approved and applied percentages", async () => {
+    const { prisma, captures } = buildPrismaMock({ charges: [] });
+    await disburseLoan(prisma, {
+      loanId: "loan-1", actorUserId: "operator-1", businessDate: new Date("2026-09-08T00:00:00Z"),
+      idempotencyKey: "82e8d8fb-0e46-4164-a2ff-6a6d01ab17f0", processingFeeBps: 600,
+    });
+    expect(captures.journalLines).toEqual(expect.arrayContaining([
+      expect.objectContaining({ accountId: "ledger-fee-income", amountMinor: 4_200_000n }),
+      expect.objectContaining({ accountId: "ledger-crb-payable", amountMinor: 1_000_000n }),
+      expect.objectContaining({ accountId: "ledger-crb-income", amountMinor: 500_000n }),
+    ]));
+    expect(captures.loanUpdate).toMatchObject({ data: { termsSnapshot: { processingFeeBps: 600 } } });
+    expect(captures.auditEvents).toEqual(expect.arrayContaining([expect.objectContaining({
+      action: "loan.disbursed", metadata: expect.objectContaining({ processingFeeBps: 600, approvedProcessingFeeBps: 200, processingFeeMinor: "4200000" }),
+    })]));
+    expectBalanced(captures.journalLines as unknown[]);
+  });
   beforeEach(() => {
     vi.clearAllMocks();
     authorizationState.allowBtcOverCap = false;
@@ -360,7 +392,7 @@ describe("disburseLoan", () => {
   });
 
   it("credits member contributions net of LIF, processing, and CRB, and keeps the journal balanced", async () => {
-    const { prisma, captures } = buildPrismaMock({ charges: [] });
+    const { prisma, captures } = buildPrismaMock({ charges: [], collectCrb: false });
 
     await disburseLoan(prisma, {
       loanId: "loan-1",
@@ -395,7 +427,7 @@ describe("disburseLoan", () => {
       { journalId: "journal-1", accountId: "ledger-principal", direction: "DEBIT", amountMinor: 70_000_000n, memo: "LN-0001" },
       { journalId: "journal-1", accountId: "ledger-fee-income", direction: "CREDIT", amountMinor: 1_400_000n, memo: "Loan processing fee" },
       { journalId: "journal-1", accountId: "ledger-crb-income", direction: "CREDIT", amountMinor: 500_000n, memo: "CRB income" },
-      { journalId: "journal-1", accountId: "ledger-crb-payable", direction: "CREDIT", amountMinor: 1_000_000n, memo: "CRB payable" },
+      { journalId: "journal-1", accountId: "ledger-crb-payable", direction: "CREDIT", amountMinor: 1_000_000n, memo: "CRB payable to UMRA" },
       { journalId: "journal-1", accountId: "ledger-lif", direction: "CREDIT", amountMinor: 10_500_000n, memo: "SV-LIF" },
       { journalId: "journal-1", accountId: "ledger-savings-liability", direction: "CREDIT", amountMinor: 56_600_000n, memo: "SV-MSA" },
     ]);
@@ -465,7 +497,7 @@ describe("disburseLoan", () => {
       { journalId: "journal-1", accountId: "ledger-principal", direction: "DEBIT", amountMinor: 70_000_000n, memo: "LN-0001" },
       { journalId: "journal-1", accountId: "ledger-fee-income", direction: "CREDIT", amountMinor: 1_550_000n, memo: "Disbursement fees" },
       { journalId: "journal-1", accountId: "ledger-crb-income", direction: "CREDIT", amountMinor: 500_000n, memo: "CRB income" },
-      { journalId: "journal-1", accountId: "ledger-crb-payable", direction: "CREDIT", amountMinor: 1_000_000n, memo: "CRB payable" },
+      { journalId: "journal-1", accountId: "ledger-crb-payable", direction: "CREDIT", amountMinor: 1_000_000n, memo: "CRB payable to UMRA" },
       { journalId: "journal-1", accountId: "ledger-lif", direction: "CREDIT", amountMinor: 10_500_000n, memo: "SV-LIF" },
       { journalId: "journal-1", accountId: "ledger-savings-liability", direction: "CREDIT", amountMinor: 56_450_000n, memo: "SV-MSA" },
     ]);
@@ -496,7 +528,7 @@ describe("disburseLoan", () => {
       { journalId: "journal-1", accountId: "ledger-principal", direction: "DEBIT", amountMinor: 70_000_000n, memo: "LN-0001" },
       { journalId: "journal-1", accountId: "ledger-fee-income", direction: "CREDIT", amountMinor: 1_400_000n, memo: "Loan processing fee" },
       { journalId: "journal-1", accountId: "ledger-crb-income", direction: "CREDIT", amountMinor: 500_000n, memo: "CRB income" },
-      { journalId: "journal-1", accountId: "ledger-crb-payable", direction: "CREDIT", amountMinor: 1_000_000n, memo: "CRB payable" },
+      { journalId: "journal-1", accountId: "ledger-crb-payable", direction: "CREDIT", amountMinor: 1_000_000n, memo: "CRB payable to UMRA" },
       { journalId: "journal-1", accountId: "ledger-lif", direction: "CREDIT", amountMinor: 10_500_000n, memo: "SV-LIF" },
       { journalId: "journal-1", accountId: "ledger-savings-liability", direction: "CREDIT", amountMinor: 56_600_000n, memo: "SV-MSA" },
     ]);
@@ -617,7 +649,7 @@ describe("disburseLoan", () => {
       { journalId: "journal-1", accountId: "ledger-admission-income", direction: "CREDIT", amountMinor: 40_000n, memo: "Admission fee" },
       { journalId: "journal-1", accountId: "ledger-fee-income", direction: "CREDIT", amountMinor: 10_000n, memo: "Disbursement fees" },
       { journalId: "journal-1", accountId: "ledger-crb-income", direction: "CREDIT", amountMinor: 500_000n, memo: "CRB income" },
-      { journalId: "journal-1", accountId: "ledger-crb-payable", direction: "CREDIT", amountMinor: 1_000_000n, memo: "CRB payable" },
+      { journalId: "journal-1", accountId: "ledger-crb-payable", direction: "CREDIT", amountMinor: 1_000_000n, memo: "CRB payable to UMRA" },
       { journalId: "journal-1", accountId: "ledger-lif", direction: "CREDIT", amountMinor: 10_500_000n, memo: "SV-LIF" },
       { journalId: "journal-1", accountId: "ledger-savings-liability", direction: "CREDIT", amountMinor: 56_550_000n, memo: "SV-MSA" },
     ]);
@@ -645,7 +677,7 @@ describe("disburseLoan", () => {
       { journalId: "journal-1", accountId: "ledger-principal", direction: "DEBIT", amountMinor: 70_000_000n, memo: "LN-0001" },
       { journalId: "journal-1", accountId: "ledger-fee-income", direction: "CREDIT", amountMinor: 1_440_000n, memo: "Disbursement fees" },
       { journalId: "journal-1", accountId: "ledger-crb-income", direction: "CREDIT", amountMinor: 500_000n, memo: "CRB income" },
-      { journalId: "journal-1", accountId: "ledger-crb-payable", direction: "CREDIT", amountMinor: 1_000_000n, memo: "CRB payable" },
+      { journalId: "journal-1", accountId: "ledger-crb-payable", direction: "CREDIT", amountMinor: 1_000_000n, memo: "CRB payable to UMRA" },
       { journalId: "journal-1", accountId: "ledger-lif", direction: "CREDIT", amountMinor: 10_500_000n, memo: "SV-LIF" },
       { journalId: "journal-1", accountId: "ledger-savings-liability", direction: "CREDIT", amountMinor: 56_560_000n, memo: "SV-MSA" },
     ]);

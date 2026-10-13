@@ -23,11 +23,13 @@ ENV HOSTNAME="0.0.0.0"
 RUN addgroup --system --gid 1001 nodejs && adduser --system --uid 1001 nextjs
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
-USER nextjs
+USER nextjs:nodejs
 EXPOSE 3000
 CMD ["node", "server.js"]
 
 FROM dependencies AS worker
 COPY . .
-RUN pnpm db:generate
-CMD ["pnpm", "worker"]
+RUN pnpm db:generate && \
+	addgroup --system --gid 1001 nodejs && adduser --system --uid 1001 --ingroup nodejs nextjs
+USER nextjs:nodejs
+CMD ["node", "node_modules/@dotenvx/dotenvx/src/cli/dotenvx.js", "run", "--ignore=MISSING_ENV_FILE", "--convention", "nextjs", "--", "node", "node_modules/tsx/dist/cli.mjs", "src/worker.ts"]

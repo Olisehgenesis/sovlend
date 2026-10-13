@@ -1,5 +1,9 @@
-import { CircleDollarSign } from "lucide-react";
+import { CircleDollarSign, ArrowUpCircle } from "lucide-react";
 import { headers } from "next/headers";
+import { processingFeeBps } from "@/modules/lending/domain/processing-fee";
+import { LoanFeesPanel } from "@/components/loan-fees-panel";
+import { ReturnLoanToDraftPanel } from "@/components/return-loan-to-draft-panel";
+import { canReturnLoanToDraft } from "@/modules/lending/application/return-loan-to-draft-access";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import type { Prisma } from "@prisma/client";
@@ -27,6 +31,7 @@ import { permissions } from "@/modules/identity/domain/permissions";
 import { assignableStaffWhere } from "@/modules/identity/domain/staff-roles";
 import {
   disbursementOverviewRows,
+  isLoanLifExempt,
   isStatutoryDisbursementCharge,
   LIF_SAVINGS_SHORT_NAME,
   MEMBER_CONTRIBUTION_SAVINGS_SHORT_NAME,
@@ -92,6 +97,8 @@ export default async function LoanPage({
     tab === "payments" ||
     tab === "record-payment" ||
     tab === "charges" ||
+    tab === "fees" ||
+    tab === "return-to-draft" ||
     tab === "overdue-charges" ||
     tab === "documents" ||
     tab === "notes" ||
@@ -140,6 +147,15 @@ export default async function LoanPage({
     notFound();
 
   const authorization = new AuthorizationService(prisma);
+  const canReturnToDraft = loan.status === "APPROVED" && !loan.disbursedOn && await canReturnLoanToDraft(prisma, scope, {
+    actorUserId: session.user.id, officeId: loan.officeId,
+    principalMinor: loan.principalMinor, currencyCode: loan.denominationCurrency,
+  });
+  const canEditFees = loan.status === "APPROVED" && !loan.disbursedOn && await authorization.isAllowed({
+    actorUserId: session.user.id, permission: permissions.loanDisburse,
+    organizationId: scope.organizationId, officeId: loan.officeId,
+    amountMinor: loan.principalMinor, currencyCode: loan.denominationCurrency,
+  });
   const canManageCharges = await authorization.isAllowed({
     actorUserId: session.user.id,
     permission: permissions.clientManage,
@@ -155,6 +171,12 @@ export default async function LoanPage({
   const canRequestRepaymentReversal = await authorization.isAllowed({
     actorUserId: session.user.id,
     permission: permissions.loanRepaymentReverseRequest,
+    organizationId: scope.organizationId,
+    officeId: loan.officeId,
+  });
+  const canCancelRepaymentsDirectly = await authorization.isAllowed({
+    actorUserId: session.user.id,
+    permission: permissions.loanRepaymentReverse,
     organizationId: scope.organizationId,
     officeId: loan.officeId,
   });
@@ -222,10 +244,14 @@ export default async function LoanPage({
     rows: rawBalance.rows.map(hideOwedRow),
     totals: hideOwedRow(rawBalance.totals),
   };
+  const processingRateBps = processingFeeBps(loan.termsSnapshot);
+  const lifExempt = isLoanLifExempt(loan.termsSnapshot);
   const overviewChargeRows = disbursementOverviewRows({
+    processingFeeBps: processingRateBps,
+    lifExempt,
     principalMinor: loan.principalMinor,
     disbursed: Boolean(loan.disbursedOn),
-    collectCrb: loan.product.collectCrb,
+    collectCrb: !loan.disbursedOn || loan.product.collectCrb || loan.charges.some((charge) => charge.status === "PAID" && charge.name.toLowerCase().startsWith("crb")),
   });
   const settlementAccounts = await prisma.settlementAccount.findMany({
     where: { organizationId: scope.organizationId, currencyCode: loan.denominationCurrency, active: true },
@@ -298,6 +324,7 @@ export default async function LoanPage({
           status: true,
           principalMinor: true,
           denominationCurrency: true,
+          termsSnapshot: true,
           product: { select: { name: true } },
           principalWrittenOffMinor: true,
           interestWrittenOffMinor: true,
@@ -428,12 +455,15 @@ export default async function LoanPage({
         id: option.id,
         accountNumber: option.accountNumber,
         principalMinor: (source?.principalMinor ?? 0n).toString(),
+        lifExempt: isLoanLifExempt(source?.termsSnapshot),
         outstandingMinor: option.outstandingMinor,
       };
     }),
     lifAccountNumber: lifAccount?.accountNumber,
     securityAccountNumber: securityAccount?.accountNumber,
     contributionAccountNumber: contributionAccount?.accountNumber,
+    processingFeeBps: processingRateBps,
+    lifExempt,
     collectCrb: loan.product.collectCrb,
   };
   const isOpenLoan = ["ACTIVE", "IN_ARREARS", "OVERPAID"].includes(loan.status);
@@ -485,7 +515,7 @@ export default async function LoanPage({
     }
   }
   const canRequestPaymentCancellation =
-    canRequestServiceActions || canRequestRepaymentReversal;
+    canRequestServiceActions || canRequestRepaymentReversal || canCancelRepaymentsDirectly;
   const paymentTimingLabels = {
     PAID_EARLY: "Paid early",
     PAID_ON_TIME: "Paid on time",
@@ -543,6 +573,10 @@ export default async function LoanPage({
           </p>
         </div>
         <div className="header-actions">
+          {!canDisburseFromHeader && loan.clientId && await authorization.isAllowed({
+            actorUserId: session.user.id, permission: permissions.loanApply,
+            organizationId: scope.organizationId, officeId: loan.officeId,
+          }) ? <Link className="secondary-action" href={`/loans/new?clientId=${loan.clientId}`}><ArrowUpCircle size={16} /> Top up loan</Link> : null}
           {canUndoDisbursement ? <UndoDisbursementButton loanId={loan.id} /> : null}
           {canDisburseFromHeader ? (
             <DisburseLoanButton
@@ -611,6 +645,7 @@ export default async function LoanPage({
         {isOpenLoan ? (
           <Link className={activeTab === "record-payment" ? "active" : ""} href={`/loans/${loan.id}?tab=record-payment`}>Record Payment</Link>
         ) : null}
+        {loan.denominationCurrency === "UGX" ? <Link className={activeTab === "fees" ? "active" : ""} href={`/loans/${loan.id}?tab=fees`}>Fees</Link> : null}
         <Link className={activeTab === "charges" ? "active" : ""} href={`/loans/${loan.id}?tab=charges`}>Charges</Link>
         <Link className={activeTab === "overdue-charges" ? "active" : ""} href={`/loans/${loan.id}?tab=overdue-charges`}>Overdue Charges</Link>
         <Link className={activeTab === "collateral" ? "active" : ""} href={`/loans/${loan.id}?tab=collateral`}>Loan Collateral</Link>
@@ -618,7 +653,16 @@ export default async function LoanPage({
         <Link className={activeTab === "documents" ? "active" : ""} href={`/loans/${loan.id}?tab=documents`}>Loan Documents</Link>
         <Link className={activeTab === "notes" ? "active" : ""} href={`/loans/${loan.id}?tab=notes`}>Notes</Link>
         <Link className={activeTab === "servicing" ? "active" : ""} href={`/loans/${loan.id}?tab=servicing`}>Servicing</Link>
+        {canReturnToDraft ? <Link className={activeTab === "return-to-draft" ? "active" : ""} href={`/loans/${loan.id}?tab=return-to-draft`}>Return to draft</Link> : null}
       </nav>
+      {activeTab === "return-to-draft" && canReturnToDraft ? <ReturnLoanToDraftPanel loanId={loan.id} updatedAt={loan.updatedAt.toISOString()} /> : null}
+      {activeTab === "return-to-draft" && !canReturnToDraft ? <section className="panel"><h2>Return to draft unavailable</h2><p>This action requires a manager/admin role or approval permission within your office scope, and an approved, undisbursed loan.</p></section> : null}
+      {loan.status === "DRAFT" ? <section className="panel"><h2>Unapproved draft</h2><p>Disbursement is blocked until this application is submitted and approved again.</p><Link className="green-link" href={`/loans/applications/${loan.applicationId}`}>Edit draft application</Link></section> : null}
+      {activeTab === "fees" && loan.denominationCurrency === "UGX" ? <LoanFeesPanel
+        key={`${loan.updatedAt.toISOString()}:${processingRateBps}`}
+        loanId={loan.id} principalMinor={loan.principalMinor.toString()} rateBps={processingRateBps}
+        updatedAt={loan.updatedAt.toISOString()} canEdit={canEditFees} isDisbursed={Boolean(loan.disbursedOn)} lifExempt={lifExempt}
+      /> : null}
       {activeTab === "record-payment" && isOpenLoan ? (
         <section className="panel repayment-panel">
           <RepaymentForm
@@ -634,6 +678,7 @@ export default async function LoanPage({
             <div>
               <h2>Overview</h2>
               <p>Original, paid, waived, overdue, and outstanding · {loan.denominationCurrency}. Insurance, processing, and CRB are taken at disbursement and are not part of the repayment total.</p>
+              {canEditFees ? <Link className="green-link" href={`/loans/${loan.id}?tab=fees`}>Edit processing fee in Fees</Link> : null}
             </div>
           </div>
           <div className="table-scroll">
@@ -1077,7 +1122,7 @@ export default async function LoanPage({
                     <tr key={guarantor.id}>
                       <td>
                         <strong>{[guarantor.firstName, guarantor.lastName].filter(Boolean).join(" ") || "Unnamed guarantor"}</strong>
-                        <Link className="row-link" href={`/loans/${loan.id}/guarantors/${guarantor.id}`} aria-label={`Open guarantor ${[guarantor.firstName, guarantor.lastName].filter(Boolean).join(" ") || "record"}`} />
+                        {guarantor.profileId ? <Link className="row-link" href={`/guarantors/${guarantor.profileId}`} aria-label={`Open guarantor ${[guarantor.firstName, guarantor.lastName].filter(Boolean).join(" ") || "record"}`} /> : null}
                       </td>
                       <td>{guarantor.guarantorType}</td>
                       <td>{guarantor.relationship ?? "-"}</td>
@@ -1146,12 +1191,13 @@ export default async function LoanPage({
           <div className="panel-heading">
             <div>
               <h2>High-risk servicing actions</h2>
-              <p>Undo disbursal, prepay, foreclosure, and transaction reversal — all maker-checker controlled</p>
+              <p>Audited loan servicing. Direct repayment cancellation requires an explicit permission.</p>
             </div>
           </div>
           <LoanServiceActionsPanel
             loanId={loan.id}
             canRequest={canRequestServiceActions}
+            canCancelDirectly={canCancelRepaymentsDirectly}
             hasPendingDisbursement={hasPendingDisbursement && !disbursementCashedOut}
             isOpenLoan={isOpenLoan}
             settlementAccounts={settlementAccounts}
@@ -1167,7 +1213,10 @@ export default async function LoanPage({
               decidedByName: item.decidedBy?.name ?? null,
               decidedAt: item.decidedAt ? new Intl.DateTimeFormat("en-UG", { dateStyle: "medium", timeStyle: "short" }).format(item.decidedAt) : null,
               decisionNote: item.decisionNote,
-              canDecide: canRequestServiceActions && item.status === "PENDING" && item.requestedById !== session.user.id,
+              canDecide: item.status === "PENDING" && (
+                (item.actionType === "TRANSACTION_REVERSAL" && canCancelRepaymentsDirectly) ||
+                (canRequestServiceActions && item.requestedById !== session.user.id)
+              ),
               isOwnRequest: item.requestedById === session.user.id,
             }))}
           />
@@ -1382,7 +1431,7 @@ export default async function LoanPage({
                       ) : canRequestPaymentCancellation &&
                         !item.reversedById &&
                         transactionTypeVariants("REPAYMENT").includes(item.transactionType) ? (
-                          <CancelRepaymentButton loanId={loan.id} transactionId={item.id} />
+                          <CancelRepaymentButton loanId={loan.id} transactionId={item.id} canCancelDirectly={canCancelRepaymentsDirectly} />
                         ) : null}
                     </td>
                   </tr>

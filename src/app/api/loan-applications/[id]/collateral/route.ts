@@ -42,7 +42,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   // Collateral is only stored as a JSON snapshot until approval copies it onto real
   // LoanCollateral rows — editing the snapshot after that point would silently diverge
   // from the loan's actual collateral, so this is locked once the application leaves review.
-  if (application.status !== "SUBMITTED") {
+  if (application.status !== "SUBMITTED" && application.status !== "DRAFT") {
     return NextResponse.json({ error: "Only submitted applications awaiting review can have collateral added" }, { status: 409 });
   }
 

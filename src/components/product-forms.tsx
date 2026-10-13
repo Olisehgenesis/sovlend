@@ -21,6 +21,7 @@ type LoanProductDraft = Readonly<{
   amortizationMethod: string;
   interestMethod: "Flat" | "Declining Balance";
   collectCrb: boolean;
+  processingFeePercent: string;
 }>;
 
 type SavingsProductDraft = Readonly<{
@@ -72,6 +73,7 @@ export function CreateLoanProductForm() {
         amortizationMethod: formData.get("amortizationMethod"),
         interestMethod: formData.get("interestMethod"),
         collectCrb: formData.get("collectCrb") === "on",
+        processingFeePercent: formData.get("processingFeePercent"),
       }),
     });
     const result = await response.json().catch(() => ({}));
@@ -101,6 +103,7 @@ export function CreateLoanProductForm() {
       <p className="field-help">Interest and monitoring are monthly rates. Weekly products collect every 7 days (4 weeks = 1 month).</p>
       <div className="form-row">
         <label>Monitoring fee % per month<input min={0} name="monitoringFeeAnnualRate" step="0.01" type="number" /></label>
+        <label>Processing fee % of principal<input defaultValue="2" min={0} max={100} name="processingFeePercent" required step="0.01" type="number" /></label>
       </div>
       <div className="form-row three">
         <label>Repayment count<input min={1} name="repaymentCount" required step={1} type="number" /></label>
@@ -111,7 +114,8 @@ export function CreateLoanProductForm() {
         <label>Amortization method<input defaultValue="Equal installments" name="amortizationMethod" required /></label>
       </div>
       <div className="check-row">
-        <label><input defaultChecked name="collectCrb" type="checkbox" /> Collect CRB (15,000: 5,000 income + 10,000 fee)</label>
+        <input type="hidden" name="collectCrb" value="on" />
+        <p className="field-hint">CRB is compulsory: UGX 15,000 (10,000 payable to UMRA + 5,000 income).</p>
       </div>
     </fieldset>
     <div className="form-actions"><BrandActionButton disabled={pending} icon={pending ? <LoaderCircle className="spin" size={16} /> : <Plus size={16} />} type="submit">Create loan product</BrandActionButton></div>
@@ -140,6 +144,7 @@ export function EditLoanProductForm({ product }: { product: LoanProductDraft }) 
         amortizationMethod: formData.get("amortizationMethod"),
         interestMethod: formData.get("interestMethod"),
         collectCrb: formData.get("collectCrb") === "on",
+        processingFeePercent: formData.get("processingFeePercent"),
       }),
     });
     const result = await response.json().catch(() => ({}));
@@ -168,6 +173,7 @@ export function EditLoanProductForm({ product }: { product: LoanProductDraft }) 
       <p className="field-help">Interest and monitoring are monthly rates. Weekly products collect every 7 days (4 weeks = 1 month). Existing loans keep their original schedule.</p>
       <div className="form-row">
         <label>Monitoring fee % per month<input defaultValue={product.monitoringFeeAnnualRate} min={0} name="monitoringFeeAnnualRate" step="0.01" type="number" /></label>
+        <label>Processing fee % of principal<input defaultValue={product.processingFeePercent} min={0} max={100} name="processingFeePercent" required step="0.01" type="number" /></label>
       </div>
       <div className="form-row three">
         <label>Repayment count<input defaultValue={product.repaymentCount} min={1} name="repaymentCount" required step={1} type="number" /></label>
@@ -178,7 +184,8 @@ export function EditLoanProductForm({ product }: { product: LoanProductDraft }) 
         <label>Amortization method<input defaultValue={product.amortizationMethod} name="amortizationMethod" required /></label>
       </div>
       <div className="check-row">
-        <label><input defaultChecked={product.collectCrb} name="collectCrb" type="checkbox" /> Collect CRB (15,000: 5,000 income + 10,000 fee)</label>
+        <input type="hidden" name="collectCrb" value="on" />
+        <p className="field-hint">CRB is compulsory: UGX 15,000 (10,000 payable to UMRA + 5,000 income).</p>
       </div>
     </fieldset>
     <div className="form-actions"><BrandActionButton disabled={pending} icon={pending ? <LoaderCircle className="spin" size={18} /> : <Save size={18} />} type="submit">Save changes</BrandActionButton></div>

@@ -62,6 +62,7 @@
     "sonner": "^2.0.8",
     "svix": "^2.4.0",
     "thirdweb": "^5.121.4",
+    "viem": "^2.29.0",
     "zod": "^4.5.4"
   },
   "devDependencies": {

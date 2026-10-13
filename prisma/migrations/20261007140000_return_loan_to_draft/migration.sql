@@ -1,0 +1,2 @@
+ALTER TYPE "LoanStatus" ADD VALUE 'DRAFT';
+ALTER TABLE "Approval" ADD COLUMN "revokedAt" TIMESTAMP(3);

@@ -1,7 +1,9 @@
 import type { Prisma } from "@prisma/client";
 import { z } from "zod";
+import { processingFeeBpsSchema } from "@/modules/lending/domain/processing-fee";
 
 export const termsOverrideSchema = z.object({
+  processingFeeBps: processingFeeBpsSchema.optional(),
   annualRateBps: z.number().int().nonnegative().optional(),
   monitoringFeeAnnualRateBps: z.number().int().nonnegative().optional(),
   repaymentCount: z.number().int().positive().optional(),

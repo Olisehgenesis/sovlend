@@ -135,6 +135,15 @@ export function CreateLoanApplicationForm({
   const selectedGroup = groups?.find((group) => group.id === groupId);
   const groupMembers = selectedGroup?.members ?? [];
 
+  // The 10,000 UGX loan processing charge is only selectable on the 4-week weekly loan product;
+  // other products carry no user-pickable charges (admission and CRB are handled at opening,
+  // processing/insurance are statutory building blocks handled at disbursement).
+  const isFourWeekLoan = Boolean(product && product.repaymentCount === 4 && /week/i.test(product.repaymentFrequency));
+  const selectableCharges = useMemo(
+    () => (isFourWeekLoan ? charges : []),
+    [charges, isFourWeekLoan],
+  );
+
   const [amount, setAmount] = useState("");
   const [annualRatePercent, setAnnualRatePercent] = useState("");
   const [monitoringFeeAnnualRatePercent, setMonitoringFeeAnnualRatePercent] = useState("");
@@ -234,7 +243,7 @@ export function CreateLoanApplicationForm({
       return;
     }
     setPending(true);
-    const chargePayload = buildChargePayload({ charges, proposedPrincipalMinor, selectedChargeIds: selectedCharges });
+    const chargePayload = buildChargePayload({ charges: selectableCharges, proposedPrincipalMinor, selectedChargeIds: selectedCharges });
     const collateralPayload = buildCollateralPayload(collateral);
     const terms = termsTouched
       ? buildTermsPayload({
@@ -284,7 +293,7 @@ export function CreateLoanApplicationForm({
   const previewInput = useMemo((): LoanPreviewInput | null => {
     const principalMinor = toMinor(amount);
     if (!principalMinor || !product) return null;
-    const chargePayload = buildChargePayload({ charges, proposedPrincipalMinor: principalMinor, selectedChargeIds: selectedCharges });
+    const chargePayload = buildChargePayload({ charges: selectableCharges, proposedPrincipalMinor: principalMinor, selectedChargeIds: selectedCharges });
     return {
       borrowerLabel:
         borrowerType === "group"
@@ -319,7 +328,7 @@ export function CreateLoanApplicationForm({
     amount,
     annualRatePercent,
     borrowerType,
-    charges,
+    selectableCharges,
     collateral,
     firstRepaymentOn,
     interestMethod,
@@ -471,9 +480,9 @@ export function CreateLoanApplicationForm({
       {step === 2 ? (
         <fieldset>
           <legend>Charges</legend>
-          {charges.length === 0 ? <p className="muted-text">No loan charges configured yet.</p> : (
+          {selectableCharges.length === 0 ? <p className="muted-text">No selectable charges for this product.</p> : (
             <div className="check-row">
-              {charges.map((charge) => (
+              {selectableCharges.map((charge) => (
                 <label key={charge.id}>
                   <input checked={selectedCharges.has(charge.id)} onChange={() => toggleCharge(charge.id)} type="checkbox" />
                   {" "}{charge.name}
@@ -516,7 +525,7 @@ export function CreateLoanApplicationForm({
             <div><dt>Amortization</dt><dd>{amortizationMethod || "Product default"}</dd></div>
             <div><dt>First repayment</dt><dd>{firstRepaymentOn || "Product schedule"}</dd></div>
             <div><dt>Arrears tolerance</dt><dd>{arrearsTolerance ? formatMinor(BigInt(toMinor(arrearsTolerance) ?? "0"), product?.currency ?? "UGX") : "Product default"}</dd></div>
-            <div><dt>Charges</dt><dd>{selectedCharges.size === 0 ? "None" : charges.filter((charge) => selectedCharges.has(charge.id)).map((charge) => charge.name).join(", ")}</dd></div>
+            <div><dt>Charges</dt><dd>{selectedCharges.size === 0 ? "None" : selectableCharges.filter((charge) => selectedCharges.has(charge.id)).map((charge) => charge.name).join(", ")}</dd></div>
             <div><dt>Collateral</dt><dd>{collateral.length === 0 ? "None" : collateral.map((row) => row.type || row.description || "Item").join(", ")}</dd></div>
           </dl>
         </fieldset>

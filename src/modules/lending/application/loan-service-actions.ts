@@ -8,6 +8,7 @@ import { assertPeriodOpen } from "@/modules/ledger/application/assert-period-ope
 import { assertBalancedJournal } from "@/modules/ledger/domain/journal";
 import { recordSavingsTransactionInTransaction } from "@/modules/savings/application/post-savings-transaction";
 import { buildLoanDisbursementSavingsIdempotencyKey } from "@/modules/savings/application/savings-ledger";
+import { buildLoanOverpaymentSavingsIdempotencyKey } from "./post-repayment";
 
 import { isLoanPaymentTransaction, transactionTypeVariants } from "@/lib/loan-transaction-type-variants";
 
@@ -70,8 +71,8 @@ async function assertDisbursementNotCashedOut(db: PrismaClient | Prisma.Transact
 
 /**
  * Stage a high-risk servicing action for maker-checker review. The requesting user's
- * parameters are captured in full here; the checker in `decideLoanServiceAction` may only
- * approve or reject them, never alter them, which keeps the audit trail unambiguous.
+ * parameters are captured in full here; the checker may only approve or reject them.
+ * Explicit direct repayment cancellation permission executes the request atomically.
  */
 export async function requestLoanServiceAction(
   prisma: PrismaClient,
@@ -86,11 +87,14 @@ export async function requestLoanServiceAction(
 
   const authorization = new AuthorizationService(prisma);
   const permissionContext = { actorUserId: command.actorUserId, organizationId: loan.office.organizationId, officeId: loan.officeId };
+  const canCancelDirectly = command.actionType === "TRANSACTION_REVERSAL" &&
+    await authorization.isAllowed({ ...permissionContext, permission: permissions.loanRepaymentReverse });
   if (command.actionType === "TRANSACTION_REVERSAL") {
     const canManageReversals = await authorization.isAllowed({ ...permissionContext, permission: permissions.loanReverse });
-    if (!canManageReversals) {
+    if (!canCancelDirectly && !canManageReversals) {
       await authorization.assertAllowed({ ...permissionContext, permission: permissions.loanRepaymentReverseRequest });
     }
+    if (canCancelDirectly && !command.reason?.trim()) throw new Error("A reason is required to cancel a repayment");
   } else {
     await authorization.assertAllowed({ ...permissionContext, permission: permissions.loanReverse });
   }
@@ -126,8 +130,15 @@ export async function requestLoanServiceAction(
     const eventHash = createHash("sha256").update(JSON.stringify({ correlationId, action: "loan.service_action.requested", metadata })).digest("hex");
     await tx.auditEvent.create({ data: { actorId: command.actorUserId, action: "loan.service_action.requested", entityType: "Loan", entityId: loan.id, correlationId, metadata, eventHash } });
     await tx.outboxEvent.create({ data: { aggregateType: "Loan", aggregateId: loan.id, eventType: "loan.service_action.requested", payload: metadata } });
+    if (canCancelDirectly) {
+      const resultTransactionId = await executeTransactionReversal(tx, loan.id, payload as ReversalPayload, request.id, command.actorUserId);
+      return tx.loanServiceRequest.update({
+        where: { id: request.id },
+        data: { status: "APPROVED", decidedById: command.actorUserId, decidedAt: new Date(), decisionNote: "Direct repayment cancellation under LOAN_REPAYMENT_REVERSE permission", resultTransactionId },
+      });
+    }
     return request;
-  });
+  }, { isolationLevel: "Serializable" });
 }
 
 /**
@@ -142,11 +153,14 @@ export async function decideLoanServiceAction(
   const request = await prisma.loanServiceRequest.findUnique({ where: { id: command.requestId } });
   if (!request) throw new Error("Service request not found");
   if (request.status !== "PENDING") return request;
-  if (request.requestedById === command.actorUserId) throw new Error("Maker-checker violation: the requester cannot decide their own servicing action");
-
   const loan = await prisma.loan.findUnique({ where: { id: request.loanId }, include: { office: true } });
   if (!loan) throw new Error("Loan not found");
-  await new AuthorizationService(prisma).assertAllowed({ actorUserId: command.actorUserId, permission: permissions.loanReverse, organizationId: loan.office.organizationId, officeId: loan.officeId });
+  const authorization = new AuthorizationService(prisma);
+  const permissionContext = { actorUserId: command.actorUserId, organizationId: loan.office.organizationId, officeId: loan.officeId };
+  const canCancelDirectly = request.actionType === "TRANSACTION_REVERSAL" &&
+    await authorization.isAllowed({ ...permissionContext, permission: permissions.loanRepaymentReverse });
+  if (request.requestedById === command.actorUserId && !canCancelDirectly) throw new Error("Maker-checker violation: the requester cannot decide their own servicing action");
+  if (!canCancelDirectly) await authorization.assertAllowed({ ...permissionContext, permission: permissions.loanReverse });
 
   if (command.decision === "REJECT") {
     return prisma.loanServiceRequest.update({ where: { id: request.id }, data: { status: "REJECTED", decidedById: command.actorUserId, decidedAt: new Date(), decisionNote: command.note } });
@@ -170,7 +184,7 @@ export async function decideLoanServiceAction(
       resultTransactionId = await executeTransactionReversal(tx, loan.id, payload as ReversalPayload, request.id, command.actorUserId);
     }
 
-    return tx.loanServiceRequest.update({ where: { id: request.id }, data: { status: "APPROVED", decidedById: command.actorUserId, decidedAt: new Date(), decisionNote: command.note, resultTransactionId } });
+    return tx.loanServiceRequest.update({ where: { id: request.id }, data: { status: "APPROVED", decidedById: command.actorUserId, decidedAt: new Date(), decisionNote: command.note ?? (canCancelDirectly && request.requestedById === command.actorUserId ? "Own repayment cancellation approved under LOAN_REPAYMENT_REVERSE permission" : undefined), resultTransactionId } });
   }, { isolationLevel: "Serializable" });
 }
 
@@ -395,12 +409,37 @@ async function executeTransactionReversal(tx: Tx, loanId: string, payload: Rever
   if (original.loanId !== loanId) throw new Error("Transaction does not belong to this loan");
   if (!transactionTypeVariants("REPAYMENT").includes(original.transactionType)) throw new Error("Only repayment transactions can be reversed through this workflow");
   if (original.reversedById) throw new Error("Transaction has already been reversed");
-  if (!original.settlementAccountId) throw new Error("Original transaction has no settlement account on record");
-
-  const current = await tx.loan.findUniqueOrThrow({ where: { id: loanId }, include: { product: { include: { accountingMapping: true } } } });
-  const mapping = current.product.accountingMapping;
-  if (!mapping) throw new Error("Loan product accounting mapping is required to reverse this transaction");
-  const settlement = await tx.settlementAccount.findUniqueOrThrow({ where: { id: original.settlementAccountId } });
+  const current = await tx.loan.findUniqueOrThrow({ where: { id: loanId }, include: { installments: true } });
+  if (!["ACTIVE", "IN_ARREARS", "OVERPAID", "CLOSED"].includes(current.status)) throw new Error("Loan is not eligible for repayment cancellation");
+  const originalJournal = await tx.journal.findFirst({
+    where: { referenceType: "LOAN_REPAYMENT", referenceId: original.id, status: "POSTED" },
+    include: { lines: true },
+  });
+  if (!originalJournal) throw new Error("Original repayment journal is unavailable; reconcile historical repayments before cancellation");
+  const reversalLines = originalJournal.lines.map((line) => ({
+    accountId: line.accountId,
+    direction: line.direction === "DEBIT" ? "CREDIT" as const : "DEBIT" as const,
+    amountMinor: line.amountMinor,
+    memo: line.memo,
+  }));
+  assertBalancedJournal(reversalLines.map((line) => ({ ...line, currencyCode: current.denominationCurrency })));
+  const allocatedMinor = original.allocations.reduce((sum, item) => sum + item.principalMinor + item.interestMinor + item.feesMinor + item.monitoringFeeMinor + item.penaltiesMinor, 0n);
+  const overpaymentMinor = original.denominationAmountMinor - allocatedMinor;
+  if (overpaymentMinor < 0n) throw new Error("Repayment allocations exceed the original payment");
+  const savingsCredit = await tx.savingsTransaction.findUnique({
+    where: { idempotencyKey: buildLoanOverpaymentSavingsIdempotencyKey(original.id) },
+  });
+  if (savingsCredit && (savingsCredit.transactionType !== "DEPOSIT" || savingsCredit.amountMinor !== overpaymentMinor)) throw new Error("Repayment overpayment savings credit does not match the unallocated payment");
+  if (overpaymentMinor > 0n && !savingsCredit && !originalJournal.lines.some((line) => line.direction === "CREDIT" && line.memo === "Overpayment" && line.amountMinor === overpaymentMinor)) {
+    throw new Error("Repayment allocations are incomplete; reconcile this payment before cancellation");
+  }
+  const savingsDebit = await tx.savingsTransaction.findUnique({
+    where: { idempotencyKey: `savings-to-loan-transfer:${original.id}:savings-debit` },
+  }) ?? await tx.savingsTransaction.findUnique({
+    where: { idempotencyKey: `${original.idempotencyKey}:savings-mirror` },
+  });
+  if (!original.settlementAccountId && !savingsDebit) throw new Error("Original repayment funding source is unavailable");
+  if (savingsDebit && (savingsDebit.transactionType !== "WITHDRAWAL" || savingsDebit.amountMinor !== -original.settlementAmountMinor)) throw new Error("Repayment savings debit does not match the original payment");
   const businessDate = new Date(`${payload.businessDate}T00:00:00.000Z`);
   const idempotencyKey = `service:${requestId}`;
   await assertPeriodOpen(tx, { officeId: current.officeId, businessDate });
@@ -416,12 +455,16 @@ async function executeTransactionReversal(tx: Tx, loanId: string, payload: Rever
   });
   await tx.loanTransaction.update({ where: { id: original.id }, data: { reversedById: reversal.id } });
 
-  let principalMinor = 0n;
-  let interestMinor = 0n;
-  let feesMinor = 0n;
-  let monitoringFeeMinor = 0n;
-  let penaltiesMinor = 0n;
   for (const allocation of original.allocations) {
+    const installment = current.installments.find((item) => item.id === allocation.installmentId);
+    if (!installment ||
+      installment.principalPaidMinor < allocation.principalMinor ||
+      installment.interestPaidMinor < allocation.interestMinor ||
+      installment.feesPaidMinor < allocation.feesMinor ||
+      installment.monitoringFeePaidMinor < allocation.monitoringFeeMinor ||
+      installment.penaltiesPaidMinor < allocation.penaltiesMinor) {
+      throw new Error("Repayment allocations do not match the installment paid balances");
+    }
     await tx.loanInstallment.update({
       where: { id: allocation.installmentId },
       data: {
@@ -433,39 +476,54 @@ async function executeTransactionReversal(tx: Tx, loanId: string, payload: Rever
       },
     });
     await tx.loanTransactionAllocation.create({ data: { transactionId: reversal.id, installmentId: allocation.installmentId, principalMinor: allocation.principalMinor, interestMinor: allocation.interestMinor, feesMinor: allocation.feesMinor, monitoringFeeMinor: allocation.monitoringFeeMinor, penaltiesMinor: allocation.penaltiesMinor } });
-    principalMinor += allocation.principalMinor;
-    interestMinor += allocation.interestMinor;
-    feesMinor += allocation.feesMinor;
-    monitoringFeeMinor += allocation.monitoringFeeMinor;
-    penaltiesMinor += allocation.penaltiesMinor;
   }
 
-  const monitoringFeeIncomeAccountId = mapping.monitoringFeeIncomeAccountId ?? mapping.feeIncomeAccountId;
-  if (monitoringFeeMinor > 0n && !monitoringFeeIncomeAccountId) throw new Error("Monitoring fee income account is not configured");
-  const journal = await tx.journal.create({ data: { officeId: current.officeId, businessDate, referenceType: "LOAN_REPAYMENT_REVERSAL", referenceId: reversal.id, narration: `Reversal of repayment ${current.accountNumber}`, idempotencyKey: `journal:${idempotencyKey}` } });
-  const debits = [
-    { accountId: mapping.principalReceivableAccountId, amount: principalMinor, memo: "Principal" },
-    { accountId: mapping.interestIncomeAccountId, amount: interestMinor, memo: "Interest" },
-    { accountId: mapping.feeIncomeAccountId, amount: feesMinor, memo: "Fees" },
-    { accountId: monitoringFeeIncomeAccountId, amount: monitoringFeeMinor, memo: "Monitoring fee" },
-    { accountId: mapping.penaltyIncomeAccountId, amount: penaltiesMinor, memo: "Penalties" },
-  ].filter((line): line is { accountId: string; amount: bigint; memo: string } => Boolean(line.accountId) && line.amount > 0n);
-  await tx.journalLine.createMany({ data: [
-    ...debits.map((line) => ({ journalId: journal.id, accountId: line.accountId, direction: "DEBIT" as const, amountMinor: line.amount, memo: line.memo })),
-    { journalId: journal.id, accountId: settlement.ledgerAccountId, direction: "CREDIT", amountMinor: original.settlementAmountMinor, memo: original.settlementChannel },
-  ] });
+  // Reverse the posted lines, not today's product mapping: this also restores accrued
+  // receivables, retained overpayment liability, and savings-funded repayments correctly.
+  const journal = await tx.journal.create({ data: { officeId: current.officeId, businessDate, referenceType: "LOAN_REPAYMENT_REVERSAL", referenceId: reversal.id, reversalOfId: originalJournal.id, narration: `Reversal of repayment ${current.accountNumber}`, idempotencyKey: `journal:${idempotencyKey}` } });
+  await tx.journalLine.createMany({ data: reversalLines.map((line) => ({ journalId: journal.id, ...line })) });
   await tx.journal.update({ where: { id: journal.id }, data: { status: "POSTED", postedAt: new Date() } });
+  if (savingsDebit) {
+    await recordSavingsTransactionInTransaction(tx, {
+      savingsAccountId: savingsDebit.savingsAccountId, actorUserId, transactionType: "DEPOSIT",
+      amountMinor: -savingsDebit.amountMinor, businessDate, reason: `Cancelled repayment ${current.accountNumber}`,
+      idempotencyKey: `${savingsDebit.idempotencyKey}:reversal`, postJournal: false,
+    });
+  }
+  if (savingsCredit) {
+    await recordSavingsTransactionInTransaction(tx, {
+      savingsAccountId: savingsCredit.savingsAccountId, actorUserId, transactionType: "WITHDRAWAL",
+      amountMinor: savingsCredit.amountMinor, businessDate, reason: `Cancelled repayment overpayment ${current.accountNumber}`,
+      idempotencyKey: `${savingsCredit.idempotencyKey}:reversal`, postJournal: false,
+    });
+  }
   const freshInstallments = await tx.loanInstallment.findMany({ where: { loanId: current.id } });
   const outstanding = (item: (typeof freshInstallments)[number]) =>
     installmentDueMinor(item) - installmentPaidMinor(item) - installmentWaivedMinor(item);
   const totalOutstandingMinor = freshInstallments.reduce((sum, item) => sum + outstanding(item), 0n);
   const overdueOutstandingMinor = freshInstallments.filter((item) => item.dueOn < businessDate).reduce((sum, item) => sum + outstanding(item), 0n);
+  let remainingRetainedOverpaymentMinor = 0n;
+  if (current.status === "OVERPAID" && totalOutstandingMinor <= 0n) {
+    const repayments = await tx.loanTransaction.findMany({
+      where: { loanId: current.id, reversedById: null, transactionType: { in: transactionTypeVariants("REPAYMENT") } },
+      include: { allocations: true },
+    });
+    const sweeps = await tx.savingsTransaction.findMany({
+      where: { idempotencyKey: { in: repayments.map((item) => buildLoanOverpaymentSavingsIdempotencyKey(item.id)) } },
+    });
+    const sweptByKey = new Map(sweeps.map((item) => [item.idempotencyKey, item.amountMinor]));
+    remainingRetainedOverpaymentMinor = repayments.reduce((sum, item) => {
+      const allocated = item.allocations.reduce((total, allocation) => total + allocation.principalMinor + allocation.interestMinor + allocation.feesMinor + allocation.monitoringFeeMinor + allocation.penaltiesMinor, 0n);
+      const retained = item.denominationAmountMinor - allocated - (sweptByKey.get(buildLoanOverpaymentSavingsIdempotencyKey(item.id)) ?? 0n);
+      return sum + (retained > 0n ? retained : 0n);
+    }, 0n);
+  }
   // Reversing a repayment can only ever increase what is owed, so a loan that was CLOSED or
   // OVERPAID must reopen once a balance remains; it never gets waived away by this action.
-  const nextStatus = totalOutstandingMinor > 0n ? (overdueOutstandingMinor > 0n ? "IN_ARREARS" : "ACTIVE") : (current.status === "OVERPAID" ? "OVERPAID" : "CLOSED");
+  const nextStatus = totalOutstandingMinor > 0n ? (overdueOutstandingMinor > 0n ? "IN_ARREARS" : "ACTIVE") : (remainingRetainedOverpaymentMinor > 0n ? "OVERPAID" : "CLOSED");
   await tx.loan.update({ where: { id: current.id }, data: { status: nextStatus } });
 
-  await recordServiceAudit(tx, { loanId: current.id, actorUserId, action: "loan.transaction.reversed", metadata: { loanId: current.id, requestId, reversedTransactionId: original.id, reversalTransactionId: reversal.id, amountMinor: original.denominationAmountMinor.toString() } });
+  await recordServiceAudit(tx, { loanId: current.id, actorUserId, action: "loan.transaction.reversed", metadata: { loanId: current.id, requestId, reversedTransactionId: original.id, reversalTransactionId: reversal.id, amountMinor: original.denominationAmountMinor.toString(), restoredLoanBalanceMinor: allocatedMinor.toString(), reversedSavingsOverpaymentMinor: (savingsCredit?.amountMinor ?? 0n).toString(), restoredSavingsFundingMinor: (savingsDebit ? -savingsDebit.amountMinor : 0n).toString() } });
   return reversal.id;
 }
 

@@ -21,8 +21,10 @@ import {
   toMinor,
 } from "@/components/loan-application-form-shared";
 import { formatMinor } from "@/modules/money/domain/format-minor";
+import { processingFeePercentSchema } from "@/modules/lending/domain/processing-fee";
 
 type TermsDraft = Readonly<{
+  processingFeePercent: string;
   annualRatePercent: string;
   monitoringFeeAnnualRatePercent: string;
   repaymentCount: string;
@@ -75,6 +77,7 @@ export function EditLoanApplicationForm({
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [pending, setPending] = useState(false);
+  const [processingFeePercent, setProcessingFeePercent] = useState(initialTerms.processingFeePercent);
 
   const [amount, setAmount] = useState(initialAmount);
   const [purpose, setPurpose] = useState(initialPurpose);
@@ -94,6 +97,7 @@ export function EditLoanApplicationForm({
   const [collateral, setCollateral] = useState<CollateralDraft[]>(cloneCollateral(initialCollateral));
 
   function resetForm() {
+    setProcessingFeePercent(initialTerms.processingFeePercent);
     setAmount(initialAmount);
     setPurpose(initialPurpose);
     setExternalId(initialExternalId);
@@ -139,6 +143,8 @@ export function EditLoanApplicationForm({
   }
 
   async function submit() {
+    const processing = processingFeePercentSchema.safeParse(processingFeePercent === "" ? NaN : processingFeePercent);
+    if (!processing.success) { toast.error("Enter a valid processing percentage from 0 to 100"); return; }
     const proposedPrincipalMinor = toMinor(amount);
     if (!proposedPrincipalMinor) {
       toast.error("Enter a valid loan amount");
@@ -160,7 +166,7 @@ export function EditLoanApplicationForm({
         applicationExpiresOn: applicationExpiresOn || null,
         fundId: fundId || null,
         loanOfficerId: loanOfficerId || null,
-        terms: buildTermsPayload({
+        terms: { ...buildTermsPayload({
           annualRatePercent,
           monitoringFeeAnnualRatePercent,
           repaymentCount,
@@ -169,7 +175,7 @@ export function EditLoanApplicationForm({
           amortizationMethod,
           firstRepaymentOn,
           arrearsTolerance,
-        }),
+        }), processingFeeBps: Math.round(processing.data * 100) },
         charges: buildChargePayload({
           charges,
           preservedCharges,
@@ -266,6 +272,10 @@ export function EditLoanApplicationForm({
                 Monitoring fee % per month
                 <input min={0} onChange={(event) => setMonitoringFeeAnnualRatePercent(event.target.value)} step="0.01" type="number" value={monitoringFeeAnnualRatePercent} />
               </label>
+              <label>
+                Processing fee % of principal
+                <input required min={0} max={100} step="0.01" type="number" value={processingFeePercent} onChange={(event) => setProcessingFeePercent(event.target.value)} />
+              </label>
             </div>
             <div className="form-row three">
               <label>
@@ -358,6 +368,7 @@ export function EditLoanApplicationForm({
               <div><dt>External ID</dt><dd>{externalId || "—"}</dd></div>
               <div><dt>Nominal interest rate</dt><dd>{annualRatePercent ? `${annualRatePercent}% per month` : "Product default"}</dd></div>
               <div><dt>Monitoring fee</dt><dd>{monitoringFeeAnnualRatePercent ? `${monitoringFeeAnnualRatePercent}% per month` : "Product default"}</dd></div>
+              <div><dt>Processing fee</dt><dd>{processingFeePercent}% of principal at disbursement</dd></div>
               <div><dt>Repayment plan</dt><dd>{repaymentCount && repaymentFrequency ? `${repaymentCount} × ${repaymentFrequency}` : "Product default"}</dd></div>
               <div><dt>Interest method</dt><dd>{interestMethod || "Product default"}</dd></div>
               <div><dt>Amortization</dt><dd>{amortizationMethod || "Product default"}</dd></div>

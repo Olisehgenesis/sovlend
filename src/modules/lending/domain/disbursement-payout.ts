@@ -1,10 +1,12 @@
+import { processingFeeBpsSchema } from "./processing-fee";
+
 /** 15% of each active loan's principal must sit in LIF (Loan insurance fund). */
 export const LIF_HOLD_BPS = 1_500;
 /** 2% of the new principal is recognized as processing-fee income. */
 export const PROCESSING_FEE_BPS = 200;
 /** Flat CRB levy in minor units (15,000 UGX). */
 export const CRB_TOTAL_MINOR = 1_500_000n;
-/** 10,000 UGX payable to the association of loan lenders (GL "CRB fee"). */
+/** 10,000 UGX payable to UMRA (liability GL "CRB fee", code 202021). */
 export const CRB_PAYABLE_MINOR = 1_000_000n;
 /** 5,000 UGX CRB income. */
 export const CRB_INCOME_MINOR = 500_000n;
@@ -36,7 +38,12 @@ export type OpenLoanForPayout = Readonly<{
   id: string;
   principalMinor: bigint;
   outstandingMinor: bigint;
+  lifExempt?: boolean;
 }>;
+
+export function isLoanLifExempt(snapshot: unknown): boolean {
+  return Boolean(snapshot && typeof snapshot === "object" && "lifExempt" in snapshot && snapshot.lifExempt === true);
+}
 
 export function percentOfMinor(amountMinor: bigint, bps: number) {
   if (amountMinor <= 0n || bps <= 0) return 0n;
@@ -67,19 +74,22 @@ export function buildDisbursementPayout(input: {
   remainingActivePrincipalMinor: bigint;
   extraChargesMinor: bigint;
   collectCrb?: boolean;
+  processingFeeBps?: number;
+  lifExempt?: boolean;
 }): DisbursementPayout {
   if (input.principalMinor <= 0n) throw new Error("Principal must be positive");
   const remainingActivePrincipalMinor = input.remainingActivePrincipalMinor < 0n ? 0n : input.remainingActivePrincipalMinor;
   const existingLifMinor = input.existingLifMinor < 0n ? 0n : input.existingLifMinor;
   const extraChargesMinor = input.extraChargesMinor < 0n ? 0n : input.extraChargesMinor;
-  const collectCrb = input.collectCrb !== false;
-  const crbTotalMinor = collectCrb ? CRB_TOTAL_MINOR : 0n;
-  const crbPayableMinor = collectCrb ? CRB_PAYABLE_MINOR : 0n;
-  const crbIncomeMinor = collectCrb ? CRB_INCOME_MINOR : 0n;
-  const lifRequiredMinor = percentOfMinor(input.principalMinor + remainingActivePrincipalMinor, LIF_HOLD_BPS);
-  const processingFeeMinor = percentOfMinor(input.principalMinor, PROCESSING_FEE_BPS);
-  const lifHeldFromProceedsMinor = lifRequiredMinor > existingLifMinor ? lifRequiredMinor - existingLifMinor : 0n;
-  const lifReleasedToSecurityMinor = existingLifMinor > lifRequiredMinor ? existingLifMinor - lifRequiredMinor : 0n;
+  // New UGX disbursements always collect CRB, including legacy products with the flag disabled.
+  const crbTotalMinor = CRB_TOTAL_MINOR;
+  const crbPayableMinor = CRB_PAYABLE_MINOR;
+  const crbIncomeMinor = CRB_INCOME_MINOR;
+  const lifRequiredMinor = percentOfMinor((input.lifExempt ? 0n : input.principalMinor) + remainingActivePrincipalMinor, LIF_HOLD_BPS);
+  const processingFeeMinor = percentOfMinor(input.principalMinor, processingFeeBpsSchema.parse(input.processingFeeBps ?? PROCESSING_FEE_BPS));
+  // A loan-specific exemption must not move existing savings or other loans' LIF.
+  const lifHeldFromProceedsMinor = !input.lifExempt && lifRequiredMinor > existingLifMinor ? lifRequiredMinor - existingLifMinor : 0n;
+  const lifReleasedToSecurityMinor = !input.lifExempt && existingLifMinor > lifRequiredMinor ? existingLifMinor - lifRequiredMinor : 0n;
   const withheldMinor = lifHeldFromProceedsMinor + processingFeeMinor + crbTotalMinor + extraChargesMinor;
   if (withheldMinor > input.principalMinor) {
     throw new Error("Disbursement deductions exceed the approved principal");
@@ -106,7 +116,7 @@ export function remainingActivePrincipalMinor(
   liquidateLoanId: string | null | undefined,
 ) {
   return otherLoans.reduce((sum, loan) => {
-    if (liquidateLoanId && loan.id === liquidateLoanId) return sum;
+    if (loan.lifExempt || (liquidateLoanId && loan.id === liquidateLoanId)) return sum;
     return sum + loan.principalMinor;
   }, 0n);
 }
@@ -118,6 +128,8 @@ export function buildDisbursementPayoutChoice(input: {
   otherLoans: readonly OpenLoanForPayout[];
   liquidateLoanId?: string | null;
   collectCrb?: boolean;
+  processingFeeBps?: number;
+  lifExempt?: boolean;
 }) {
   const selected = input.otherLoans.find((loan) => loan.id === input.liquidateLoanId) ?? null;
   const closedPayout =
@@ -129,6 +141,8 @@ export function buildDisbursementPayoutChoice(input: {
           remainingActivePrincipalMinor: remainingActivePrincipalMinor(input.otherLoans, selected.id),
           extraChargesMinor: input.extraChargesMinor,
           collectCrb: input.collectCrb,
+          processingFeeBps: input.processingFeeBps,
+          lifExempt: input.lifExempt,
         });
   const canFullyClose = Boolean(selected && closedPayout && closedPayout.withdrawableMinor >= selected.outstandingMinor);
   const payout = canFullyClose && closedPayout
@@ -139,6 +153,8 @@ export function buildDisbursementPayoutChoice(input: {
         remainingActivePrincipalMinor: remainingActivePrincipalMinor(input.otherLoans, canFullyClose ? selected?.id : null),
         extraChargesMinor: input.extraChargesMinor,
         collectCrb: input.collectCrb,
+        processingFeeBps: input.processingFeeBps,
+        lifExempt: input.lifExempt,
       });
   const payoffMinor =
     selected == null || payout.withdrawableMinor <= 0n
@@ -171,9 +187,9 @@ export type DisbursementOverviewLine = Readonly<{
   outstanding: bigint;
 }>;
 
-export function disbursementOverviewRows(input: { principalMinor: bigint; disbursed: boolean; collectCrb?: boolean }): DisbursementOverviewLine[] {
-  const lif = percentOfMinor(input.principalMinor, LIF_HOLD_BPS);
-  const processing = percentOfMinor(input.principalMinor, PROCESSING_FEE_BPS);
+export function disbursementOverviewRows(input: { principalMinor: bigint; disbursed: boolean; collectCrb?: boolean; processingFeeBps?: number; lifExempt?: boolean }): DisbursementOverviewLine[] {
+  const lif = input.lifExempt ? 0n : percentOfMinor(input.principalMinor, LIF_HOLD_BPS);
+  const processing = percentOfMinor(input.principalMinor, processingFeeBpsSchema.parse(input.processingFeeBps ?? PROCESSING_FEE_BPS));
   const collectCrb = input.collectCrb !== false;
   const paid = (amount: bigint) => (input.disbursed ? amount : 0n);
   const rows: DisbursementOverviewLine[] = [

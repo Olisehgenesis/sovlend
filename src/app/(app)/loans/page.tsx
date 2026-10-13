@@ -4,16 +4,19 @@ import { headers } from "next/headers";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
+import { ApproveLoanDialog } from "@/components/approve-loan-dialog";
 import { LiveSearchInput } from "@/components/live-search-input";
 import { TableRowLink } from "@/components/table-row-link";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { formatMinor } from "@/modules/reporting/application/dashboard";
+import { fromMinor } from "@/components/loan-application-form-shared";
 import {
   getUserDataScope,
   loanScopeWhere,
   officeWhere,
 } from "@/modules/identity/application/data-scope";
+import { canSelfApproveLoanApplication } from "@/modules/lending/application/loan-application-access";
 import { formatMonthlyPercent } from "@/modules/lending/domain/monthly-rate";
 import {
   formatLoanProductTerm,
@@ -168,6 +171,9 @@ export default async function LoansPage({
     prisma.loan.count({ where: loanWhere }),
   ]);
 
+  const actorCanSelfApprove = canSelfApproveLoanApplication(
+    (session.user.systemRole ?? null) as Parameters<typeof canSelfApproveLoanApplication>[0],
+  );
   const pages = Math.max(1, Math.ceil(loanTotal / pageSize));
   const page = Math.min(requestedPage, pages);
   const loans = await prisma.loan.findMany({
@@ -557,9 +563,20 @@ export default async function LoansPage({
                         <TableRowLink href={href} label={label} />
                       </td>
                       <td>
-                        <Link className="green-link" href={href}>
-                          Review
-                        </Link>
+                        {application.status === "SUBMITTED" &&
+                        (application.submittedById !== session.user.id || actorCanSelfApprove) ? (
+                          <ApproveLoanDialog
+                            applicationId={application.id}
+                            proposedAmount={fromMinor(
+                              application.approvedPrincipalMinor ?? application.proposedPrincipalMinor,
+                            )}
+                            label="Approve"
+                          />
+                        ) : (
+                          <Link className="green-link" href={href}>
+                            Review
+                          </Link>
+                        )}
                       </td>
                     </tr>
                     );

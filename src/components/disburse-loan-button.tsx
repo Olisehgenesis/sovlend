@@ -1,7 +1,7 @@
 "use client";
 
-import { Banknote } from "lucide-react";
-import { useRef } from "react";
+import { Banknote, ArrowUpCircle } from "lucide-react";
+import { useRef, useState } from "react";
 
 import { DisburseLoanForm } from "@/components/disburse-loan-form";
 import { type DisbursementPayoutContext } from "@/components/disbursement-payout-preview";
@@ -35,18 +35,22 @@ export function DisburseLoanButton({
   payout?: DisbursementPayoutContext;
 }) {
   const dialogRef = useRef<DialogHandle>(null);
+  const [asTopUp, setAsTopUp] = useState(false);
 
   return (
     <>
       <BrandActionButton
         icon={<Banknote size={16} />}
-        onClick={() => dialogRef.current?.showModal()}
+        onClick={() => { setAsTopUp(false); dialogRef.current?.showModal(); }}
         type="button"
       >
         Disburse
       </BrandActionButton>
+      {payoffLoanOptions?.length ? <button className="secondary-action" type="button" onClick={() => { setAsTopUp(true); dialogRef.current?.showModal(); }}><ArrowUpCircle size={16} /> Disburse as top-up</button> : null}
       <Dialog className={preview || payout ? "loan-preview-modal" : undefined} ref={dialogRef} title="Disburse loan">
         <DisburseLoanForm
+          key={String(asTopUp)}
+          initialAsTopUp={asTopUp}
           loanId={loanId}
           onSuccess={() => dialogRef.current?.close()}
           payoffLoanOptions={payoffLoanOptions}

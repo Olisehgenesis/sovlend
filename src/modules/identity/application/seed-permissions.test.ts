@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { permissions } from "../domain/permissions";
+import { defaultPermissionGroups, permissions } from "../domain/permissions";
 import { permissionDescriptions } from "./seed-permissions";
 
 describe("permission seed descriptions", () => {
@@ -10,5 +10,8 @@ describe("permission seed descriptions", () => {
       .map(([key]) => key);
 
     expect(missing).toEqual([]);
+  });
+  it("does not enable direct repayment cancellation in any default role", () => {
+    expect(Object.values(defaultPermissionGroups).some((codes) => codes.includes(permissions.loanRepaymentReverse))).toBe(false);
   });
 });

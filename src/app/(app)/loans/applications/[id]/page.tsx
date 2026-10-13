@@ -5,8 +5,10 @@ import { notFound, redirect } from "next/navigation";
 
 import { ApplicationCollateralPanel, ApplicationDocumentsPanel, ApplicationNotesPanel } from "@/components/application-record-forms";
 import { ApproveLoanForm } from "@/components/approve-loan-form";
+import { ApplicationGuarantorsPanel } from "@/components/application-guarantors-panel";
 import { Breadcrumbs } from "@/components/breadcrumbs";
 import { DisburseLoanForm } from "@/components/disburse-loan-form";
+import { SubmitLoanDraftButton } from "@/components/submit-loan-draft-button";
 import { EditLoanApplicationForm } from "@/components/edit-loan-application-form";
 import { LoanPreviewButton, type LoanPreviewInput } from "@/components/loan-preview-panel";
 import { fromMinor } from "@/components/loan-application-form-shared";
@@ -19,11 +21,12 @@ import { assignableStaffWhere } from "@/modules/identity/domain/staff-roles";
 import { canEditSubmittedLoanApplication, canSelfApproveLoanApplication } from "@/modules/lending/application/loan-application-access";
 import { isLoanApplicationExpired } from "@/modules/lending/application/loan-application-expiry";
 import { readChargeSnapshot, readCollateralSnapshot, readTermsSnapshot } from "@/modules/lending/application/loan-application-payload";
-import { isStatutoryDisbursementCharge, LIF_SAVINGS_SHORT_NAME, MEMBER_CONTRIBUTION_SAVINGS_SHORT_NAME, SECURITY_SAVINGS_SHORT_NAME } from "@/modules/lending/domain/disbursement-payout";
+import { CRB_TOTAL_MINOR, percentOfMinor, isStatutoryDisbursementCharge, isLoanLifExempt, LIF_SAVINGS_SHORT_NAME, MEMBER_CONTRIBUTION_SAVINGS_SHORT_NAME, SECURITY_SAVINGS_SHORT_NAME } from "@/modules/lending/domain/disbursement-payout";
 import { loanOutstandingMinor } from "@/modules/lending/domain/loan-outstanding";
 import { formatMonthlyPercent } from "@/modules/lending/domain/monthly-rate";
 import { formatMinor } from "@/modules/money/domain/format-minor";
 import { displaySavingsProductName } from "@/modules/savings/domain/savings-product-label";
+import { processingFeeBps } from "@/modules/lending/domain/processing-fee";
 
 function toDateInput(value: Date | null) {
   return value ? value.toISOString().slice(0, 10) : "";
@@ -87,6 +90,7 @@ export default async function LoanApplicationPage({
         include: { uploadedBy: { select: { name: true } } },
         orderBy: { createdAt: "desc" },
       },
+      guarantorProfiles: { include: { documents: { select: { id: true, name: true } } }, orderBy: { createdAt: "asc" } },
       notes: {
         include: { author: { select: { name: true } } },
         orderBy: { createdAt: "desc" },
@@ -140,6 +144,7 @@ export default async function LoanApplicationPage({
             id: true,
             accountNumber: true,
             principalMinor: true,
+            termsSnapshot: true,
             principalWrittenOffMinor: true,
             interestWrittenOffMinor: true,
             feesWrittenOffMinor: true,
@@ -153,14 +158,14 @@ export default async function LoanApplicationPage({
 
   const proposed = formatMinor(application.proposedPrincipalMinor, application.product.denominationCurrency);
   const proposedInput = fromMinor(application.proposedPrincipalMinor);
-  const displayedStatus = application.loan?.status ?? application.status;
-  const actorApproved = application.approvals.some((approval) => approval.reviewerId === session.user.id);
+  const displayedStatus = application.loan?.status === "DRAFT" ? application.status : application.loan?.status ?? application.status;
+  const actorApproved = application.approvals.some((approval) => !approval.revokedAt && approval.reviewerId === session.user.id);
   const actorCanSelfApprove = canSelfApproveLoanApplication(actor?.systemRole);
   const applicationExpired = isLoanApplicationExpired(application.applicationExpiresOn);
   const canManageEvidence = actorHasLoanApplyPermission;
-  const canManageCollateral = canManageEvidence && application.status === "SUBMITTED";
+  const canManageCollateral = canManageEvidence && (application.status === "SUBMITTED" || application.status === "DRAFT");
   const canEditApplication =
-    application.status === "SUBMITTED" &&
+    (application.status === "SUBMITTED" || application.status === "DRAFT") &&
     actorHasLoanApplyPermission &&
     canEditSubmittedLoanApplication({
       actorUserId: session.user.id,
@@ -169,6 +174,8 @@ export default async function LoanApplicationPage({
     });
 
   const termsSnapshot = readTermsSnapshot(application.termsSnapshot);
+  const reviewedLoan = application.loan?.status === "DRAFT" ? null : application.loan;
+  const processingRateBps = processingFeeBps(reviewedLoan?.termsSnapshot ?? application.termsSnapshot, application.product.processingFeeBps);
   const chargeSelections = readChargeSnapshot(application.chargesSnapshot);
   const collateralSnapshot = readCollateralSnapshot(application.collateralSnapshot);
   const collateralItems = collateralSnapshot.map((item) => ({
@@ -177,6 +184,7 @@ export default async function LoanApplicationPage({
     estimatedValueLabel: item.estimatedValueMinor ? formatMinor(BigInt(item.estimatedValueMinor), application.product.denominationCurrency) : undefined,
   }));
   const termValues = {
+    processingFeePercent: String(processingRateBps / 100),
     annualRatePercent: toMonthlyPercentString(termsSnapshot.annualRateBps) || formatMonthlyPercent(application.product.annualRateBps),
     monitoringFeeAnnualRatePercent: toMonthlyPercentString(termsSnapshot.monitoringFeeAnnualRateBps) || formatMonthlyPercent(application.product.monitoringFeeAnnualRateBps),
     repaymentCount: typeof termsSnapshot.repaymentCount === "number" ? String(termsSnapshot.repaymentCount) : String(application.product.repaymentCount),
@@ -235,7 +243,7 @@ export default async function LoanApplicationPage({
     borrowerLabel: applicationBorrowerName(application),
     productName: application.product.name,
     currency: application.product.denominationCurrency,
-    principalMinor: (application.loan?.principalMinor ?? application.proposedPrincipalMinor).toString(),
+    principalMinor: (reviewedLoan?.principalMinor ?? application.proposedPrincipalMinor).toString(),
     annualRatePercent: termValues.annualRatePercent,
     monitoringFeeAnnualRatePercent: termValues.monitoringFeeAnnualRatePercent,
     repaymentCount: termValues.repaymentCount,
@@ -263,10 +271,13 @@ export default async function LoanApplicationPage({
       currencyCode: application.product.denominationCurrency,
       outstandingMinor: loanOutstandingMinor(item.installments, item, item.charges).toString(),
       principalMinor: item.principalMinor.toString(),
+      lifExempt: isLoanLifExempt(item.termsSnapshot),
     }))
     .filter((item) => BigInt(item.outstandingMinor) > 0n);
   const disbursementPayout = {
-    principalMinor: (application.loan?.principalMinor ?? application.proposedPrincipalMinor).toString(),
+    lifExempt: isLoanLifExempt(application.loan?.termsSnapshot ?? application.termsSnapshot),
+    processingFeeBps: processingRateBps,
+    principalMinor: (reviewedLoan?.principalMinor ?? application.proposedPrincipalMinor).toString(),
     currency: application.product.denominationCurrency,
     existingLifMinor: (lifAccount?.transactions.reduce((sum, item) => sum + item.amountMinor, 0n) ?? 0n).toString(),
     extraCharges: chargeSelections
@@ -276,6 +287,7 @@ export default async function LoanApplicationPage({
       id: option.id,
       accountNumber: option.accountNumber,
       principalMinor: option.principalMinor,
+      lifExempt: option.lifExempt,
       outstandingMinor: option.outstandingMinor,
     })),
     lifAccountNumber: lifAccount?.accountNumber,
@@ -284,7 +296,9 @@ export default async function LoanApplicationPage({
   };
 
   const actionPanel =
-    application.status === "SUBMITTED" &&
+    application.status === "DRAFT" ? (
+      <article className="panel"><h2>Draft application</h2><p>Edit this draft below, save your changes, then submit it for fresh approval.</p>{canEditApplication ? <SubmitLoanDraftButton applicationId={application.id} /> : null}</article>
+    ) : application.status === "SUBMITTED" &&
     (application.submittedById !== session.user.id || actorCanSelfApprove) ? (
       <article className="panel">
         {applicationExpired ? (
@@ -326,7 +340,7 @@ export default async function LoanApplicationPage({
       </article>
     ) : (
       <article className="panel separation-note">
-        <CheckStatus status={application.loan?.status ?? application.status} reviewer={application.approvals[0]?.reviewer.name} />
+        <CheckStatus status={displayedStatus} reviewer={application.approvals.find(approval => !approval.revokedAt)?.reviewer.name} />
       </article>
     );
 
@@ -370,6 +384,17 @@ export default async function LoanApplicationPage({
         </div>
       </header>
       <section className="review-grid">
+        <article className="panel">
+          <div className="panel-heading"><h2>Guarantors</h2></div>
+          <ApplicationGuarantorsPanel applicationId={application.id} guarantors={application.guarantorProfiles.map((p) => ({
+            id: p.id, firstName: p.firstName, lastName: p.lastName, phone: p.phone,
+            clientId: p.clientId ?? undefined, relationship: p.relationship ?? undefined,
+            dateOfBirth: p.dateOfBirth?.toISOString().slice(0, 10), gender: p.gender ?? undefined,
+            nationalId: p.nationalId ?? undefined, address: p.address ?? undefined,
+            occupation: p.occupation ?? undefined, employer: p.employer ?? undefined,
+            bio: p.bio ?? undefined, documents: p.documents,
+          }))} canManage={canManageCollateral} />
+        </article>
         <article className="panel review-summary">
           <div className="panel-heading">
             <div>
@@ -462,9 +487,19 @@ export default async function LoanApplicationPage({
               <dd>{termValues.arrearsTolerance ? formatMinor(BigInt(termsSnapshot.arrearsToleranceMinor ?? "0"), application.product.denominationCurrency) : "Product default"}</dd>
             </div>
             <div>
-              <dt>Charges</dt>
+              <dt>Additional selected charges</dt>
               <dd>{chargesSummary}</dd>
             </div>
+            {application.product.denominationCurrency === "UGX" ? <>
+              <div>
+                <dt>Loan processing fee ({processingRateBps / 100}%)</dt>
+                <dd>{formatMinor(percentOfMinor(reviewedLoan?.principalMinor ?? application.proposedPrincipalMinor, processingRateBps), "UGX")} · deducted at disbursement; editable for this loan</dd>
+              </div>
+              <div>
+                <dt>CRB (compulsory)</dt>
+                <dd>{formatMinor(CRB_TOTAL_MINOR, "UGX")} · 10,000 payable to UMRA + 5,000 income</dd>
+              </div>
+            </> : null}
             <div>
               <dt>Collateral</dt>
               <dd>{collateralSummary}</dd>

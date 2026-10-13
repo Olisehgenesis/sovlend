@@ -1,13 +1,18 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  generalLedgerReportCsv,
   getBalanceSheetReport,
+  getGeneralLedgerReport,
+  getGeneralLedgerJournal,
   getJournalReconciliationReport,
   getTrialBalanceReport,
   isManualJournalReferenceType,
   minorToAmountInputValue,
   parseAmountFilterMinor,
+  resolveDatePreset,
   resolveEntrySourceFilter,
+  serializeGeneralLedgerReport,
 } from "@/modules/reports/domain/accounting-report";
 
 type MockAccount = {
@@ -55,6 +60,156 @@ function buildLedgerMock(accounts: MockAccount[], lines: MockLine[]) {
 }
 
 const scope = { organizationId: "org-1", officeIds: null, officerUserId: null } as const;
+
+describe("General Ledger journal details", () => {
+  it("limits the full journal to posted entries in the user's organization and permitted offices", async () => {
+    const findFirst = vi.fn(async () => null);
+    const db = { journal: { findFirst } } as unknown as import("@prisma/client").PrismaClient;
+    expect(await getGeneralLedgerJournal(db, { ...scope, officeIds: ["office-1"] }, "journal-1")).toBeNull();
+    expect(findFirst).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: "journal-1", status: "POSTED", office: { organizationId: "org-1" }, officeId: { in: ["office-1"] } },
+      include: expect.objectContaining({ lines: expect.objectContaining({ include: { account: true } }) }),
+    }));
+  });
+  it("does not broaden an empty office scope", async () => {
+    const findFirst = vi.fn(async () => null);
+    const db = { journal: { findFirst } } as unknown as import("@prisma/client").PrismaClient;
+    await getGeneralLedgerJournal(db, { ...scope, officeIds: [] }, "journal-1");
+    expect(findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ officeId: { in: [] } }) }));
+  });
+});
+
+describe("General Ledger date ranges", () => {
+  it("resolves week, month, and year presets using calendar dates", () => {
+    const now = new Date("2026-10-02T17:15:00.000Z");
+
+    expect(resolveDatePreset(now, "week")).toEqual({
+      startDate: new Date("2026-09-28T00:00:00.000Z"),
+      endDate: new Date("2026-10-02T00:00:00.000Z"),
+    });
+    expect(resolveDatePreset(now, "month")).toEqual({
+      startDate: new Date("2026-10-01T00:00:00.000Z"),
+      endDate: new Date("2026-10-02T00:00:00.000Z"),
+    });
+    expect(resolveDatePreset(now, "year")).toEqual({
+      startDate: new Date("2026-01-01T00:00:00.000Z"),
+      endDate: new Date("2026-10-02T00:00:00.000Z"),
+    });
+  });
+});
+
+describe("getGeneralLedgerReport", () => {
+  it("reports every account line with account, payee, and opening balance details", async () => {
+    const accounts: MockAccount[] = [
+      { id: "empty", code: "0002443", name: "Advance with no activity", type: "ASSET", currencyCode: "UGX" },
+      { id: "cash", code: "10001", name: "Cash", type: "ASSET", currencyCode: "UGX" },
+      { id: "loan", code: "10002", name: "Loan Receivables", type: "ASSET", currencyCode: "UGX" },
+      { id: "income", code: "30001", name: "Interest Income", type: "REVENUE", currencyCode: "UGX" },
+    ];
+    const makeLine = (
+      id: string,
+      accountId: string,
+      direction: "DEBIT" | "CREDIT",
+      amountMinor: bigint,
+      businessDate: string,
+      journalId: string,
+      payeeName: string | null = null,
+    ) => ({
+      id,
+      journalId,
+      direction,
+      amountMinor,
+      memo: null,
+      createdAt: new Date(`${businessDate}T12:00:00.000Z`),
+      account: accounts.find((account) => account.id === accountId)!,
+      journal: {
+        businessDate: new Date(`${businessDate}T00:00:00.000Z`),
+        createdAt: new Date(`${businessDate}T12:00:00.000Z`),
+        office: { name: "Head Office" },
+        payeeType: payeeName ? "PERSON" : null,
+        payeeName,
+        payeeReference: null,
+        referenceType: "MANUAL_INCOME",
+        referenceId: journalId,
+        narration: "Test journal",
+      },
+    });
+    const periodLines = [
+      makeLine("cash-current", "cash", "DEBIT", 3_000n, "2026-09-12", "current", "Robinah Nakaggwe"),
+      makeLine("loan-current", "loan", "CREDIT", 3_000n, "2026-09-12", "current", "Robinah Nakaggwe"),
+      makeLine("loan-income", "loan", "DEBIT", 3_000n, "2026-09-14", "income"),
+      makeLine("income-current", "income", "CREDIT", 3_000n, "2026-09-14", "income"),
+    ];
+    const db = {
+      ledgerAccount: {
+        findMany: vi.fn(async () => accounts),
+      },
+      journalLine: {
+        findMany: vi.fn(async ({ where }: { where: { accountId?: string } }) =>
+          periodLines.filter((line) => !where.accountId || line.account.id === where.accountId)),
+        groupBy: vi.fn(async () => [
+          { accountId: "cash", direction: "DEBIT", _sum: { amountMinor: 10_000n } },
+          { accountId: "income", direction: "CREDIT", _sum: { amountMinor: 10_000n } },
+        ]),
+      },
+    } as never;
+
+    const report = await getGeneralLedgerReport(db, scope, {
+      startDate: new Date("2026-09-01T00:00:00.000Z"),
+      endDate: new Date("2026-09-30T00:00:00.000Z"),
+      officeId: null,
+      accountId: null,
+    });
+    const serialized = serializeGeneralLedgerReport(report);
+
+    expect(report.entries).toHaveLength(4);
+    expect(report.entries[0]).toMatchObject({
+      account: { code: "10001", name: "Cash" },
+      payeeName: "Robinah Nakaggwe",
+      runningBalanceMinor: 13_000n,
+    });
+    expect(report.debitTotalMinor).toBe(6_000n);
+    expect(report.creditTotalMinor).toBe(6_000n);
+    expect(report.accountBalances.find((balance) => balance.account.id === "cash")).toMatchObject({
+      openingBalanceMinor: 10_000n,
+      closingBalanceMinor: 13_000n,
+    });
+    expect(serialized.entries[0]).toMatchObject({
+      account: { code: "10001" },
+      payeeName: "Robinah Nakaggwe",
+    });
+    expect(generalLedgerReportCsv(report)).toContain("Robinah Nakaggwe");
+    expect(report.account).toBeNull();
+    expect(report.lineCount).toBe(4);
+    expect(report.journalCount).toBe(2);
+
+    const selected = await getGeneralLedgerReport(db, scope, {
+      startDate: new Date("2026-09-01T00:00:00.000Z"),
+      endDate: new Date("2026-09-30T00:00:00.000Z"),
+      officeId: null,
+      accountId: "cash",
+    });
+    expect(selected.account?.id).toBe("cash");
+    expect(selected.entries).toHaveLength(1);
+    expect(selected.closingBalanceMinor).toBe(13_000n);
+    expect(selected.creditTotalMinor).toBe(0n);
+    const empty = await getGeneralLedgerReport(db, scope, {
+      startDate: new Date("2026-09-01T00:00:00.000Z"),
+      endDate: new Date("2026-09-30T00:00:00.000Z"),
+      officeId: null, accountId: "empty",
+    });
+    expect(empty.entries).toHaveLength(0);
+    expect(empty.accountBalances).toHaveLength(1);
+    expect(empty.accountBalances[0]).toMatchObject({ openingBalanceMinor: 0n, closingBalanceMinor: 0n });
+
+    await expect(getGeneralLedgerReport(db, scope, {
+      startDate: new Date("2026-09-01T00:00:00.000Z"),
+      endDate: new Date("2026-09-30T00:00:00.000Z"),
+      officeId: null,
+      accountId: "missing",
+    })).rejects.toThrow("Invalid account filter");
+  });
+});
 
 describe("getBalanceSheetReport", () => {
   it("balances Assets = Liabilities + Equity for asset/liability/equity-only activity", async () => {

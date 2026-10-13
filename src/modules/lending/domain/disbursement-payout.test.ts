@@ -11,6 +11,37 @@ import {
 } from "./disbursement-payout";
 
 describe("disbursement payout", () => {
+  it.each([0n, 45000000n])("exempts one loan without moving existing LIF savings (%s)", existingLifMinor => {
+    const choice = buildDisbursementPayoutChoice({
+      principalMinor: 300000000n, existingLifMinor, extraChargesMinor: 0n, lifExempt: true,
+      liquidateLoanId: "old", otherLoans: [{ id: "old", principalMinor: 300000000n, outstandingMinor: 4203846n }],
+    });
+    expect(choice.payout.lifHeldFromProceedsMinor).toBe(0n);
+    expect(choice.payout.lifReleasedToSecurityMinor).toBe(0n);
+    expect(choice.payout.withdrawableMinor).toBe(292500000n);
+    expect(choice.payoffMinor).toBe(4203846n);
+    expect(choice.remainingWithdrawMinor).toBe(288296154n);
+    expect(disbursementOverviewRows({ principalMinor: 300000000n, disbursed: false, lifExempt: true }).some(row => row.key === "lif")).toBe(false);
+  });
+  it("does not require LIF on an exempt active loan when a later normal loan is disbursed", () => {
+    const choice = buildDisbursementPayoutChoice({
+      principalMinor: 70000000n, existingLifMinor: 0n, extraChargesMinor: 0n,
+      otherLoans: [{ id: "exempt", principalMinor: 300000000n, outstandingMinor: 200000000n, lifExempt: true }],
+    });
+    expect(choice.payout.lifRequiredMinor).toBe(10500000n);
+  });
+  it.each([500, 600, 0])("uses a %i bps processing rate consistently in preview and overview", (bps) => {
+    const p = buildDisbursementPayout({ principalMinor: 300_000_000n, existingLifMinor: 0n, remainingActivePrincipalMinor: 0n, extraChargesMinor: 0n, processingFeeBps: bps });
+    expect(p.processingFeeMinor).toBe(300_000_000n * BigInt(bps) / 10_000n);
+    expect(p.crbTotalMinor).toBe(1_500_000n);
+    expect(p.withdrawableMinor).toBe(300_000_000n - 45_000_000n - p.processingFeeMinor - 1_500_000n);
+    expect(disbursementOverviewRows({ principalMinor: 300_000_000n, disbursed: true, processingFeeBps: bps }).find(r => r.key === "processing")?.paid ?? 0n).toBe(p.processingFeeMinor);
+  });
+  it("rejects invalid rates and excessive deductions", () => {
+    const input = { principalMinor: 300_000_000n, existingLifMinor: 0n, remainingActivePrincipalMinor: 0n, extraChargesMinor: 0n };
+    for (const processingFeeBps of [-1, 10001, 5.5, NaN]) expect(() => buildDisbursementPayout({ ...input, processingFeeBps })).toThrow();
+    expect(() => buildDisbursementPayout({ ...input, processingFeeBps: 10000 })).toThrow("deductions exceed");
+  });
   it("holds 15% in LIF, takes 2% processing and 15,000 CRB, and leaves the rest to withdraw", () => {
     const payout = buildDisbursementPayout({
       principalMinor: 70_000_000n,
@@ -148,7 +179,7 @@ describe("disbursement payout", () => {
     ]);
   });
 
-  it("skips the CRB levy when the loan product does not collect it", () => {
+  it("collects compulsory CRB even when a legacy product has it disabled, preserving historical overview behavior", () => {
     const payout = buildDisbursementPayout({
       principalMinor: 70_000_000n,
       existingLifMinor: 0n,
@@ -156,12 +187,14 @@ describe("disbursement payout", () => {
       extraChargesMinor: 0n,
       collectCrb: false,
     });
-    expect(payout.crbTotalMinor).toBe(0n);
-    expect(payout.crbIncomeMinor).toBe(0n);
-    expect(payout.crbPayableMinor).toBe(0n);
-    expect(payout.withdrawableMinor).toBe(58_100_000n);
+    expect(payout.crbTotalMinor).toBe(1_500_000n);
+    expect(payout.crbIncomeMinor).toBe(500_000n);
+    expect(payout.crbPayableMinor).toBe(1_000_000n);
+    expect(payout.withdrawableMinor).toBe(56_600_000n);
     expect(statutoryDisbursementChargeSpecs(payout)).toEqual([
       { name: "Processing fee", amountMinor: 1_400_000n },
+      { name: "CRB income", amountMinor: 500_000n },
+      { name: "CRB fee", amountMinor: 1_000_000n },
     ]);
     expect(disbursementOverviewRows({ principalMinor: 70_000_000n, disbursed: true, collectCrb: false }).some((row) => row.key === "crb")).toBe(false);
   });

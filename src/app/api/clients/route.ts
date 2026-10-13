@@ -10,6 +10,7 @@ import { getUserDataScope } from "@/modules/identity/application/data-scope";
 import { permissions } from "@/modules/identity/domain/permissions";
 import { nextSubAccountNumber } from "@/modules/lending/domain/sub-account-numbering";
 import { openingChargeNames } from "@/modules/charges/domain/opening-charges";
+import { LIF_SAVINGS_SHORT_NAME, MEMBER_CONTRIBUTION_SAVINGS_SHORT_NAME, SECURITY_SAVINGS_SHORT_NAME } from "@/modules/lending/domain/disbursement-payout";
 
 const clientSchema = z.object({
   officeId: z.string().uuid(),
@@ -26,6 +27,7 @@ const clientSchema = z.object({
   isStaff: z.boolean().default(false),
   membershipType: z.enum(["INDIVIDUAL", "GROUP"]).default("INDIVIDUAL"),
   chargeCrb: z.boolean().default(false),
+  groupId: z.string().uuid().optional(),
 });
 
 export async function POST(request: Request) {
@@ -43,6 +45,16 @@ export async function POST(request: Request) {
   } catch (error) {
     if (error instanceof PermissionDeniedError) return NextResponse.json({ error: "You cannot create clients in this office" }, { status: 403 });
     throw error;
+  }
+
+  // Group members must be linked to an existing active group within the user's scope.
+  let group: { id: string } | null = null;
+  if (parsed.data.groupId) {
+    group = await prisma.group.findFirst({ where: { id: parsed.data.groupId, organizationId: scope.organizationId, ...(scope.officeIds ? { officeId: { in: [...scope.officeIds] } } : {}) } });
+    if (!group) return NextResponse.json({ error: "Group not found in your scope" }, { status: 404 });
+  }
+  if (parsed.data.membershipType === "GROUP" && !group) {
+    return NextResponse.json({ error: "A group member must select their group" }, { status: 400 });
   }
 
   const id = randomUUID();
@@ -78,8 +90,26 @@ export async function POST(request: Request) {
     });
     await transaction.auditEvent.create({ data: { actorId: session.user.id, action: "client.created", entityType: "Client", entityId: created.id, correlationId, metadata, eventHash } });
     await transaction.outboxEvent.create({ data: { aggregateType: "Client", aggregateId: created.id, eventType: "client.created", payload: metadata } });
-    // Every new client opens with a default savings sub-account, e.g. "000000926" -> "000000926S".
-    const savingsAccount = await transaction.savingsAccount.create({ data: { clientId: created.id, accountNumber: nextSubAccountNumber(created.accountNumber, "S", 0), currencyCode: "UGX", status: "ACTIVE" } });
+    // Every new client opens with a member-contribution (MSA) sub-account instead of a plain
+    // savings account, e.g. "000000926" -> "000000926S". Group members additionally open
+    // security, LIF, and a savings account at registration. Existing clients are unaffected.
+    async function createProductLinkedMemberAccount(shortName: string, fallbackType: string) {
+      const organizationId = scope?.organizationId ?? "";
+      const product = await transaction.savingsProduct.findFirst({ where: { organizationId, shortName, active: true }, select: { id: true, name: true, shortName: true, nominalAnnualRateBps: true, minOpeningBalanceMinor: true } });
+      return transaction.savingsAccount.create({
+        data: {
+          clientId: created.id,
+          ...(group ? { groupId: group.id } : {}),
+          productId: product?.id,
+          accountNumber: nextSubAccountNumber(created.accountNumber, "S", 0),
+          currencyCode: "UGX",
+          accountType: product ? product.shortName : fallbackType,
+          status: "ACTIVE",
+          termsSnapshot: product ? { productId: product.id, name: product.name, shortName: product.shortName, nominalAnnualRateBps: product.nominalAnnualRateBps, minOpeningBalanceMinor: product.minOpeningBalanceMinor.toString() } : undefined,
+        },
+      });
+    }
+    const memberContributionAccount = await createProductLinkedMemberAccount(MEMBER_CONTRIBUTION_SAVINGS_SHORT_NAME, "MEMBER_CONTRIBUTION");
     const chargeNames = openingChargeNames({ membership: parsed.data.membershipType, chargeCrb: parsed.data.chargeCrb });
     const chargeDefinitions = await transaction.chargeDefinition.findMany({
       where: { organizationId: scope.organizationId, appliesTo: "SAVINGS", active: true, name: { in: [...chargeNames] } },
@@ -90,12 +120,22 @@ export async function POST(request: Request) {
       await transaction.charge.create({
         data: {
           clientId: created.id,
-          savingsAccountId: savingsAccount.id,
+          savingsAccountId: memberContributionAccount.id,
           chargeDefinitionId: definition.id,
           name: definition.name,
           amountMinor,
           currencyCode: definition.currencyCode,
         },
+      });
+    }
+    if (parsed.data.membershipType === "GROUP" && group) {
+      await transaction.groupMember.create({
+        data: { groupId: group.id, clientId: created.id, joinedOn: new Date() },
+      });
+      await createProductLinkedMemberAccount(SECURITY_SAVINGS_SHORT_NAME, "LOAN_SECURITY");
+      await createProductLinkedMemberAccount(LIF_SAVINGS_SHORT_NAME, "LOAN_INSURANCE");
+      await transaction.savingsAccount.create({
+        data: { clientId: created.id, groupId: group.id, accountNumber: nextSubAccountNumber(created.accountNumber, "S", 0), currencyCode: "UGX", status: "ACTIVE", accountType: "SAVINGS" },
       });
     }
     return created;

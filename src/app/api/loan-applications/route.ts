@@ -81,6 +81,7 @@ export async function POST(request: Request) {
         externalId: parsed.data.externalId || null,
         applicationExpiresOn: parsed.data.applicationExpiresOn ? new Date(`${parsed.data.applicationExpiresOn}T00:00:00.000Z`) : null,
         termsSnapshot: buildTermsSnapshot({
+          processingFeeBps: product.processingFeeBps,
           ...parsed.data.terms,
           interestDayCount: "FOUR_WEEK_MONTH",
         }),
