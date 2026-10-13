@@ -202,6 +202,52 @@ export default async function ClientStatementPage({ params }: { params: Promise<
         </div>
 
         <div className="statement-section">
+          <h3>Account activity ({statement.activities.length})</h3>
+          {statement.activities.length === 0 ? (
+            <p className="muted-text">No loan or savings transactions on record.</p>
+          ) : (
+            <div className="table-scroll">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Date</th>
+                    <th>Account</th>
+                    <th>Activity</th>
+                    <th>Reference</th>
+                    <th>Amount</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {statement.activities.map((activity) => (
+                    <tr key={`${activity.accountKind}-${activity.id}`}>
+                      <td>{formatReportDate(activity.activityOn)}</td>
+                      <td>
+                        {activity.loanId && activity.transactionId ? (
+                          <Link
+                            className="green-link"
+                            href={`/loans/${activity.loanId}/transactions/${activity.transactionId}`}
+                          >
+                            {activity.accountNumber}
+                          </Link>
+                        ) : (
+                          <Link className="green-link" href={`/savings-accounts/${activity.accountNumber}`}>
+                            {activity.accountNumber}
+                          </Link>
+                        )}
+                        <small>{activity.accountKind}</small>
+                      </td>
+                      <td>{activity.description}</td>
+                      <td>{activity.reference ?? "—"}</td>
+                      <td>{formatMinor(activity.amountMinor, activity.currencyCode)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
+        <div className="statement-section">
           <h3>Charges ({charges.length})</h3>
           {charges.length === 0 ? (
             <p className="muted-text">No charges on record.</p>

@@ -1,7 +1,7 @@
 import type { AccountType, EntryDirection, Prisma, PrismaClient } from "@prisma/client";
 
 import { officeWhere, type UserDataScope } from "@/modules/identity/application/data-scope";
-import { rowsToCsv } from "@/modules/lending/domain/loan-export";
+import { reportRowsToCsv as rowsToCsv } from "@/modules/reports/domain/report-csv";
 import { displaySavingsProductName } from "@/modules/savings/domain/savings-product-label";
 
 export const reportDateFormatter = new Intl.DateTimeFormat("en-UG", { dateStyle: "medium" });

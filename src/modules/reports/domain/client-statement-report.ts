@@ -94,6 +94,19 @@ export type ClientStatementChargeRow = Readonly<{
   loanAccountNumber: string | null;
 }>;
 
+export type ClientStatementActivityRow = Readonly<{
+  id: string;
+  activityOn: Date;
+  accountNumber: string;
+  accountKind: "Loan" | "Savings";
+  description: string;
+  amountMinor: bigint;
+  currencyCode: string;
+  loanId: string | null;
+  transactionId: string | null;
+  reference: string | null;
+}>;
+
 export type ClientStatement = Readonly<{
   asOf: Date;
   client: Readonly<{
@@ -109,6 +122,7 @@ export type ClientStatement = Readonly<{
   }>;
   loans: readonly ClientStatementLoanRow[];
   savingsAccounts: readonly ClientStatementSavingsRow[];
+  activities: readonly ClientStatementActivityRow[];
   charges: readonly ClientStatementChargeRow[];
   totals: Readonly<{
     currencyCode: string;
@@ -159,11 +173,34 @@ export async function loadClientStatement(
               penaltiesPaidMinor: true,
             },
           },
+          transactions: {
+            select: {
+              id: true,
+              transactionType: true,
+              businessDate: true,
+              denominationAmountMinor: true,
+              externalReference: true,
+            },
+            orderBy: { businessDate: "desc" },
+          },
         },
       },
       savingsAccounts: {
         orderBy: { createdAt: "desc" },
-        include: { product: { select: { name: true } }, transactions: { select: { amountMinor: true } } },
+        include: {
+          product: { select: { name: true } },
+          transactions: {
+            select: {
+              id: true,
+              transactionType: true,
+              amountMinor: true,
+              reason: true,
+              externalReference: true,
+              createdAt: true,
+            },
+            orderBy: { createdAt: "desc" },
+          },
+        },
       },
       charges: { orderBy: { createdAt: "desc" }, include: { loan: { select: { accountNumber: true } } } },
     },
@@ -214,6 +251,37 @@ export async function loadClientStatement(
     balanceMinor: account.transactions.reduce((sum, transaction) => sum + transaction.amountMinor, 0n),
   }));
 
+  const activities: ClientStatementActivityRow[] = [
+    ...client.loans.flatMap((loan) =>
+      loan.transactions.map((transaction) => ({
+        id: transaction.id,
+        activityOn: transaction.businessDate,
+        accountNumber: loan.accountNumber,
+        accountKind: "Loan" as const,
+        description: transaction.transactionType.replaceAll("_", " "),
+        amountMinor: transaction.denominationAmountMinor,
+        currencyCode: loan.denominationCurrency,
+        loanId: loan.id,
+        transactionId: transaction.id,
+        reference: transaction.externalReference,
+      })),
+    ),
+    ...client.savingsAccounts.flatMap((account) =>
+      account.transactions.map((transaction) => ({
+        id: transaction.id,
+        activityOn: transaction.createdAt,
+        accountNumber: account.accountNumber,
+        accountKind: "Savings" as const,
+        description: transaction.transactionType.replaceAll("_", " "),
+        amountMinor: transaction.amountMinor,
+        currencyCode: account.currencyCode,
+        loanId: null,
+        transactionId: null,
+        reference: transaction.reason ?? transaction.externalReference,
+      })),
+    ),
+  ].sort((left, right) => right.activityOn.getTime() - left.activityOn.getTime());
+
   const charges: ClientStatementChargeRow[] = client.charges.map((charge) => ({
     id: charge.id,
     name: charge.name,
@@ -246,6 +314,7 @@ export async function loadClientStatement(
     },
     loans,
     savingsAccounts,
+    activities,
     charges,
     totals: {
       currencyCode,

@@ -10,7 +10,7 @@ import {
 } from "@/modules/identity/application/data-scope";
 import type { PermissionCode } from "@/modules/identity/domain/permissions";
 import { transactionTypeVariants } from "@/lib/loan-transaction-type-variants";
-import { rowsToCsv } from "@/modules/lending/domain/loan-export";
+import { reportRowsToCsv as rowsToCsv } from "@/modules/reports/domain/report-csv";
 import { installmentOutstandingMinor as totalInstallmentOutstandingMinor, installmentsWithCharges } from "@/modules/lending/domain/loan-outstanding";
 import { loadPortfolioLoans, type AgingBucketKey, type BranchPortfolioBucketKey, branchPortfolioBucket, branchPortfolioBucketLabels, branchPortfolioBucketOrder } from "@/modules/reports/domain/risk-report";
 
@@ -1536,6 +1536,7 @@ export function unassignedLoansReportCsv(report: UnassignedLoansReport) {
       "Client Type": row.borrowerType,
       "Office/Branch": row.officeName,
       Status: formatLoanStatus(row.status),
+      Currency: row.currencyCode,
       "Loan Amount": row.principalMinor.toString(),
       "Disbursed Date": row.disbursedOn ? isoDate(row.disbursedOn) : "",
     })),
@@ -1545,6 +1546,7 @@ export function unassignedLoansReportCsv(report: UnassignedLoansReport) {
       "Client Type",
       "Office/Branch",
       "Status",
+      "Currency",
       "Loan Amount",
       "Disbursed Date",
     ],
@@ -1723,6 +1725,7 @@ export function outstandingBalancesReportCsv(report: OutstandingBalancesReport) 
       "Office/Branch": row.officeName,
       "Loan Officer": row.loanOfficerName,
       Status: formatLoanStatus(row.status),
+      Currency: row.currencyCode,
       "Principal Outstanding": row.principalOutstandingMinor.toString(),
       "Interest Outstanding": row.interestOutstandingMinor.toString(),
       "Fees Outstanding": row.feesOutstandingMinor.toString(),
@@ -1737,6 +1740,7 @@ export function outstandingBalancesReportCsv(report: OutstandingBalancesReport) 
       "Office/Branch",
       "Loan Officer",
       "Status",
+      "Currency",
       "Principal Outstanding",
       "Interest Outstanding",
       "Fees Outstanding",

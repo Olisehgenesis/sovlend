@@ -1,7 +1,7 @@
 import type { LoanStatus, PrismaClient } from "@prisma/client";
 
 import { loanScopeWhere, type UserDataScope } from "@/modules/identity/application/data-scope";
-import { rowsToCsv } from "@/modules/lending/domain/loan-export";
+import { reportRowsToCsv as rowsToCsv } from "@/modules/reports/domain/report-csv";
 import { installmentOutstandingMinor as totalInstallmentOutstandingMinor, installmentsWithCharges } from "@/modules/lending/domain/loan-outstanding";
 
 export type RiskFilters = Readonly<{

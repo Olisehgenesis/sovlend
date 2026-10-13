@@ -69,7 +69,7 @@ export default async function ClientDetailPage({ params, searchParams }: { param
   if (!client) notFound();
 
   const authorization = new AuthorizationService(prisma);
-  const [canManage, canApplyLoan, canTransact, canRecordRepayment, canApproveSavings, canManageBtc, canPostLedger, wallet, savingsProducts, officers, savingsCharges, settlementAccounts, ledgerAccounts] = await Promise.all([
+  const [canManage, canApplyLoan, canTransact, canRecordRepayment, canApproveSavings, canManageBtc, canPostLedger, canViewStatement, wallet, savingsProducts, officers, savingsCharges, settlementAccounts, ledgerAccounts] = await Promise.all([
     authorization.isAllowed({ actorUserId: session.user.id, permission: permissions.clientManage, organizationId: scope.organizationId, officeId: client.officeId }),
     authorization.isAllowed({ actorUserId: session.user.id, permission: permissions.loanApply, organizationId: scope.organizationId, officeId: client.officeId }),
     authorization.isAllowed({ actorUserId: session.user.id, permission: permissions.savingsTransact, organizationId: scope.organizationId, officeId: client.officeId }),
@@ -77,6 +77,7 @@ export default async function ClientDetailPage({ params, searchParams }: { param
     authorization.isAllowed({ actorUserId: session.user.id, permission: permissions.savingsApprove, organizationId: scope.organizationId, officeId: client.officeId }),
     authorization.isAllowed({ actorUserId: session.user.id, permission: permissions.btcAccountManage, organizationId: scope.organizationId, officeId: client.officeId }),
     authorization.isAllowed({ actorUserId: session.user.id, permission: permissions.ledgerPost, organizationId: scope.organizationId, officeId: client.officeId }),
+    authorization.isAllowed({ actorUserId: session.user.id, permission: permissions.reportClientStatement, organizationId: scope.organizationId }),
     getClientWalletSummary(prisma, client.id),
     prisma.savingsProduct.findMany({ where: { organizationId: scope.organizationId, active: true }, orderBy: { name: "asc" } }),
     prisma.user.findMany({ where: { organizationId: scope.organizationId, ...assignableStaffWhere({ includeUserId: client.assignedOfficerId, officeId: client.officeId }) }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
@@ -213,6 +214,11 @@ export default async function ClientDetailPage({ params, searchParams }: { param
           settlementAccounts={settlementAccounts}
           transferSavingsAccounts={canTransact ? transferSavingsAccounts : []}
         />
+        {canViewStatement ? (
+          <Link className="secondary-action" href={`/reports/client-statement/${client.accountNumber}`}>
+            Client statement &amp; print
+          </Link>
+        ) : null}
         <span className={`status-dot ${client.status === "ACTIVE" ? "up-to-date" : "review"}`} />
       </header>
 

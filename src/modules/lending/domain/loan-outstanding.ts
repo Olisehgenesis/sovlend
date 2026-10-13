@@ -89,16 +89,18 @@ export function loanWrittenOffMinor(loan: LoanWriteOffAmounts): bigint {
  * app displays "outstanding" for a specific loan (loan detail, portal, list rows, reports).
  */
 export function loanOutstandingMinor(
-  installments: readonly (InstallmentAmounts & { dueOn?: Date })[],
+  installments: readonly (InstallmentAmounts & { dueOn?: Date })[] = [],
   loan: LoanWriteOffAmounts,
   charges: readonly LoanChargeAmounts[] = [],
 ): bigint {
+  const safeInstallments = installments ?? [];
+  const safeCharges = charges ?? [];
   const merged =
-    charges.length === 0
-      ? installments
+    safeCharges.length === 0
+      ? safeInstallments
       : installmentsWithCharges(
-          installments.map((item) => ({ ...item, dueOn: item.dueOn ?? new Date(0) })),
-          charges,
+          safeInstallments.map((item) => ({ ...item, dueOn: item.dueOn ?? new Date(0) })),
+          safeCharges,
         );
   const dueMinor = merged.reduce((sum, item) => sum + installmentDueMinor(item), 0n);
   const paidMinor = merged.reduce((sum, item) => sum + installmentPaidMinor(item), 0n);
@@ -232,13 +234,17 @@ function applyChargeComponent<T extends DatedInstallmentAmounts>(
  * was imported alongside the same Charge rows.
  */
 export function installmentsWithCharges<T extends DatedInstallmentAmounts>(
-  installments: readonly T[],
-  charges: readonly LoanChargeAmounts[],
+  installments: readonly T[] | null | undefined,
+  charges: readonly LoanChargeAmounts[] | null | undefined,
 ): T[] {
-  if (installments.length === 0 || charges.length === 0) return installments.map((item) => ({ ...item }));
-  const copies = installments.map((item) => ({ ...item }));
-  applyChargeComponent(copies, charges, false);
-  applyChargeComponent(copies, charges, true);
+  const safeInstallments = installments ?? [];
+  const safeCharges = charges ?? [];
+  if (safeInstallments.length === 0 || safeCharges.length === 0) {
+    return safeInstallments.map((item) => ({ ...item }));
+  }
+  const copies = safeInstallments.map((item) => ({ ...item }));
+  applyChargeComponent(copies, safeCharges, false);
+  applyChargeComponent(copies, safeCharges, true);
   return copies;
 }
 

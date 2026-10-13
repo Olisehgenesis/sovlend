@@ -1337,6 +1337,16 @@ export default async function LoanPage({
                                 <Link className="green-link" href={`/loans/${loan.id}/transactions/${payment.id}`}>
                                   {formatUgDate(payment.businessDate)} · {formatMinor(payment.amountMinor, loan.denominationCurrency)}
                                 </Link>
+                                {" · "}
+                                <span className={`status ${payment.cancelled ? "review" : payment.businessDate.getTime() > item.dueOn.getTime() ? "in-arrears" : "up-to-date"}`}>
+                                  {payment.cancelled
+                                    ? "Cancelled"
+                                    : payment.businessDate.getTime() < item.dueOn.getTime()
+                                      ? "Paid early"
+                                      : payment.businessDate.getTime() === item.dueOn.getTime()
+                                        ? "Paid on time"
+                                        : "Paid late"}
+                                </span>
                                 {" · "}{payment.recordedByName ?? "Staff unknown"}
                                 {payment.cancelled ? (
                                   <span className="muted-text">

@@ -1,7 +1,7 @@
 import { Prisma, type PrismaClient, type LoanStatus } from "@prisma/client";
 
 import { officeWhere, type UserDataScope } from "@/modules/identity/application/data-scope";
-import { rowsToCsv } from "@/modules/lending/domain/loan-export";
+import { reportRowsToCsv as rowsToCsv } from "@/modules/reports/domain/report-csv";
 
 const DAY_MS = 86_400_000;
 const feeStatuses = ["PAID", "PENDING", "WAIVED"] as const;

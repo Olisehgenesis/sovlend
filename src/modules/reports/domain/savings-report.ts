@@ -1,7 +1,7 @@
 import type { PrismaClient } from "@prisma/client";
 
 import { clientScopeWhere, groupScopeWhere, officeWhere, type UserDataScope } from "@/modules/identity/application/data-scope";
-import { rowsToCsv } from "@/modules/lending/domain/loan-export";
+import { reportRowsToCsv as rowsToCsv } from "@/modules/reports/domain/report-csv";
 import { displaySavingsProductName } from "@/modules/savings/domain/savings-product-label";
 
 /**
