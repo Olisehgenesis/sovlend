@@ -32,6 +32,19 @@ The production checkout may have `compose.override.yaml` linked to a private
 server-side override. Preserve that link and file. Do not copy the override into
 Git or replace it with local values.
 
+The running services may also use a versioned runtime Compose override outside
+the checkout. Before deploying, inspect only the Compose file paths recorded on
+the existing containers:
+
+```bash
+docker inspect sovlend-web-1 \
+  --format '{{index .Config.Labels "com.docker.compose.project.config_files"}}'
+```
+
+Use the same ordered `-f` file list for deployment that started the running
+containers. Do not print the resolved Compose configuration: runtime overrides
+can contain decrypted credentials and private connection settings.
+
 ## Prepare and validate locally
 
 Start from the intended branch and inspect the exact changes:
@@ -130,6 +143,9 @@ dotenvx run -f .env -- docker compose build web worker
 dotenvx run -f .env -- docker compose run --rm --no-deps uploads-init
 dotenvx run -f .env -- docker compose up -d --no-deps --wait --wait-timeout 180 web worker
 ```
+
+If the running containers use a runtime override, include its existing path in
+each command using `-f` in the same order as the container labels.
 
 Do not use `--no-deps` for a release that requires a migration until the
 migration has completed successfully. Do not run permission reseeds,
