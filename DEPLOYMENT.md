@@ -19,10 +19,14 @@ application checkout is `/root/apps/sovlend` and the deployed branch is `master`
   pulling and do not overwrite or revert a modified `infra/caddy/Caddyfile`.
 - Deploy only the services needed for the release. Do not restart PostgreSQL,
   Redis, Caddy, or unrelated containers as part of a normal application release.
-- If PostgreSQL is unhealthy, the application cannot query the database, the
-  backup cannot be verified, or the target release has unexpected schema/data
-  migrations, stop and resolve that condition before proceeding. Do not try to
-  fix an unhealthy database by recreating it.
+- If PostgreSQL is unhealthy, investigate the cause and verify a read-only
+  application database query before taking any action. Do not restart, recreate,
+  or migrate an unhealthy database as part of a routine release. An
+  application-only release may proceed only when database access is verified,
+  the release is compatible with the existing schema, and it does not alter
+  production data; otherwise stop. If a required backup cannot be verified or
+  the release has unexpected schema/data migrations, stop. Do not try to fix an
+  unhealthy database by recreating it.
 
 The production checkout may have `compose.override.yaml` linked to a private
 server-side override. Preserve that link and file. Do not copy the override into
