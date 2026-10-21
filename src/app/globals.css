@@ -416,7 +416,7 @@ th.numeric, td.numeric { text-align: right; font-variant-numeric: tabular-nums; 
 .group-summary-metrics > a:last-child { border-right: 0; }
 .group-summary-metrics > a:hover { background: #f5f8f4; }
 .group-summary-metrics > a:focus-visible { outline: 2px solid var(--forest); outline-offset: -2px; }
-.group-summary-metrics > a[aria-current="page"] { background: #f3f7f4; }.member-in-arrears { background: #fff6eb; }.arrears-mark { color: #9a4e0a; }.status.arrears-mark { color: #9a4e0a; background: #fde6c8; }.is-arrears { color: #c05612; }.repayment-panel { margin-bottom: 18px; }.servicing-grid { margin-top: 18px; }
+.schedule-date-tools { display: flex; flex-wrap: wrap; gap: 12px; align-items: end; }.schedule-date-tools label { width: auto; }.schedule-date-tools select, .schedule-date-tools input { width: auto; min-width: 9rem; }.schedule-date-tools .secondary-action { cursor: pointer; }.group-summary-metrics > a[aria-current="page"] { background: #f3f7f4; }.member-in-arrears { background: #fff6eb; }.arrears-mark { color: #9a4e0a; }.status.arrears-mark { color: #9a4e0a; background: #fde6c8; }.is-arrears { color: #c05612; }.repayment-panel { margin-bottom: 18px; }.servicing-grid { margin-top: 18px; }
 .loan-overview { overflow: hidden; }
 .loan-overview-table { width: 100%; }
 .loan-overview-table th,

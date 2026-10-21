@@ -9,6 +9,7 @@ export const permissions = {
   loanRepayment: "LOAN_REPAYMENT_RECORD",
   loanRepaymentReverseRequest: "LOAN_REPAYMENT_REVERSE_REQUEST",
   loanRepaymentReverse: "LOAN_REPAYMENT_REVERSE",
+  loanReschedule: "LOAN_RESCHEDULE",
   loanClose: "LOAN_CLOSE",
   loanWriteOff: "LOAN_WRITE_OFF",
   loanReverse: "LOAN_REVERSE",

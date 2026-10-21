@@ -13,6 +13,7 @@ const descriptions: Record<string, string> = {
   [permissions.loanRepayment]: "Record loan repayments",
   [permissions.loanRepaymentReverseRequest]: "Request cancellation of a loan repayment (maker-checker)",
   [permissions.loanRepaymentReverse]: "Cancel repayments directly and decide repayment cancellation requests, including own requests (audited exception)",
+  [permissions.loanReschedule]: "Change unpaid repayment due dates on an open loan",
   [permissions.loanClose]: "Close fully settled loans",
   [permissions.loanWriteOff]: "Write off loans through controlled approval",
   [permissions.loanReverse]: "Reverse eligible loan transactions",
@@ -102,7 +103,7 @@ export async function seedPermissionGroups(prisma: PrismaClient, organizationId:
 }
 
 function riskLevel(code: string) {
-  if (code.includes("APPROVE") || code.includes("DISBURSE") || code.includes("WRITE_OFF") || code.includes("REVERSE") || code.includes("POST")) return "HIGH";
+  if (code.includes("APPROVE") || code.includes("DISBURSE") || code.includes("WRITE_OFF") || code.includes("REVERSE") || code.includes("POST") || code.includes("RESCHEDULE")) return "HIGH";
   if (code.includes("MANAGE") || code.includes("TRANSACT") || code.includes("CREATE") || code.includes("CLOSE")) return "MEDIUM";
   return "LOW";
 }

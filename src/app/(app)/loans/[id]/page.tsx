@@ -19,6 +19,7 @@ import { type LoanPreviewInput } from "@/components/loan-preview-panel";
 import { RecordPaymentButton } from "@/components/record-payment-button";
 import { LoanTopUpButton } from "@/components/loan-top-up-button";
 import { RepaymentForm } from "@/components/repayment-form";
+import { RescheduleLoanForm } from "@/components/reschedule-loan-form";
 import { CancelRepaymentButton } from "@/components/cancel-repayment-button";
 import { Breadcrumbs } from "@/components/breadcrumbs";
 import { formatUgDate, transactionTypeLabel } from "./_lib/loan-records";
@@ -41,6 +42,7 @@ import { formatMonthlyPercent } from "@/modules/lending/domain/monthly-rate";
 import { generateRepaymentSchedule, readInterestDayCount } from "@/modules/lending/domain/repayment-schedule";
 import { repaymentSplitFromAllocations } from "@/modules/lending/domain/repayment-allocation-split";
 import { installmentPaymentTiming } from "@/modules/lending/domain/repayment-timeliness";
+import { scheduleDateLockReason, utcDay } from "@/modules/lending/domain/schedule-date-change";
 import { formatMinor } from "@/modules/money/domain/format-minor";
 import { displaySavingsProductName } from "@/modules/savings/domain/savings-product-label";
 import { buildLoanDisbursementSavingsIdempotencyKey } from "@/modules/savings/application/savings-ledger";
@@ -183,6 +185,12 @@ export default async function LoanPage({
   const canTransact = await authorization.isAllowed({
     actorUserId: session.user.id,
     permission: permissions.savingsTransact,
+    organizationId: scope.organizationId,
+    officeId: loan.officeId,
+  });
+  const canReschedule = (loan.status === "ACTIVE" || loan.status === "IN_ARREARS") && Boolean(loan.disbursedOn) && await authorization.isAllowed({
+    actorUserId: session.user.id,
+    permission: permissions.loanReschedule,
     organizationId: scope.organizationId,
     officeId: loan.officeId,
   });
@@ -514,6 +522,20 @@ export default async function LoanPage({
       installmentPaymentHistory.set(allocation.installmentId, history);
     }
   }
+  const rescheduleRows = loan.installments.map((item) => {
+    const history = installmentPaymentHistory.get(item.id) ?? [];
+    return {
+      id: item.id,
+      installmentNumber: item.installmentNumber,
+      dueOn: utcDay(item.dueOn),
+      lockReason: scheduleDateLockReason({
+        outstandingMinor: installmentOutstandingMinor(item),
+        penaltyAssessedOn: item.penaltyAssessedOn,
+        interestAccruedOn: item.interestAccruedOn,
+        hasActivePayment: history.some((payment) => !payment.cancelled && payment.amountMinor > 0n),
+      }),
+    };
+  });
   const canRequestPaymentCancellation =
     canRequestServiceActions || canRequestRepaymentReversal || canCancelRepaymentsDirectly;
   const paymentTimingLabels = {
@@ -1224,6 +1246,9 @@ export default async function LoanPage({
       ) : null}
       {activeTab === "schedule" ? (
       <section className="loan-route-grid servicing-grid">
+        {canReschedule ? (
+          <RescheduleLoanForm loanId={loan.id} updatedAt={loan.updatedAt.toISOString()} rows={rescheduleRows} />
+        ) : null}
         <article className="panel">
           <div className="panel-heading">
             <div>

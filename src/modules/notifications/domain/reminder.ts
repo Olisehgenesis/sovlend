@@ -18,3 +18,15 @@ export type ReminderJob = z.infer<typeof reminderJobSchema>;
 export function reminderJobId(job: ReminderJob): string {
   return `repayment:${job.installmentId}:${job.type}`;
 }
+
+/** A queued reminder is stale once the installment due date, balance, or loan status has moved. */
+export function reminderStillApplies(input: {
+  jobDueOn: string;
+  dueOn: Date;
+  loanStatus: string;
+  outstandingMinor: bigint;
+}): boolean {
+  if (input.loanStatus !== "ACTIVE" && input.loanStatus !== "IN_ARREARS") return false;
+  if (input.outstandingMinor <= 0n) return false;
+  return input.jobDueOn.slice(0, 10) === input.dueOn.toISOString().slice(0, 10);
+}

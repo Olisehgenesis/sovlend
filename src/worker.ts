@@ -11,7 +11,8 @@ import { processLoanExportJob } from "@/modules/lending/application/export-loans
 import { scanPendingDonationSettlements } from "@/modules/donations/application/scan-pending-donation-settlements";
 import { scanPendingInvestmentSettlements } from "@/modules/investments/application/scan-pending-investment-settlements";
 import { createLightningGateway } from "@/modules/investments/infrastructure/create-lightning-gateway";
-import { reminderJobId, reminderJobSchema } from "@/modules/notifications/domain/reminder";
+import { reminderJobId, reminderJobSchema, reminderStillApplies } from "@/modules/notifications/domain/reminder";
+import { installmentOutstandingMinor } from "@/modules/lending/domain/loan-outstanding";
 import { standingOrderSweepJobSchema } from "@/modules/notifications/domain/standing-order-sweep";
 import { sendSms } from "@/modules/notifications/infrastructure/sms";
 import { formatMinor } from "@/modules/money/domain/format-minor";
@@ -69,10 +70,40 @@ const reminderWorker = new Worker(
   "repayment-reminders",
   async (job) => {
     const data = reminderJobSchema.parse(job.data);
+    const installment = await prisma.loanInstallment.findUnique({
+      where: { id: data.installmentId },
+      select: {
+        dueOn: true,
+        principalDueMinor: true,
+        interestDueMinor: true,
+        feesDueMinor: true,
+        penaltiesDueMinor: true,
+        monitoringFeeDueMinor: true,
+        principalPaidMinor: true,
+        interestPaidMinor: true,
+        feesPaidMinor: true,
+        penaltiesPaidMinor: true,
+        monitoringFeePaidMinor: true,
+        principalWaivedMinor: true,
+        interestWaivedMinor: true,
+        feesWaivedMinor: true,
+        penaltiesWaivedMinor: true,
+        monitoringFeeWaivedMinor: true,
+        loan: { select: { status: true } },
+      },
+    });
+    if (!installment || !reminderStillApplies({
+      jobDueOn: data.dueOn,
+      dueOn: installment.dueOn,
+      loanStatus: installment.loan.status,
+      outstandingMinor: installmentOutstandingMinor(installment),
+    })) {
+      return { skipped: true };
+    }
     const deduplicationKey = reminderJobId(data);
     const title = data.type === "REPAYMENT_OVERDUE" ? "Loan repayment overdue" : "Loan repayment reminder";
     const amount = formatMinor(BigInt(data.amountDueMinor), data.currencyCode);
-    const dueDate = data.dueOn.slice(0, 10);
+    const dueDate = installment.dueOn.toISOString().slice(0, 10);
     const body = `${amount} is due for loan ${data.accountNumber} on ${dueDate}.`;
 
     const smsMessage =

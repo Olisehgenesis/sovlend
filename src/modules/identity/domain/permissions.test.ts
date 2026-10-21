@@ -23,6 +23,10 @@ describe("branch permissions", () => {
     it("allows requesting repayment cancellations without granting approval rights", () => {
       expect(defaultPermissionGroups.Teller).toContain(permissions.loanRepaymentReverseRequest);
       expect(defaultPermissionGroups.Teller).not.toContain(permissions.loanReverse);
+      expect(defaultPermissionGroups["Branch Manager"]).toContain(permissions.loanReschedule);
+      expect(defaultPermissionGroups["General Manager"]).toContain(permissions.loanReschedule);
+      expect(defaultPermissionGroups.Teller).not.toContain(permissions.loanReschedule);
+      expect(defaultPermissionGroups["Loan Officer"]).not.toContain(permissions.loanReschedule);
     });
   });
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { reminderJobId, reminderJobSchema } from "./reminder";
+import { reminderJobId, reminderJobSchema, reminderStillApplies } from "./reminder";
 
 describe("repayment reminder jobs", () => {
   it("use a deterministic installment and reminder type identity", () => {
@@ -20,5 +20,26 @@ describe("repayment reminder jobs", () => {
     expect(reminderJobId(data)).toBe(
       "repayment:d8359aa2-57f4-4e6b-8070-973695c18fad:REPAYMENT_DUE_TODAY",
     );
+  });
+
+  it("drops a queued reminder after the due date moves", () => {
+    expect(reminderStillApplies({
+      jobDueOn: "2026-09-01T00:00:00.000Z",
+      dueOn: new Date("2026-09-01T00:00:00.000Z"),
+      loanStatus: "ACTIVE",
+      outstandingMinor: 100n,
+    })).toBe(true);
+    expect(reminderStillApplies({
+      jobDueOn: "2026-09-01T00:00:00.000Z",
+      dueOn: new Date("2026-10-01T00:00:00.000Z"),
+      loanStatus: "IN_ARREARS",
+      outstandingMinor: 100n,
+    })).toBe(false);
+    expect(reminderStillApplies({
+      jobDueOn: "2026-09-01T00:00:00.000Z",
+      dueOn: new Date("2026-09-01T00:00:00.000Z"),
+      loanStatus: "CLOSED",
+      outstandingMinor: 100n,
+    })).toBe(false);
   });
 });
