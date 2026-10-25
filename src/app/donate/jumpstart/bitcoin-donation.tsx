@@ -22,10 +22,14 @@ export function BitcoinDonation({
   donationId,
   amountUsd,
   onBack,
+  onPaid,
+  backLabel = "Back",
 }: {
   donationId: string;
   amountUsd: string;
   onBack: () => void;
+  onPaid?: () => void;
+  backLabel?: string;
 }) {
   const [invoice, setInvoice] = useState<(Invoice & { qr: string }) | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -71,6 +75,12 @@ export function BitcoinDonation({
     return () => window.clearInterval(timer);
   }, [donationId, invoice]);
 
+  useEffect(() => {
+    if (invoice?.status !== "PAID" || !onPaid) return;
+    const timer = window.setTimeout(onPaid, 900);
+    return () => window.clearTimeout(timer);
+  }, [invoice?.status, onPaid]);
+
   if (invoice?.status === "PAID") {
     return (
       <div className="donate-paid">
@@ -82,7 +92,7 @@ export function BitcoinDonation({
   return (
     <div className="donate-invoice">
       <button className="donate-back" type="button" onClick={onBack}>
-        Back
+        {backLabel}
       </button>
       {error ? <p className="donate-note">{error}</p> : null}
       {invoice ? (
