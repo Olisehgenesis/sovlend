@@ -884,6 +884,17 @@ export async function getJournalReconciliationReport(
               { narration: { contains: search, mode: "insensitive" as const } },
               { payeeName: { contains: search, mode: "insensitive" as const } },
               { payeeReference: { contains: search, mode: "insensitive" as const } },
+              {
+                lines: {
+                  some: {
+                    OR: [
+                      { memo: { contains: search, mode: "insensitive" as const } },
+                      { account: { name: { contains: search, mode: "insensitive" as const } } },
+                      { account: { code: { contains: search, mode: "insensitive" as const } } },
+                    ],
+                  },
+                },
+              },
               // Journal.id is a UUID column -- Prisma's UUID filter only supports exact equality,
               // not `contains`, so only add it when the search term is itself a full UUID.
               ...(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(search) ? [{ id: search }] : []),

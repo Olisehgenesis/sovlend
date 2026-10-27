@@ -6,6 +6,7 @@ import { redirect } from "next/navigation";
 
 import { LiveSearchInput } from "@/components/live-search-input";
 import { auth } from "@/lib/auth";
+import { statusLabel } from "@/lib/status-label";
 import { prisma } from "@/lib/prisma";
 import { clientScopeWhere, getUserDataScope } from "@/modules/identity/application/data-scope";
 
@@ -196,7 +197,7 @@ export default async function ClientsPage({
             return (
               <Link
                 aria-current={requestedStatus === status ? "page" : undefined}
-                className={`status ${requestedStatus === status ? statusMeta.tone : "review"}`}
+                className={requestedStatus === status ? `status ${statusMeta.tone}` : "filter-chip"}
                 href={statusFilterHref(status)}
                 key={status}
               >
@@ -240,7 +241,7 @@ export default async function ClientsPage({
                   <td>{client.mobileNumber ?? "Not provided"}</td>
                   <td>{client.office.name}</td>
                   <td>
-                    <span className={`status ${clientStatusTone(client.status)}`}>{client.status}</span>
+                    <span className={`status ${clientStatusTone(client.status)}`}>{statusLabel(client.status)}</span>
                   </td>
                 </tr>
               ))}

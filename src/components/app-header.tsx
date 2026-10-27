@@ -20,7 +20,27 @@ type NavSection = {
   label: string;
   items: NavItem[];
   dropdownClassName?: string;
+  quiet?: boolean;
 };
+
+type SearchSuggestion = {
+  kind: string;
+  label: string;
+  detail: string;
+  href: string;
+};
+
+function sectionIsCurrent(id: string, pathname: string) {
+  if (id === "clients") return pathname.startsWith("/clients");
+  if (id === "loans") return pathname.startsWith("/loans");
+  if (id === "accounts") return pathname.startsWith("/savings-accounts");
+  if (id === "groups") return pathname.startsWith("/groups");
+  if (id === "accounting") return pathname.startsWith("/backoffice/accounting") || pathname.startsWith("/reports/accounting");
+  if (id === "reports") return pathname.startsWith("/reports") && !pathname.startsWith("/reports/accounting");
+  if (id === "docs") return pathname.startsWith("/docs");
+  if (id === "more") return ["/backoffice", "/admin", "/settings", "/donations", "/donate"].some((prefix) => pathname.startsWith(prefix)) && !pathname.startsWith("/backoffice/accounting");
+  return false;
+}
 
 function renderNavItems(items: NavItem[], onNavigate: () => void, variant: "desktop" | "mobile") {
   return items.map((item) => {
@@ -61,6 +81,11 @@ export function AppHeader({
   const [openMenu, setOpenMenu] = useState<string | null>(null);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
+  const [suggestions, setSuggestions] = useState<SearchSuggestion[]>([]);
+  const [suggestionsOpen, setSuggestionsOpen] = useState(false);
+  const shortcutLabel = typeof navigator === "undefined" || !/Mac|iPhone|iPad/.test(navigator.userAgent) ? "Ctrl K" : "⌘K";
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const mobileSearchInputRef = useRef<HTMLInputElement>(null);
   const activeQuery = searchParams.get("query") ?? "";
   const searchFieldKey = `${pathname}:${activeQuery}`;
   const mobileNavTitleId = "mobile-navigation-title";
@@ -211,6 +236,21 @@ export function AppHeader({
     });
   }
 
+  const dailySectionIds = new Set(["clients", "loans", "accounts", "groups"]);
+  const quietSectionIds = new Set(["accounting", "reports", "docs"]);
+  const parkedSections = navSections.filter((section) => !dailySectionIds.has(section.id) && !quietSectionIds.has(section.id));
+  const moreItems: NavItem[] = parkedSections.flatMap((section) => [
+    { type: "group" as const, key: `more-${section.id}`, label: section.label },
+    ...section.items,
+  ]);
+  const visibleSections: NavSection[] = [
+    ...navSections.filter((section) => dailySectionIds.has(section.id)),
+    ...navSections.filter((section) => quietSectionIds.has(section.id)).map((section) => ({ ...section, quiet: true })),
+    ...(moreItems.length
+      ? [{ id: "more", label: "More", quiet: true, items: moreItems, dropdownClassName: "header-dropdown header-dropdown-reports" }]
+      : []),
+  ];
+
   useEffect(() => {
     const timeout = window.setTimeout(() => {
       setOpenMenu(null);
@@ -285,12 +325,110 @@ export function AppHeader({
     return () => mediaQuery.removeEventListener("change", handleViewportChange);
   }, []);
 
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setSuggestionsOpen(false);
+        return;
+      }
+      if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== "k") return;
+      event.preventDefault();
+      if (window.matchMedia("(max-width: 760px)").matches) {
+        setMobileNavOpen(true);
+        window.setTimeout(() => mobileSearchInputRef.current?.focus(), 0);
+        return;
+      }
+      searchInputRef.current?.focus();
+      searchInputRef.current?.select();
+    }
+
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, []);
+
   function toggleMenu(menu: string) {
+    setSuggestionsOpen(false);
     setOpenMenu((current) => (current === menu ? null : menu));
   }
 
   function closeMenus() {
     setOpenMenu(null);
+    setSuggestionsOpen(false);
+  }
+
+  async function loadSuggestions() {
+    try {
+      const response = await fetch("/api/search?suggest=recent", {
+        headers: { accept: "application/json" },
+        cache: "no-store",
+      });
+      if (!response.ok) {
+        setSuggestionsOpen(false);
+        return;
+      }
+      const data = (await response.json()) as { items?: SearchSuggestion[] };
+      const items = Array.isArray(data.items) ? data.items.filter((item) => typeof item.href === "string" && item.href.startsWith("/")) : [];
+      setSuggestions(items);
+      setSuggestionsOpen(items.length > 0);
+    } catch {
+      setSuggestionsOpen(false);
+    }
+  }
+
+  function renderSearch(variant: "desktop" | "mobile") {
+    return (
+      <form
+        className={`header-global-search${variant === "mobile" ? " header-global-search-mobile" : ""}${suggestionsOpen ? " showing-suggestions" : ""}`}
+        onBlur={(event) => {
+          const next = event.relatedTarget;
+          if (next instanceof Node && event.currentTarget.contains(next)) return;
+          setSuggestionsOpen(false);
+        }}
+        onSubmit={handleGlobalSearch}
+        role="search"
+      >
+        <input
+          aria-label="Search clients, loans, savings accounts, or groups"
+          autoComplete="off"
+          defaultValue={activeQuery}
+          key={searchFieldKey}
+          name="query"
+          onChange={(event) => {
+            if (event.target.value.trim()) setSuggestionsOpen(false);
+          }}
+          onFocus={(event) => {
+            if (!event.currentTarget.value.trim()) void loadSuggestions();
+          }}
+          placeholder="Search client, account or loan"
+          ref={variant === "desktop" ? searchInputRef : mobileSearchInputRef}
+          spellCheck={false}
+          type="search"
+        />
+        <kbd className="header-search-kbd" suppressHydrationWarning>{shortcutLabel}</kbd>
+        <button aria-label="Search records" disabled={isSearching} type="submit">
+          {isSearching ? <LoaderCircle className="spin" size={15} /> : <Search size={15} />}
+        </button>
+        {suggestionsOpen && suggestions.length > 0 ? (
+          <div className={`header-search-suggest${variant === "mobile" ? " header-search-suggest-inline" : ""}`} onMouseDown={(event) => event.preventDefault()}>
+            <p>Recent</p>
+            {suggestions.map((item) => (
+              <Link
+                href={item.href}
+                key={`${variant}-${item.href}`}
+                onClick={() => {
+                  closeMenus();
+                  closeMobileNavigation();
+                }}
+              >
+                <span>{item.kind}</span>
+                <strong>{item.label}</strong>
+                <small>{item.detail}</small>
+              </Link>
+            ))}
+          </div>
+        ) : null}
+      </form>
+    );
   }
 
   function toggleMobileNavigation() {
@@ -356,35 +494,26 @@ export function AppHeader({
         {officeName ? <small>{officeName}</small> : null}
       </div>
       <nav aria-label="Section navigation" className="header-nav" ref={navRef}>
-        {navSections.map((section) => (
-          <details key={section.id} open={openMenu === section.id}>
-            <summary
-              onClick={(event) => {
-                event.preventDefault();
-                toggleMenu(section.id);
-              }}
-            >
-              {section.label}
-              <ChevronDown size={13} />
-            </summary>
-            <div className={section.dropdownClassName ?? "header-dropdown"}>{renderNavItems(section.items, closeMenus, "desktop")}</div>
-          </details>
-        ))}
-        <form className="header-global-search" onSubmit={handleGlobalSearch} role="search">
-          <input
-            aria-label="Search clients, loans, savings accounts, or groups"
-            autoComplete="off"
-            defaultValue={activeQuery}
-            key={searchFieldKey}
-            name="query"
-            placeholder="Search client, account or loan"
-            spellCheck={false}
-            type="search"
-          />
-          <button aria-label="Search records" disabled={isSearching} type="submit">
-            {isSearching ? <LoaderCircle className="spin" size={15} /> : <Search size={15} />}
-          </button>
-        </form>
+        {visibleSections.map((section) => {
+          const current = sectionIsCurrent(section.id, pathname);
+          return (
+            <details key={section.id} open={openMenu === section.id}>
+              <summary
+                aria-current={current ? "page" : undefined}
+                className={[section.quiet ? "more-menu" : "", current ? "active" : ""].filter(Boolean).join(" ") || undefined}
+                onClick={(event) => {
+                  event.preventDefault();
+                  toggleMenu(section.id);
+                }}
+              >
+                {section.label}
+                <ChevronDown size={13} />
+              </summary>
+              <div className={section.dropdownClassName ?? "header-dropdown"}>{renderNavItems(section.items, closeMenus, "desktop")}</div>
+            </details>
+          );
+        })}
+        {renderSearch("desktop")}
       </nav>
       {canManageInvestors ? <NotificationBell /> : null}
       <AccountMenu />
@@ -401,8 +530,9 @@ export function AppHeader({
             </button>
           </div>
           <nav aria-label="Mobile section navigation" className="mobile-nav-panel-body">
-            {navSections.map((section) => (
-              <details className="mobile-nav-section" key={section.id}>
+            {renderSearch("mobile")}
+            {visibleSections.map((section) => (
+              <details className="mobile-nav-section" key={`${section.id}-${pathname}`} open={sectionIsCurrent(section.id, pathname) ? true : undefined}>
                 <summary>
                   <span>{section.label}</span>
                   <ChevronDown size={16} />

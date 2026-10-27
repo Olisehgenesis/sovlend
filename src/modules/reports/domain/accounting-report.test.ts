@@ -388,7 +388,7 @@ describe("getJournalReconciliationReport", () => {
     expect(findMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ NOT: { referenceType: { startsWith: "MANUAL_" } } }) }));
   });
 
-  it("includes a case-insensitive OR search across referenceId, narration, and journal id", async () => {
+  it("includes a case-insensitive OR search across reference, narration, payee, and account name or code", async () => {
     const findMany = vi.fn<(args: { where: { OR?: unknown[] } }) => Promise<never[]>>(async () => []);
     const db = { journal: { findMany } } as never;
     await getJournalReconciliationReport(db, scope, {
@@ -404,6 +404,17 @@ describe("getJournalReconciliationReport", () => {
       { narration: { contains: "LN0001", mode: "insensitive" } },
       { payeeName: { contains: "LN0001", mode: "insensitive" } },
       { payeeReference: { contains: "LN0001", mode: "insensitive" } },
+      {
+        lines: {
+          some: {
+            OR: [
+              { memo: { contains: "LN0001", mode: "insensitive" } },
+              { account: { name: { contains: "LN0001", mode: "insensitive" } } },
+              { account: { code: { contains: "LN0001", mode: "insensitive" } } },
+            ],
+          },
+        },
+      },
     ]);
   });
 

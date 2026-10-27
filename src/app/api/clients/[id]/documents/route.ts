@@ -7,6 +7,7 @@ import { prisma } from "@/lib/prisma";
 import { AuthorizationService, PermissionDeniedError } from "@/modules/identity/application/authorization-service";
 import { clientScopeWhere, getUserDataScope } from "@/modules/identity/application/data-scope";
 import { permissions } from "@/modules/identity/domain/permissions";
+import { profileImageType } from "@/modules/clients/domain/profile-image";
 
 const MAX_BYTES = 15 * 1024 * 1024;
 
@@ -37,6 +38,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   if (!name) return NextResponse.json({ error: "Document name is required" }, { status: 400 });
   if (!(file instanceof File)) return NextResponse.json({ error: "A file is required" }, { status: 400 });
   if (file.size === 0 || file.size > MAX_BYTES) return NextResponse.json({ error: "File must be between 1 byte and 15MB" }, { status: 400 });
+  if (setAsPhoto && !profileImageType(file.type || "")) return NextResponse.json({ error: "Profile photo must be an image" }, { status: 400 });
   if (identifierId) {
     const identifier = await prisma.clientIdentifier.findFirst({ where: { id: identifierId, clientId: client.id } });
     if (!identifier) return NextResponse.json({ error: "Identity not found" }, { status: 404 });
@@ -49,7 +51,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   const bytes = Buffer.from(await file.arrayBuffer());
   const sha256 = await storeDocumentBytes(bytes);
 
-  const document = await prisma.document.create({ data: { clientId: client.id, name, description: description || null, objectKey: sha256, sha256, mediaType: file.type || "application/octet-stream", identifierId: identifierId || null, familyMemberId: familyMemberId || null } });
+  const document = await prisma.document.create({ data: { clientId: client.id, name, description: description || null, objectKey: sha256, sha256, mediaType: profileImageType(file.type || "") ?? (file.type || "application/octet-stream"), isProfilePhoto: setAsPhoto, identifierId: identifierId || null, familyMemberId: familyMemberId || null } });
   if (setAsPhoto) await prisma.client.update({ where: { id: client.id }, data: { photoDocumentId: document.id } });
   if (setAsSignature) await prisma.client.update({ where: { id: client.id }, data: { signatureDocumentId: document.id } });
   return NextResponse.json({ id: document.id }, { status: 201 });

@@ -10,6 +10,7 @@ import { Breadcrumbs } from "@/components/breadcrumbs";
 import { DisburseLoanForm } from "@/components/disburse-loan-form";
 import { SubmitLoanDraftButton } from "@/components/submit-loan-draft-button";
 import { EditLoanApplicationForm } from "@/components/edit-loan-application-form";
+import { LoanDeleteRejectPanel } from "@/components/loan-delete-reject-panel";
 import { LoanPreviewButton, type LoanPreviewInput } from "@/components/loan-preview-panel";
 import { fromMinor } from "@/components/loan-application-form-shared";
 import { auth } from "@/lib/auth";
@@ -19,6 +20,7 @@ import { getUserDataScope } from "@/modules/identity/application/data-scope";
 import { permissions } from "@/modules/identity/domain/permissions";
 import { assignableStaffWhere } from "@/modules/identity/domain/staff-roles";
 import { canEditSubmittedLoanApplication, canSelfApproveLoanApplication } from "@/modules/lending/application/loan-application-access";
+import { loanDecisionAvailability } from "@/modules/lending/application/loan-application-decision";
 import { isLoanApplicationExpired } from "@/modules/lending/application/loan-application-expiry";
 import { readChargeSnapshot, readCollateralSnapshot, readTermsSnapshot } from "@/modules/lending/application/loan-application-payload";
 import { CRB_TOTAL_MINOR, percentOfMinor, isStatutoryDisbursementCharge, isLoanLifExempt, LIF_SAVINGS_SHORT_NAME, MEMBER_CONTRIBUTION_SAVINGS_SHORT_NAME, SECURITY_SAVINGS_SHORT_NAME } from "@/modules/lending/domain/disbursement-payout";
@@ -172,6 +174,7 @@ export default async function LoanApplicationPage({
       actorSystemRole: actor?.systemRole,
       submittedById: application.submittedById,
     });
+  const loanDecision = await loanDecisionAvailability(prisma, scope, { applicationId: application.id, actorUserId: session.user.id });
 
   const termsSnapshot = readTermsSnapshot(application.termsSnapshot);
   const reviewedLoan = application.loan?.status === "DRAFT" ? null : application.loan;
@@ -383,6 +386,14 @@ export default async function LoanApplicationPage({
           </span>
         </div>
       </header>
+      {loanDecision?.canDelete || loanDecision?.canReject ? (
+        <LoanDeleteRejectPanel
+          applicationId={application.id}
+          canDelete={loanDecision.canDelete}
+          canReject={loanDecision.canReject}
+          expectedUpdatedAt={loanDecision.updatedAt.toISOString()}
+        />
+      ) : null}
       <section className="review-grid">
         <article className="panel">
           <div className="panel-heading"><h2>Guarantors</h2></div>

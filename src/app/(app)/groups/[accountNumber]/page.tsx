@@ -9,6 +9,7 @@ import { AddGroupMemberForm, AddGroupNoteForm, OpenGroupJournalContributionButto
 import { ApproveSavingsAccountButton, DepositWithdrawForm } from "@/components/client-account-panel";
 import { StaffAssignment } from "@/components/loan-officer-assignment";
 import { auth } from "@/lib/auth";
+import { statusLabel } from "@/lib/status-label";
 import { prisma } from "@/lib/prisma";
 import { AuthorizationService } from "@/modules/identity/application/authorization-service";
 import { getUserDataScope, groupScopeWhere } from "@/modules/identity/application/data-scope";
@@ -46,7 +47,7 @@ function savingsStatusTone(status: string) {
 }
 
 function savingsStatusLabel(status: string) {
-  return status === "SUBMITTED" ? "Pending approval" : status.replaceAll("_", " ");
+  return statusLabel(status);
 }
 
 function savingsAccountTypeLabel(accountType: string) {
@@ -484,7 +485,7 @@ export default async function GroupDetailPage({ params, searchParams }: { params
                         </td>
                         <td>
                           <span className={`status ${loanSummary.inArrears ? "arrears-mark" : member.client.status === "ACTIVE" ? "up-to-date" : "review"}`}>
-                            {loanSummary.inArrears ? "In arrears" : member.client.status}
+                            {loanSummary.inArrears ? "In arrears" : statusLabel(member.client.status)}
                           </span>
                         </td>
                         <td>
@@ -731,7 +732,7 @@ export default async function GroupDetailPage({ params, searchParams }: { params
                             <td className="mono">{loan.client?.accountNumber ?? "—"}</td>
                             <td className="mono">{loan.accountNumber}</td>
                             <td>{loan.product.name}</td>
-                            <td><span className={`status ${loan.status === "ACTIVE" ? "up-to-date" : loan.status === "IN_ARREARS" ? "in-arrears" : "review"}`}>{loan.status.replaceAll("_", " ")}</span></td>
+                            <td><span className={`status ${loan.status === "ACTIVE" ? "up-to-date" : loan.status === "IN_ARREARS" ? "in-arrears" : "review"}`}>{statusLabel(loan.status)}</span></td>
                             <td>{formatMinor(principalOutstanding, loan.denominationCurrency)}</td>
                           </tr>
                         );
@@ -805,7 +806,7 @@ export default async function GroupDetailPage({ params, searchParams }: { params
                               <Link className="row-link" href={`/loans/${loan.id}`} aria-label={`Open loan ${loan.accountNumber}`} />
                             </td>
                             <td>{loan.product.name}</td>
-                            <td><span className={`status ${loan.status === "ACTIVE" ? "up-to-date" : loan.status === "IN_ARREARS" ? "in-arrears" : "review"}`}>{loan.status.replaceAll("_", " ")}</span></td>
+                            <td><span className={`status ${loan.status === "ACTIVE" ? "up-to-date" : loan.status === "IN_ARREARS" ? "in-arrears" : "review"}`}>{statusLabel(loan.status)}</span></td>
                             <td>{formatMinor(loan.principalMinor, loan.denominationCurrency)}</td>
                           </tr>
                         ))}

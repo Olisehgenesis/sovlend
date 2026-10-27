@@ -1,10 +1,13 @@
-import { Download, FileSpreadsheet } from "lucide-react";
+import { BookOpenText, Download } from "lucide-react";
 import { headers } from "next/headers";
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { z } from "zod";
 
 import { Breadcrumbs } from "@/components/breadcrumbs";
+import { LiveSearchInput } from "@/components/live-search-input";
 import { ReportPicker } from "@/components/report-picker";
+import { journalSearchHref } from "@/lib/journal-search-href";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { AuthorizationService } from "@/modules/identity/application/authorization-service";
@@ -18,18 +21,42 @@ import {
   currentMonthDateRange,
   formatDateInputValue,
   formatReportDate,
+  getGeneralLedgerReport,
   getJournalReconciliationReport,
-  journalStatusLabel,
+  isManualJournalReferenceType,
   listAccountingReportAccounts,
   listAccountingReportOffices,
+  minorToAmountInputValue,
   normalizeDateRange,
   parseAmountFilterMinor,
   parseDateInput,
   resolveAccountFilter,
+  resolveDatePreset,
   resolveEntrySourceFilter,
   resolveOfficeFilter,
-  minorToAmountInputValue,
+  sideLabel,
+  summarizeBalance,
+  type JournalReconciliationJournal,
+  type ReportDatePreset,
 } from "@/modules/reports/domain/accounting-report";
+
+import { JournalAccountField } from "./_components/journal-account-field";
+import { ScrollToPosted } from "./_components/scroll-to-posted";
+
+const DATE_PRESETS: { value: ReportDatePreset; label: string }[] = [
+  { value: "today", label: "Today" },
+  { value: "week", label: "This week" },
+  { value: "month", label: "This month" },
+  { value: "year", label: "This year" },
+];
+
+function visibleLines(journal: JournalReconciliationJournal, accountId: string | null, search: string | null) {
+  const lines = accountId ? journal.lines.filter((line) => line.id === accountId) : journal.lines;
+  if (!search) return lines;
+  const query = search.trim().toLowerCase();
+  const accountMatches = lines.filter((line) => line.name.toLowerCase().includes(query) || line.code.toLowerCase().includes(query));
+  return accountMatches.length > 0 ? accountMatches : lines;
+}
 
 export default async function JournalReconciliationPage({
   searchParams,
@@ -43,6 +70,8 @@ export default async function JournalReconciliationPage({
     search?: string;
     minAmount?: string;
     maxAmount?: string;
+    preset?: string;
+    journalId?: string;
   }>;
 }) {
   const session = await auth.api.getSession({ headers: await headers() });
@@ -51,12 +80,18 @@ export default async function JournalReconciliationPage({
   const scope = await getUserDataScope(prisma, session.user.id);
   if (!scope) redirect("/");
 
-  const allowed = await new AuthorizationService(prisma).isAllowedForOrganization(
+  const authorization = new AuthorizationService(prisma);
+  const allowed = await authorization.isAllowedForOrganization(
     session.user.id,
     scope.organizationId,
     permissions.reportJournalReconciliation,
   );
   if (!allowed) redirect("/reports");
+  const canReadLedger = await authorization.isAllowedForOrganization(
+    session.user.id,
+    scope.organizationId,
+    permissions.reportGeneralLedger,
+  );
 
   const params = await searchParams;
   const defaults = currentMonthDateRange();
@@ -65,57 +100,128 @@ export default async function JournalReconciliationPage({
     listAccountingReportAccounts(prisma),
     loadReportPickerOptions(prisma, session.user.id, scope.organizationId),
   ]);
-  const { startDate, endDate } = normalizeDateRange(
-    parseDateInput(params.startDate, defaults.startDate),
-    parseDateInput(params.endDate, defaults.endDate),
-  );
+  const preset = params.preset === "today" || params.preset === "week" || params.preset === "month" || params.preset === "year"
+    ? params.preset
+    : null;
+  const { startDate, endDate } = preset
+    ? resolveDatePreset(new Date(), preset)
+    : normalizeDateRange(
+        parseDateInput(params.startDate, defaults.startDate),
+        parseDateInput(params.endDate, defaults.endDate),
+      );
   const officeId = resolveOfficeFilter(offices, params.officeId ?? null);
   const accountId = resolveAccountFilter(accounts, params.accountId ?? null);
   const entrySource = resolveEntrySourceFilter(params.entrySource ?? null);
   const search = params.search?.trim() || null;
   const minAmountMinor = parseAmountFilterMinor(params.minAmount);
   const maxAmountMinor = parseAmountFilterMinor(params.maxAmount);
-  const report = await getJournalReconciliationReport(prisma, scope, {
-    startDate,
-    endDate,
-    officeId,
-    accountId,
-    entrySource,
-    search,
-    minAmountMinor,
-    maxAmountMinor,
-  });
-  const activeOfficeName = offices.find((office) => office.id === officeId)?.name ?? "All offices";
-  const queryString = buildReportQueryString({
-    startDate: formatDateInputValue(startDate),
-    endDate: formatDateInputValue(endDate),
-    officeId,
-    accountId,
-    entrySource: entrySource === "ALL" ? null : entrySource,
-    search,
-    minAmount: minAmountMinor === null ? null : minorToAmountInputValue(minAmountMinor),
-    maxAmount: maxAmountMinor === null ? null : minorToAmountInputValue(maxAmountMinor),
-  });
-  const apiHref = `/api/reports/accounting/journal-reconciliation${queryString ? `?${queryString}` : ""}`;
-  const exportHref = `${apiHref}${queryString ? "&" : "?"}format=csv`;
-  const generalLedgerHref = (lineAccountId: string) =>
-    `/reports/accounting/general-ledger?${buildReportQueryString({
-      startDate: formatDateInputValue(startDate),
-      endDate: formatDateInputValue(endDate),
+  const highlightedJournalId = z.uuid().safeParse(params.journalId).success ? params.journalId ?? null : null;
+  const [report, ledger] = await Promise.all([
+    getJournalReconciliationReport(prisma, scope, {
+      startDate,
+      endDate,
       officeId,
-      accountId: lineAccountId,
-    })}`;
+      accountId,
+      entrySource,
+      search,
+      minAmountMinor,
+      maxAmountMinor,
+    }),
+    canReadLedger && accountId
+      ? getGeneralLedgerReport(prisma, scope, { startDate, endDate, officeId, accountId })
+      : Promise.resolve(null),
+  ]);
+  const selectedAccount = accounts.find((account) => account.id === accountId) ?? null;
+  const activeOfficeName = offices.find((office) => office.id === officeId)?.name ?? "All offices";
+  const startValue = formatDateInputValue(startDate);
+  const endValue = formatDateInputValue(endDate);
+  const minAmount = minAmountMinor === null ? null : minorToAmountInputValue(minAmountMinor);
+  const maxAmount = maxAmountMinor === null ? null : minorToAmountInputValue(maxAmountMinor);
+  const sourceValue = entrySource === "ALL" ? null : entrySource;
+  const filterHref = (overrides: Parameters<typeof journalSearchHref>[0] = {}) => journalSearchHref({
+    startDate: startValue,
+    endDate: endValue,
+    officeId,
+    accountId,
+    entrySource: sourceValue,
+    search,
+    minAmount,
+    maxAmount,
+    ...overrides,
+  });
+  const activePreset = DATE_PRESETS.find((item) => {
+    const range = resolveDatePreset(new Date(), item.value);
+    return formatDateInputValue(range.startDate) === startValue && formatDateInputValue(range.endDate) === endValue;
+  })?.value ?? null;
+  const accountOptions = [
+    { value: "", label: "All accounts" },
+    ...accounts.map((account) => ({
+      value: account.id,
+      label: `${account.code} · ${account.name}`,
+      searchText: `${account.type} ${account.currencyCode}`,
+    })),
+  ];
+  const runningByLineId = new Map(ledger?.entries.map((entry) => [entry.id, entry]) ?? []);
+  const accountBalance = ledger?.accountBalances.find((balance) => balance.account.id === accountId) ?? null;
+  const showRunningBalance = Boolean(accountBalance) && !search && entrySource === "ALL" && minAmountMinor === null && maxAmountMinor === null;
+  const rows = report.journals.flatMap((journal) => {
+    const lines = visibleLines(journal, accountId, search);
+    return lines.map((line, index) => ({
+      line,
+      journal,
+      anchor: index === 0,
+    }));
+  }).sort((left, right) => {
+    const dateCompare = left.journal.businessDate.getTime() - right.journal.businessDate.getTime();
+    if (dateCompare !== 0) return dateCompare;
+    return left.journal.id.localeCompare(right.journal.id);
+  });
+  const highlightedVisible = highlightedJournalId ? rows.some((row) => row.journal.id === highlightedJournalId) : false;
+  const unbalanced = report.journals.filter((journal) => !journal.isBalanced);
+  const extraFiltersOpen = entrySource !== "ALL" || minAmountMinor !== null || maxAmountMinor !== null;
+  const chips = [
+    selectedAccount ? { label: `${selectedAccount.code} · ${selectedAccount.name}`, href: filterHref({ accountId: null }) } : null,
+    officeId ? { label: activeOfficeName, href: filterHref({ officeId: null }) } : null,
+    entrySource === "MANUAL" ? { label: "Manual entries", href: filterHref({ entrySource: null }) } : null,
+    entrySource === "SYSTEM" ? { label: "System entries", href: filterHref({ entrySource: null }) } : null,
+    search ? { label: `“${search}”`, href: filterHref({ search: null }) } : null,
+    minAmount ? { label: `At least ${minAmount}`, href: filterHref({ minAmount: null }) } : null,
+    maxAmount ? { label: `At most ${maxAmount}`, href: filterHref({ maxAmount: null }) } : null,
+  ].filter((chip): chip is { label: string; href: string } => chip !== null);
+  const exportHref = `/api/reports/accounting/journal-reconciliation?${buildReportQueryString({
+    startDate: startValue,
+    endDate: endValue,
+    officeId,
+    accountId,
+    entrySource: sourceValue,
+    search,
+    minAmount,
+    maxAmount,
+    format: "csv",
+  })}`;
+  const journalHref = (journalId: string) => `/reports/accounting/general-ledger/entries/${journalId}?${buildReportQueryString({
+    startDate: startValue,
+    endDate: endValue,
+    officeId,
+    accountId,
+    search,
+    entrySource: sourceValue,
+    minAmount,
+    maxAmount,
+    from: "search",
+  })}`;
 
   return (
     <main className="directory-page">
-      <Breadcrumbs items={[{ label: "Reports", href: "/reports" }, { label: "Accounting", href: "/reports" }, { label: "Search Journal Entries" }]} />
+      <ScrollToPosted journalId={highlightedVisible ? highlightedJournalId : null} />
+      <Breadcrumbs items={[{ label: "Reports", href: "/reports" }, { label: "Accounting", href: "/reports" }, { label: "Search journal entries" }]} />
       <header className="directory-header">
         <div>
-          <p className="eyebrow">Accounting statements</p>
-          <h1>Search Journal Entries</h1>
+          <p className="eyebrow">Accounting</p>
+          <h1>{selectedAccount ? selectedAccount.name : "Search journal entries"}</h1>
           <p>
-            Journal integrity review from {formatReportDate(report.startDate)} to {formatReportDate(report.endDate)} · {activeOfficeName}
-            {entrySource !== "ALL" ? ` · ${entrySource === "MANUAL" ? "manual entries only" : "system-generated only"}` : ""}
+            {selectedAccount ? `${selectedAccount.code} · ${accountTypeLabel(selectedAccount.type)} · ` : "All accounts · "}
+            {formatReportDate(report.startDate)} to {formatReportDate(report.endDate)} · {activeOfficeName}
           </p>
         </div>
         <ReportPicker current="/reports/accounting/journal-reconciliation" options={pickerOptions} />
@@ -123,27 +229,37 @@ export default async function JournalReconciliationPage({
           <a className="secondary-action" href={exportHref}>
             <Download size={16} /> Export CSV
           </a>
-          <a className="secondary-action" href={apiHref}>
-            API JSON
-          </a>
-          <Link className="secondary-action" href="/reports">
-            Reports
-          </Link>
         </div>
       </header>
 
       <section className="panel form-panel">
+        <div className="quick-filters">
+          <span className="quick-filters-label">Quick range</span>
+          <div className="quick-filters-pills">
+            {DATE_PRESETS.map((item) => (
+              <Link
+                className={`pill-link ${activePreset === item.value ? "active" : ""}`}
+                href={filterHref({ preset: item.value, startDate: null, endDate: null })}
+                key={item.value}
+              >
+                {item.label}
+              </Link>
+            ))}
+          </div>
+        </div>
         <form className="entity-form compact-mapping" method="GET">
+          <LiveSearchInput paramName="search" placeholder="Search account, client, narration, or reference" />
+          {search ? <input name="search" type="hidden" value={search} /> : null}
           <fieldset>
-            <legend>Filters</legend>
+            <legend>From this date to this date</legend>
             <div className="form-row three">
               <label>
                 Start date
-                <input defaultValue={formatDateInputValue(startDate)} name="startDate" required type="date" />
+                <input defaultValue={startValue} name="startDate" required type="date" />
               </label>
               <label>
                 End date
-                <input defaultValue={formatDateInputValue(endDate)} name="endDate" required type="date" />
+                <input defaultValue={endValue} name="endDate" required type="date" />
               </label>
               <label>
                 Office
@@ -158,148 +274,176 @@ export default async function JournalReconciliationPage({
               </label>
             </div>
             <label>
-              GL account
-              <select defaultValue={accountId ?? ""} name="accountId">
-                <option value="">All accounts</option>
-                {accounts.map((account) => (
-                  <option key={account.id} value={account.id}>
-                    {account.code} · {account.name}
-                  </option>
-                ))}
-              </select>
+              Account
+              <JournalAccountField defaultValue={accountId ?? ""} options={accountOptions} />
             </label>
-            <div className="form-row three">
-              <label>
-                Entry type
-                <select defaultValue={entrySource} name="entrySource">
-                  <option value="ALL">All entries</option>
-                  <option value="MANUAL">Manual entries only</option>
-                  <option value="SYSTEM">System-generated only</option>
-                </select>
-              </label>
-              <label>
-                Min amount (UGX)
-                <input defaultValue={minAmountMinor === null ? "" : minorToAmountInputValue(minAmountMinor)} inputMode="decimal" name="minAmount" pattern="[0-9]+([.][0-9]{1,2})?" placeholder="0.00" />
-              </label>
-              <label>
-                Max amount (UGX)
-                <input defaultValue={maxAmountMinor === null ? "" : minorToAmountInputValue(maxAmountMinor)} inputMode="decimal" name="maxAmount" pattern="[0-9]+([.][0-9]{1,2})?" placeholder="No limit" />
-              </label>
-            </div>
-            <label>
-              Search
-              <input defaultValue={search ?? ""} name="search" placeholder="Client name, journal ID, transaction ID, or narration" />
-            </label>
+            <details className="more-filters" {...(extraFiltersOpen ? { open: true } : {})}>
+              <summary>More filters</summary>
+              <div className="form-row three">
+                <label>
+                  Entry type
+                  <select defaultValue={entrySource} name="entrySource">
+                    <option value="ALL">All entries</option>
+                    <option value="MANUAL">Manual entries only</option>
+                    <option value="SYSTEM">System-generated only</option>
+                  </select>
+                </label>
+                <label>
+                  Min journal amount
+                  <input defaultValue={minAmount ?? ""} inputMode="decimal" name="minAmount" pattern="[0-9]+([.][0-9]{1,2})?" placeholder="0.00" />
+                </label>
+                <label>
+                  Max journal amount
+                  <input defaultValue={maxAmount ?? ""} inputMode="decimal" name="maxAmount" pattern="[0-9]+([.][0-9]{1,2})?" placeholder="No limit" />
+                </label>
+              </div>
+            </details>
           </fieldset>
           <div className="form-actions">
             <button className="invest-button" type="submit">
-              Apply filters
+              Apply dates
             </button>
           </div>
         </form>
+        {chips.length > 0 ? (
+          <div className="journal-filter-chips">
+            {chips.map((chip) => (
+              <Link aria-label={`Remove ${chip.label}`} className="pill-link" href={chip.href} key={chip.label}>
+                {chip.label} <span aria-hidden="true">×</span>
+              </Link>
+            ))}
+            <Link className="pill-link" href={journalSearchHref({ startDate: startValue, endDate: endValue })}>
+              Clear filters
+            </Link>
+          </div>
+        ) : null}
       </section>
 
       <section className="panel">
         <div className="panel-heading">
           <div>
-            <h2>Reconciliation summary</h2>
+            <h2>{selectedAccount ? "Transactions on this account" : "Transactions"}</h2>
             <p>
-              {report.journalCount.toLocaleString()} journal{report.journalCount === 1 ? "" : "s"} · {report.issueCount.toLocaleString()} issue
-              {report.issueCount === 1 ? "" : "s"}
+              {rows.length.toLocaleString()} transaction{rows.length === 1 ? "" : "s"}
+              {" · "}
+              {report.journalCount.toLocaleString()} journal{report.journalCount === 1 ? "" : "s"}
             </p>
           </div>
-          <span className={`status ${report.issueCount === 0 ? "up-to-date" : "review"}`}>
-            {report.issueCount === 0 ? "No reconciliation issues" : "Issues detected"}
-          </span>
+          {unbalanced.length > 0 ? <span className="status review">Out of balance</span> : null}
         </div>
 
-        {!report.hasActivity ? (
+        {showRunningBalance && accountBalance ? (
+          <div className="ledger-balance-strip">
+            <div>
+              <span>Opening</span>
+              <strong>
+                {formatMinor(summarizeBalance(accountBalance.account.type, accountBalance.openingBalanceMinor).absoluteMinor, accountBalance.account.currencyCode)}{" "}
+                {sideLabel(summarizeBalance(accountBalance.account.type, accountBalance.openingBalanceMinor).balanceSide)}
+              </strong>
+            </div>
+            <div>
+              <span>Debits</span>
+              <strong>{formatMinor(accountBalance.debitTotalMinor, accountBalance.account.currencyCode)}</strong>
+            </div>
+            <div>
+              <span>Credits</span>
+              <strong>{formatMinor(accountBalance.creditTotalMinor, accountBalance.account.currencyCode)}</strong>
+            </div>
+            <div>
+              <span>Closing</span>
+              <strong>
+                {formatMinor(summarizeBalance(accountBalance.account.type, accountBalance.closingBalanceMinor).absoluteMinor, accountBalance.account.currencyCode)}{" "}
+                {sideLabel(summarizeBalance(accountBalance.account.type, accountBalance.closingBalanceMinor).balanceSide)}
+              </strong>
+            </div>
+          </div>
+        ) : null}
+
+        {highlightedJournalId && !highlightedVisible ? (
+          <p className="journal-issue-note">
+            The entry you just posted is outside this account or these dates.{" "}
+            <Link className="green-link" href={`/reports/accounting/general-ledger/entries/${highlightedJournalId}?from=search`}>
+              Open the entry
+            </Link>
+          </p>
+        ) : null}
+
+        {unbalanced.length > 0 ? (
+          <p className="journal-issue-note">
+            {unbalanced.length.toLocaleString()} journal{unbalanced.length === 1 ? "" : "s"} in this period {unbalanced.length === 1 ? "is" : "are"} out of balance.{" "}
+            {unbalanced.slice(0, 3).map((journal, index) => (
+              <span key={journal.id}>
+                {index > 0 ? " · " : null}
+                <Link className="green-link" href={journalHref(journal.id)}>
+                  {formatReportDate(journal.businessDate)}
+                </Link>
+              </span>
+            ))}
+          </p>
+        ) : null}
+
+        {rows.length === 0 ? (
           <div className="empty-state">
-            <FileSpreadsheet size={28} />
-            <strong>No journals found for this period</strong>
-            <p>The reconciliation report will populate when journals are recorded within the selected date range.</p>
+            <BookOpenText size={28} />
+            <strong>
+              {search
+                ? `Nothing matches “${search}”`
+                : selectedAccount
+                  ? `No transactions on ${selectedAccount.name}`
+                  : "No transactions in these dates"}
+            </strong>
+            <p>
+              {formatReportDate(report.startDate)} to {formatReportDate(report.endDate)}. Widen the dates, or clear a filter.
+            </p>
           </div>
         ) : (
-          <>
-            <div className="table-scroll">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Total debits</th>
-                    <th>Total credits</th>
-                    <th>Difference</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr>
-                    <td className="mono">{formatMinor(report.totalDebitsMinor, "UGX")}</td>
-                    <td className="mono">{formatMinor(report.totalCreditsMinor, "UGX")}</td>
-                    <td className="mono">{formatMinor(report.differenceMinor, "UGX")}</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-            {report.journals.map((journal) => (
-              <article className="panel" id={`journal-${journal.id}`} key={journal.id} style={{ marginTop: 20 }}>
-                <div className="panel-heading">
-                  <div>
-                    <h2>{formatReportDate(journal.businessDate)} · {journal.referenceType.replaceAll("_", " ")}</h2>
-                    <p>
-                      {journal.officeName} · {journalStatusLabel(journal.status)} · {journal.referenceId ?? journal.id}
-                      {journal.payeeName ? ` · ${journal.payeeName}` : ""}
-                    </p>
-                  </div>
-                  <span className={`status ${journal.isBalanced ? "up-to-date" : "review"}`}>
-                    {journal.isBalanced ? "Balanced" : "Out of balance"}
-                  </span>
-                </div>
-                <p>{journal.narration}</p>
-                <div className="table-scroll">
-                  <table className="clickable-rows">
-                    <thead>
-                      <tr>
-                        <th>Account</th>
-                        <th>Type</th>
-                        <th>Debit</th>
-                        <th>Credit</th>
-                        <th>Memo</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {journal.lines.map((line) => (
-                        <tr key={line.lineId}>
-                          <td>
-                            <strong>{line.code}</strong>
-                            <small>{line.name}</small>
-                            <Link className="row-link" href={generalLedgerHref(line.id)} aria-label={`Open ${line.code} · ${line.name} in the general ledger`} />
-                          </td>
-                          <td>{accountTypeLabel(line.type)}</td>
-                          <td className="mono">{line.direction === "DEBIT" ? formatMinor(line.amountMinor, "UGX") : "—"}</td>
-                          <td className="mono">{line.direction === "CREDIT" ? formatMinor(line.amountMinor, "UGX") : "—"}</td>
-                          <td>{line.memo ?? "—"}</td>
-                        </tr>
-                      ))}
-                      <tr>
+          <div className="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  {selectedAccount ? null : <th>Account</th>}
+                  <th>Description</th>
+                  <th className="numeric">Debit</th>
+                  <th className="numeric">Credit</th>
+                  {showRunningBalance ? <th className="numeric">Balance</th> : null}
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map(({ line, journal, anchor }) => {
+                  const running = runningByLineId.get(line.lineId);
+                  const runningSummary = running ? summarizeBalance(line.type, running.runningBalanceMinor) : null;
+                  return (
+                    <tr className={journal.id === highlightedJournalId ? "posted-journal" : undefined} id={anchor ? `journal-${journal.id}` : undefined} key={line.lineId}>
+                      <td>
+                        <Link className="green-link" href={journalHref(journal.id)}>{formatReportDate(journal.businessDate)}</Link>
+                        <small>View entry</small>
+                        {officeId ? null : <small>{journal.officeName}</small>}
+                      </td>
+                      {selectedAccount ? null : (
                         <td>
-                          <strong>Journal total</strong>
+                          <Link className="green-link" href={filterHref({ accountId: line.id })}>{line.name}</Link>
+                          <small>{line.code}</small>
                         </td>
-                        <td>—</td>
-                        <td className="mono">
-                          <strong>{formatMinor(journal.debitTotalMinor, "UGX")}</strong>
+                      )}
+                      <td>
+                        {line.memo ?? journal.narration}
+                        {journal.payeeName ? <small>{journal.payeeName}</small> : null}
+                        <small>{isManualJournalReferenceType(journal.referenceType) ? "Manual" : journal.referenceType.replaceAll("_", " ")}</small>
+                      </td>
+                      <td className="numeric">{line.direction === "DEBIT" ? formatMinor(line.amountMinor, line.currencyCode) : "—"}</td>
+                      <td className="numeric">{line.direction === "CREDIT" ? formatMinor(line.amountMinor, line.currencyCode) : "—"}</td>
+                      {showRunningBalance ? (
+                        <td className="numeric">
+                          {runningSummary ? `${formatMinor(runningSummary.absoluteMinor, line.currencyCode)} ${sideLabel(runningSummary.balanceSide)}` : "—"}
                         </td>
-                        <td className="mono">
-                          <strong>{formatMinor(journal.creditTotalMinor, "UGX")}</strong>
-                        </td>
-                        <td className="mono">
-                          <strong>{formatMinor(journal.differenceMinor, "UGX")}</strong>
-                        </td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-              </article>
-            ))}
-          </>
+                      ) : null}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         )}
       </section>
     </main>

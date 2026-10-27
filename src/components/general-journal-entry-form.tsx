@@ -6,6 +6,7 @@ import { useMemo, useState } from "react";
 import { toast } from "sonner";
 
 import { SearchableSelect } from "@/components/searchable-select";
+import { journalSearchHref } from "@/lib/journal-search-href";
 import { BrandActionButton } from "@/components/ui/brand-action-button";
 
 type LedgerAccountOption = { id: string; code: string; name: string; type: string; currencyCode: string };
@@ -151,7 +152,13 @@ export function GeneralJournalEntryForm({
       return;
     }
     toast.success("Journal entry posted");
-    router.push("/reports/accounting/journal-reconciliation");
+    const accountId = debitLines[0]?.ledgerAccountId ?? null;
+    router.push(journalSearchHref({
+      startDate: businessDate,
+      endDate: businessDate,
+      accountId,
+      journalId: typeof result.journalId === "string" ? result.journalId : null,
+    }));
     router.refresh();
   }
 
@@ -293,7 +300,7 @@ export function GeneralJournalEntryForm({
 
         <label>
           Client / payee name
-          <input value={payeeName} onChange={(event) => setPayeeName(event.target.value)} maxLength={200} placeholder="Search later by this name" />
+          <input value={payeeName} onChange={(event) => setPayeeName(event.target.value)} maxLength={200} placeholder="Optional. Shown when you look this entry up" />
         </label>
         <label>
           Comments

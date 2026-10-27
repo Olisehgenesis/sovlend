@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { statusLabel } from "@/lib/status-label";
 import { clientScopeWhere, getUserDataScope, groupScopeWhere, loanScopeWhere } from "@/modules/identity/application/data-scope";
 
 type SearchDestination = {
@@ -19,7 +20,50 @@ export async function GET(request: Request) {
   const scope = await getUserDataScope(prisma, session.user.id);
   if (!scope) return NextResponse.json({ error: "Workspace assignment required" }, { status: 403 });
 
-  const query = new URL(request.url).searchParams.get("q")?.trim() ?? "";
+  const url = new URL(request.url);
+  if (url.searchParams.get("suggest") === "recent") {
+    const [clients, loans] = await Promise.all([
+      prisma.client.findMany({
+        where: { organizationId: scope.organizationId, ...clientScopeWhere(scope) },
+        select: { accountNumber: true, firstName: true, middleName: true, lastName: true },
+        orderBy: { updatedAt: "desc" },
+        take: 4,
+      }),
+      prisma.loan.findMany({
+        where: { office: { organizationId: scope.organizationId }, ...loanScopeWhere(scope) },
+        select: {
+          id: true,
+          accountNumber: true,
+          status: true,
+          client: { select: { firstName: true, lastName: true } },
+          group: { select: { name: true } },
+        },
+        orderBy: { updatedAt: "desc" },
+        take: 4,
+      }),
+    ]);
+
+    return NextResponse.json({
+      items: [
+        ...clients.map((client) => ({
+          kind: "Client",
+          label: [client.firstName, client.middleName, client.lastName].filter(Boolean).join(" "),
+          detail: client.accountNumber,
+          href: `/clients/${client.accountNumber}`,
+        })),
+        ...loans.map((loan) => ({
+          kind: "Loan",
+          label: loan.accountNumber,
+          detail: [loan.client ? [loan.client.firstName, loan.client.lastName].filter(Boolean).join(" ") : loan.group?.name, statusLabel(loan.status)]
+            .filter(Boolean)
+            .join(" · "),
+          href: `/loans/${loan.id}`,
+        })),
+      ],
+    });
+  }
+
+  const query = url.searchParams.get("q")?.trim() ?? "";
   if (!query) return NextResponse.json(defaultDestination(""));
 
   const [clientExactMatches, groupExactMatches, loanExactMatches, savingsExactMatches] = await Promise.all([

@@ -3,7 +3,9 @@ import { headers } from "next/headers";
 import { processingFeeBps } from "@/modules/lending/domain/processing-fee";
 import { LoanFeesPanel } from "@/components/loan-fees-panel";
 import { ReturnLoanToDraftPanel } from "@/components/return-loan-to-draft-panel";
+import { LoanDeleteRejectPanel } from "@/components/loan-delete-reject-panel";
 import { canReturnLoanToDraft } from "@/modules/lending/application/return-loan-to-draft-access";
+import { loanDecisionAvailability } from "@/modules/lending/application/loan-application-decision";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import type { Prisma } from "@prisma/client";
@@ -43,6 +45,7 @@ import { generateRepaymentSchedule, readInterestDayCount } from "@/modules/lendi
 import { repaymentSplitFromAllocations } from "@/modules/lending/domain/repayment-allocation-split";
 import { installmentPaymentTiming } from "@/modules/lending/domain/repayment-timeliness";
 import { scheduleDateLockReason, utcDay } from "@/modules/lending/domain/schedule-date-change";
+import { statusLabel } from "@/lib/status-label";
 import { formatMinor } from "@/modules/money/domain/format-minor";
 import { displaySavingsProductName } from "@/modules/savings/domain/savings-product-label";
 import { buildLoanDisbursementSavingsIdempotencyKey } from "@/modules/savings/application/savings-ledger";
@@ -153,6 +156,7 @@ export default async function LoanPage({
     actorUserId: session.user.id, officeId: loan.officeId,
     principalMinor: loan.principalMinor, currencyCode: loan.denominationCurrency,
   });
+  const loanDecision = await loanDecisionAvailability(prisma, scope, { applicationId: loan.applicationId, actorUserId: session.user.id });
   const canEditFees = loan.status === "APPROVED" && !loan.disbursedOn && await authorization.isAllowed({
     actorUserId: session.user.id, permission: permissions.loanDisburse,
     organizationId: scope.organizationId, officeId: loan.officeId,
@@ -633,14 +637,14 @@ export default async function LoanPage({
           <span
             className={`status status-prominent ${loan.status === "ACTIVE" ? "up-to-date" : loan.status === "IN_ARREARS" ? "in-arrears" : "review"}`}
           >
-            {loan.status.replaceAll("_", " ")}
+            {statusLabel(loan.status)}
           </span>
         </div>
       </header>
       <section className="loan-summary-metrics">
         <article>
           <span>Status</span>
-          <strong>{loan.status}</strong>
+          <strong>{statusLabel(loan.status)}</strong>
         </article>
         <article>
           <span>Principal</span>
@@ -662,20 +666,24 @@ export default async function LoanPage({
       <nav className="client-tabs" aria-label="Loan record sections">
         <Link className={activeTab === "overview" ? "active" : ""} href={`/loans/${loan.id}`}>Overview</Link>
         <Link className={activeTab === "details" ? "active" : ""} href={`/loans/${loan.id}?tab=details`}>Details</Link>
-        <Link className={activeTab === "schedule" ? "active" : ""} href={`/loans/${loan.id}?tab=schedule`}>Repayment Schedule</Link>
-        <Link className={activeTab === "payments" ? "active" : ""} href={`/loans/${loan.id}?tab=payments`}>Payments</Link>
-        {isOpenLoan ? (
-          <Link className={activeTab === "record-payment" ? "active" : ""} href={`/loans/${loan.id}?tab=record-payment`}>Record Payment</Link>
-        ) : null}
-        {loan.denominationCurrency === "UGX" ? <Link className={activeTab === "fees" ? "active" : ""} href={`/loans/${loan.id}?tab=fees`}>Fees</Link> : null}
-        <Link className={activeTab === "charges" ? "active" : ""} href={`/loans/${loan.id}?tab=charges`}>Charges</Link>
-        <Link className={activeTab === "overdue-charges" ? "active" : ""} href={`/loans/${loan.id}?tab=overdue-charges`}>Overdue Charges</Link>
-        <Link className={activeTab === "collateral" ? "active" : ""} href={`/loans/${loan.id}?tab=collateral`}>Loan Collateral</Link>
-        <Link className={activeTab === "guarantors" ? "active" : ""} href={`/loans/${loan.id}?tab=guarantors`}>Guarantors</Link>
-        <Link className={activeTab === "documents" ? "active" : ""} href={`/loans/${loan.id}?tab=documents`}>Loan Documents</Link>
-        <Link className={activeTab === "notes" ? "active" : ""} href={`/loans/${loan.id}?tab=notes`}>Notes</Link>
-        <Link className={activeTab === "servicing" ? "active" : ""} href={`/loans/${loan.id}?tab=servicing`}>Servicing</Link>
-        {canReturnToDraft ? <Link className={activeTab === "return-to-draft" ? "active" : ""} href={`/loans/${loan.id}?tab=return-to-draft`}>Return to draft</Link> : null}
+        <Link className={activeTab === "schedule" ? "active" : ""} href={`/loans/${loan.id}?tab=schedule`}>Schedule</Link>
+        <Link className={activeTab === "payments" || activeTab === "record-payment" ? "active" : ""} href={`/loans/${loan.id}?tab=payments`}>Payments</Link>
+        <details className="loan-file-menu">
+          <summary className={["fees", "charges", "overdue-charges", "collateral", "guarantors", "documents", "notes", "servicing", "return-to-draft"].includes(activeTab ?? "") ? "active" : undefined}>
+            Loan file
+          </summary>
+          <div>
+            {loan.denominationCurrency === "UGX" ? <Link className={activeTab === "fees" ? "active" : ""} href={`/loans/${loan.id}?tab=fees`}>Fees</Link> : null}
+            <Link className={activeTab === "charges" ? "active" : ""} href={`/loans/${loan.id}?tab=charges`}>Charges</Link>
+            <Link className={activeTab === "overdue-charges" ? "active" : ""} href={`/loans/${loan.id}?tab=overdue-charges`}>Overdue charges</Link>
+            <Link className={activeTab === "collateral" ? "active" : ""} href={`/loans/${loan.id}?tab=collateral`}>Collateral</Link>
+            <Link className={activeTab === "guarantors" ? "active" : ""} href={`/loans/${loan.id}?tab=guarantors`}>Guarantors</Link>
+            <Link className={activeTab === "documents" ? "active" : ""} href={`/loans/${loan.id}?tab=documents`}>Documents</Link>
+            <Link className={activeTab === "notes" ? "active" : ""} href={`/loans/${loan.id}?tab=notes`}>Notes</Link>
+            <Link className={activeTab === "servicing" ? "active" : ""} href={`/loans/${loan.id}?tab=servicing`}>Servicing</Link>
+            {canReturnToDraft ? <Link className={activeTab === "return-to-draft" ? "active" : ""} href={`/loans/${loan.id}?tab=return-to-draft`}>Return to draft</Link> : null}
+          </div>
+        </details>
       </nav>
       {activeTab === "return-to-draft" && canReturnToDraft ? <ReturnLoanToDraftPanel loanId={loan.id} updatedAt={loan.updatedAt.toISOString()} /> : null}
       {activeTab === "return-to-draft" && !canReturnToDraft ? <section className="panel"><h2>Return to draft unavailable</h2><p>This action requires a manager/admin role or approval permission within your office scope, and an approved, undisbursed loan.</p></section> : null}
@@ -693,6 +701,14 @@ export default async function LoanPage({
             defaultAmountMinor={nextDueAmountMinor.toString()}
           />
         </section>
+      ) : null}
+      {activeTab === "overview" && loanDecision && (loanDecision.canDelete || loanDecision.canReject) ? (
+        <LoanDeleteRejectPanel
+          applicationId={loan.applicationId}
+          canDelete={loanDecision.canDelete}
+          canReject={loanDecision.canReject}
+          expectedUpdatedAt={loanDecision.updatedAt.toISOString()}
+        />
       ) : null}
       {activeTab === "overview" ? (
         <section className="panel loan-overview">
@@ -900,7 +916,7 @@ export default async function LoanPage({
               <dt>Status</dt>
               <dd>
                 <span className={`status ${loan.status === "ACTIVE" ? "up-to-date" : loan.status === "IN_ARREARS" ? "in-arrears" : "review"}`}>
-                  {loan.status.replaceAll("_", " ")}
+                  {statusLabel(loan.status)}
                 </span>
               </dd>
             </div>

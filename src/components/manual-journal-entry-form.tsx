@@ -6,6 +6,7 @@ import { useMemo, useState } from "react";
 import { toast } from "sonner";
 
 import { SearchableSelect } from "@/components/searchable-select";
+import { journalSearchHref } from "@/lib/journal-search-href";
 import { BrandActionButton } from "@/components/ui/brand-action-button";
 import { PAYEE_TYPE_LABELS, PAYEE_TYPES, payeeReferencePlaceholder, type PayeeType } from "@/modules/ledger/domain/journal";
 
@@ -83,7 +84,13 @@ export function ManualJournalEntryForm({
       return;
     }
     toast.success(`${label === "income" ? "Income" : "Expense"} recorded`);
-    router.push("/reports/accounting/journal-reconciliation");
+    const businessDate = String(formData.get("businessDate") ?? "");
+    router.push(journalSearchHref({
+      startDate: businessDate,
+      endDate: businessDate,
+      accountId: ledgerAccountId,
+      journalId: typeof result.journalId === "string" ? result.journalId : null,
+    }));
     router.refresh();
   }
 

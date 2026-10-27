@@ -23,6 +23,7 @@ export function SearchableSelect({
   placeholder,
   disabled,
   onChange,
+  onSelect,
   emptyMessage,
 }: {
   name: string;
@@ -31,6 +32,8 @@ export function SearchableSelect({
   placeholder?: string;
   disabled?: boolean;
   onChange?: (value: string) => void;
+  /** Fires only when an option is chosen, including the blank option. Typing does not fire it. */
+  onSelect?: (value: string) => void;
   emptyMessage?: string;
 }) {
   const [value, setValue] = useState(defaultValue ?? "");
@@ -80,6 +83,7 @@ export function SearchableSelect({
     setQuery(option.label);
     setOpen(false);
     onChange?.(option.value);
+    onSelect?.(option.value);
   }
 
   return (

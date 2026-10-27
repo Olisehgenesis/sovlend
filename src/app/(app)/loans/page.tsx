@@ -9,6 +9,7 @@ import { LiveSearchInput } from "@/components/live-search-input";
 import { TableRowLink } from "@/components/table-row-link";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { statusLabel } from "@/lib/status-label";
 import { formatMinor } from "@/modules/reporting/application/dashboard";
 import { fromMinor } from "@/components/loan-application-form-shared";
 import {
@@ -412,7 +413,7 @@ export default async function LoansPage({
                         </td>
                         <td>
                           <span className={`status ${loanStatusTone(loan.status)}`}>
-                            {loan.status.replaceAll("_", " ")}
+                            {statusLabel(loan.status)}
                           </span>
                           <TableRowLink href={loanHref} label={loanLabel} />
                         </td>
@@ -558,7 +559,7 @@ export default async function LoansPage({
                       </td>
                       <td>
                         <span className={`status ${application.status === "SUBMITTED" ? "review" : "up-to-date"}`}>
-                          {application.status.replaceAll("_", " ")}
+                          {statusLabel(application.status)}
                         </span>
                         <TableRowLink href={href} label={label} />
                       </td>

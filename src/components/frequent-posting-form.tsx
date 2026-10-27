@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 
+import { journalSearchHref } from "@/lib/journal-search-href";
 import { BrandActionButton } from "@/components/ui/brand-action-button";
 
 type AccountOption = { id: string; code: string; name: string };
@@ -62,7 +63,14 @@ export function FrequentPostingForm({
       return;
     }
     toast.success("Posting recorded");
-    router.push("/reports/accounting/journal-reconciliation");
+    const businessDate = String(formData.get("businessDate") ?? "");
+    const accountId = String(formData.get("debitAccountId") || selectedRule?.debitAccounts[0]?.id || "");
+    router.push(journalSearchHref({
+      startDate: businessDate,
+      endDate: businessDate,
+      accountId: accountId || null,
+      journalId: typeof result.journalId === "string" ? result.journalId : null,
+    }));
     router.refresh();
   }
 

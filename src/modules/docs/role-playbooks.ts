@@ -199,7 +199,7 @@ export const rolePlaybooks: readonly RolePlaybook[] = [
     ],
     actions: [
       { title: "Audit trail", description: "Search immutable activity.", href: "/reports/insights/audit-trail" },
-      { title: "Journal reconciliation", description: "Find posted journals by date, office, or account.", href: "/reports/accounting/journal-reconciliation" },
+      { title: "Journal reconciliation", description: "See the transactions on an account between two dates.", href: "/reports/accounting/journal-reconciliation" },
       { title: "Fee revenue", description: "See income from charges.", href: "/reports/insights/fee-revenue" },
     ],
   },

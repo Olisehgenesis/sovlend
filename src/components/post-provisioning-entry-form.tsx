@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
 
+import { journalSearchHref } from "@/lib/journal-search-href";
 import { BrandActionButton } from "@/components/ui/brand-action-button";
 
 export function PostProvisioningEntryForm({
@@ -43,7 +44,9 @@ export function PostProvisioningEntryForm({
     } else {
       toast.success("No change in required provision -- nothing to post");
     }
-    router.push("/reports/accounting/journal-reconciliation");
+    const asOfDate = String(formData.get("asOfDate") ?? "");
+    const journalId = typeof result.posting?.journalId === "string" ? result.posting.journalId : null;
+    router.push(journalSearchHref({ startDate: asOfDate, endDate: asOfDate, journalId }));
     router.refresh();
   }
 

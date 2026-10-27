@@ -9,10 +9,12 @@ import { ClientJournalForm } from "@/components/client-journal-form";
 import { ClientActionsMenu } from "@/components/client-actions-menu";
 import { ClientBtcAccountsPanel } from "@/components/client-btc-accounts-panel";
 import { ClientQuickActions } from "@/components/client-quick-actions";
+import { ClientProfilePhotos } from "@/components/client-profile-photos";
 import { EntityAvatar } from "@/components/entity-avatar";
 import { AddFamilyMemberForm, AddIdentifierForm, AddNoteForm, UploadDocumentForm } from "@/components/client-record-forms";
 import { NewSavingsAccountWizard } from "@/components/new-savings-account-wizard";
 import { auth } from "@/lib/auth";
+import { statusLabel } from "@/lib/status-label";
 import { prisma } from "@/lib/prisma";
 import { loadBtcUgxPrice } from "@/modules/btc/application/load-btc-price";
 import { loadClientBtcAccounts } from "@/modules/btc/application/load-client-btc-accounts";
@@ -221,6 +223,13 @@ export default async function ClientDetailPage({ params, searchParams }: { param
         ) : null}
         <span className={`status-dot ${client.status === "ACTIVE" ? "up-to-date" : "review"}`} />
       </header>
+      <ClientProfilePhotos
+        canManage={canManage}
+        clientId={client.id}
+        photos={client.documents
+          .filter((document) => document.isProfilePhoto || document.id === client.photoDocumentId)
+          .map((document) => ({ id: document.id, name: document.name, isPrimary: document.id === client.photoDocumentId }))}
+      />
 
       <section className="panel wallet-summary">
         <div className="panel-heading"><div><h2>Wallet</h2><p>Combined loan and savings position for this client</p></div></div>
@@ -276,7 +285,7 @@ export default async function ClientDetailPage({ params, searchParams }: { param
           <div className="panel-heading"><div><h2>General information</h2><p>Identity captured at onboarding</p></div></div>
           <dl className="detail-grid">
             <div><dt>Office</dt><dd>{client.office.name}</dd></div>
-            <div><dt>Status</dt><dd><span className={`status ${client.status === "ACTIVE" ? "up-to-date" : "review"}`}>{client.status}</span></dd></div>
+            <div><dt>Status</dt><dd><span className={`status ${client.status === "ACTIVE" ? "up-to-date" : "review"}`}>{statusLabel(client.status)}</span></dd></div>
             <div><dt>Mobile number</dt><dd>{client.mobileNumber ?? "Not provided"}</dd></div>
             <div><dt>Date of birth</dt><dd>{client.dateOfBirth ? new Intl.DateTimeFormat("en-UG", { dateStyle: "medium" }).format(client.dateOfBirth) : "Not provided"}</dd></div>
             <div><dt>Gender</dt><dd>{client.genderCode ?? "Not specified"}</dd></div>
@@ -339,7 +348,7 @@ export default async function ClientDetailPage({ params, searchParams }: { param
       {activeTab === "documents" ? (
         <section className="panel">
           <div className="panel-heading"><div><h2>Documents</h2><p>Uploaded files attached to this client</p></div></div>
-          {client.documents.length === 0 ? <div className="empty-state compact-empty"><FileText size={26} /><strong>No documents uploaded</strong><p>Upload identity scans or supporting paperwork below.</p></div> : <div className="table-scroll"><table><thead><tr><th>Name</th><th>Description</th><th>Type</th><th>Uploaded</th><th></th></tr></thead><tbody>{client.documents.map((document) => <tr key={document.id}><td><strong>{document.name}</strong></td><td>{document.description ?? "\u2014"}</td><td>{document.mediaType}</td><td>{new Intl.DateTimeFormat("en-UG", { dateStyle: "medium" }).format(document.createdAt)}</td><td><a className="green-link" href={`/api/documents/${document.id}`}>Download</a></td></tr>)}</tbody></table></div>}
+          {client.documents.filter((document) => !document.isProfilePhoto).length === 0 ? <div className="empty-state compact-empty"><FileText size={26} /><strong>No documents uploaded</strong><p>Upload identity scans or supporting paperwork below.</p></div> : <div className="table-scroll"><table><thead><tr><th>Name</th><th>Description</th><th>Type</th><th>Uploaded</th><th></th></tr></thead><tbody>{client.documents.filter((document) => !document.isProfilePhoto).map((document) => <tr key={document.id}><td><strong>{document.name}</strong></td><td>{document.description ?? "\u2014"}</td><td>{document.mediaType}</td><td>{new Intl.DateTimeFormat("en-UG", { dateStyle: "medium" }).format(document.createdAt)}</td><td><a className="green-link" href={`/api/documents/${document.id}`}>Download</a></td></tr>)}</tbody></table></div>}
           <UploadDocumentForm clientId={client.id} />
         </section>
       ) : null}

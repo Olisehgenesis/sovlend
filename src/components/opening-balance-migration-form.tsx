@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
 
+import { journalSearchHref } from "@/lib/journal-search-href";
 import { BrandActionButton } from "@/components/ui/brand-action-button";
 
 type AccountOption = { id: string; code: string; name: string };
@@ -56,7 +57,15 @@ export function OpeningBalanceMigrationForm({
     } else {
       toast.success("Opening balance migrated");
     }
-    router.push("/reports/accounting/journal-reconciliation");
+    const asOfDate = String(formData.get("asOfDate") ?? "");
+    const ledgerAccountId = String(formData.get("ledgerAccountId") ?? "");
+    const journalId = typeof result.migration?.journalId === "string" ? result.migration.journalId : null;
+    router.push(journalSearchHref({
+      startDate: asOfDate,
+      endDate: asOfDate,
+      accountId: ledgerAccountId || null,
+      journalId,
+    }));
     router.refresh();
   }
 

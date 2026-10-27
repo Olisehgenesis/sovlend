@@ -11,6 +11,7 @@ import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { ensureInvestorWorkspace } from "@/modules/investments/application/ensure-investor-workspace";
+import { statusLabel } from "@/lib/status-label";
 import { formatMinor, loadDashboard } from "@/modules/reporting/application/dashboard";
 
 const ugxCurrencyFormatter = new Intl.NumberFormat("en-UG", {
@@ -80,16 +81,11 @@ export default async function Home() {
     : null;
   const metricCards = [
     {
-      href: "/loans",
-      label: "Principal outstanding",
-      value: formatMinor(dashboard.metrics.principalOutstandingMinor, dashboard.baseCurrency),
-      detail: `${dashboard.metrics.activeLoanCount} active loans`,
-    },
-    {
       href: "/loans/due-today",
       label: "Due today",
       value: formatMinor(dashboard.metrics.dueTodayMinor, dashboard.baseCurrency),
       detail: `${dashboard.metrics.dueTodayCount} scheduled payments`,
+      lead: true,
     },
     {
       href: "/loans/collected-today",
@@ -98,22 +94,28 @@ export default async function Home() {
       detail: `${dashboard.metrics.repaymentCount} repayments recorded`,
     },
     {
-      href: "/loans/disbursed-today",
-      label: "Disbursed today",
-      value: formatMinor(dashboard.metrics.disbursedTodayMinor, dashboard.baseCurrency),
-      detail: `${dashboard.metrics.disbursementCount} loans disbursed`,
-    },
-    {
       href: "/loans?status=IN_ARREARS",
       label: "Portfolio at risk",
       value: `${(dashboard.metrics.portfolioAtRiskBps / 100).toFixed(2)}%`,
       detail: `${formatWholeUgx(dashboard.metrics.principalOverdueMinor)} principal overdue`,
     },
     {
+      href: "/loans",
+      label: "Principal outstanding",
+      value: formatMinor(dashboard.metrics.principalOutstandingMinor, dashboard.baseCurrency),
+      detail: `${dashboard.metrics.activeLoanCount} active loans`,
+    },
+    {
       href: "/loans?status=IN_ARREARS",
       label: "Principal overdue",
       value: formatWholeUgx(dashboard.metrics.principalOverdueMinor),
       detail: `${dashboard.metrics.arrearsLoanCount} loans in arrears`,
+    },
+    {
+      href: "/loans/disbursed-today",
+      label: "Disbursed today",
+      value: formatMinor(dashboard.metrics.disbursedTodayMinor, dashboard.baseCurrency),
+      detail: `${dashboard.metrics.disbursementCount} loans disbursed`,
     },
   ];
 
@@ -129,7 +131,7 @@ export default async function Home() {
 
       <section className="metrics" aria-label="Portfolio metrics">
         {metricCards.map((metric) => (
-          <Link key={metric.label} className="metric-card" href={metric.href}>
+          <Link key={metric.label} className={metric.lead ? "metric-card metric-lead" : "metric-card"} href={metric.href}>
             <article>
               <span>{metric.label}</span>
               <strong>{metric.value}</strong>
@@ -244,7 +246,7 @@ export default async function Home() {
                     <td>{formatMinor(loan.dueMinor, loan.currencyCode)}</td>
                     <td>
                       <span className={`status ${loan.state.toLowerCase().replaceAll("_", "-")}`}>
-                        {loan.state.replaceAll("_", " ")}
+                        {statusLabel(loan.state)}
                       </span>
                     </td>
                   </tr>

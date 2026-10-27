@@ -41,9 +41,9 @@ export function UndoDisbursementButton({ loanId }: { loanId: string }) {
 
   return (
     <>
-      <BrandActionButton icon={<Undo2 size={16} />} onClick={() => dialogRef.current?.showModal()} type="button" variant="gold">
-        Undo disbursement
-      </BrandActionButton>
+      <button className="quiet-danger" onClick={() => dialogRef.current?.showModal()} type="button">
+        <Undo2 size={16} /> Undo disbursement
+      </button>
       <Dialog ref={dialogRef} title="Undo disbursement">
         <form action={undo} className="entity-form compact-mapping">
           <fieldset>

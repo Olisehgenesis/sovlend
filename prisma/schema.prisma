@@ -1785,6 +1785,7 @@ model Document {
   objectKey          String              @unique
   sha256             String
   mediaType          String
+  isProfilePhoto     Boolean             @default(false)
   client             Client?             @relation(fields: [clientId], references: [id])
   loan               Loan?               @relation(fields: [loanId], references: [id])
   identifier         ClientIdentifier?   @relation(fields: [identifierId], references: [id], onDelete: SetNull)

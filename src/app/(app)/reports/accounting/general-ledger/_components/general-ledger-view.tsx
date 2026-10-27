@@ -31,6 +31,7 @@ import {
 } from "@/modules/reports/domain/accounting-report";
 
 const DATE_PRESETS: { value: ReportDatePreset; label: string }[] = [
+  { value: "today", label: "Today" },
   { value: "week", label: "This week" },
   { value: "month", label: "This month" },
   { value: "year", label: "This year" },
@@ -63,7 +64,7 @@ export default async function GeneralLedgerView({
     listAccountingReportAccounts(prisma),
     loadReportPickerOptions(prisma, session.user.id, scope.organizationId),
   ]);
-  const preset = params.preset === "week" || params.preset === "month" || params.preset === "year"
+  const preset = params.preset === "today" || params.preset === "week" || params.preset === "month" || params.preset === "year"
     ? params.preset
     : null;
   const { startDate, endDate } = preset
@@ -108,12 +109,11 @@ export default async function GeneralLedgerView({
           <a className="secondary-action" href={exportHref}>
             <Download size={16} /> Export CSV
           </a>
-          <a className="secondary-action" href={apiHref}>
-            API JSON
-          </a>
-          <Link className="secondary-action" href={`/reports/accounting/general-ledger?${buildReportQueryString({ startDate: formatDateInputValue(startDate), endDate: formatDateInputValue(endDate), officeId })}`}>
-            All accounts
-          </Link>
+          {report.account ? (
+            <Link className="secondary-action" href={`/reports/accounting/general-ledger?${buildReportQueryString({ startDate: formatDateInputValue(startDate), endDate: formatDateInputValue(endDate), officeId })}`}>
+              All accounts
+            </Link>
+          ) : null}
         </div>
       </header>
 
@@ -189,7 +189,7 @@ export default async function GeneralLedgerView({
           {!report.account ? <span className={`status ${isBalanced ? "up-to-date" : "review"}`}>
             {isBalanced ? "Debits equal credits" : "Debit/credit difference"} ·{" "}
             {formatMinor(report.debitTotalMinor - report.creditTotalMinor, "UGX")}
-          </span> : <Link className="secondary-action" href={accountHref(report.account.id)}>Open account statement</Link>}
+          </span> : null}
         </div>
 
         {report.accountBalances.length > 0 ? (
@@ -201,10 +201,10 @@ export default async function GeneralLedgerView({
                   <tr>
                     <th>Account type</th>
                     <th>GL account</th>
-                    <th>Opening balance</th>
-                    <th>Period debits</th>
-                    <th>Period credits</th>
-                    <th>Closing balance</th>
+                    <th className="numeric">Opening balance</th>
+                    <th className="numeric">Period debits</th>
+                    <th className="numeric">Period credits</th>
+                    <th className="numeric">Closing balance</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -215,10 +215,10 @@ export default async function GeneralLedgerView({
                       <tr key={balance.account.id}>
                         <td>{balance.account.type}</td>
                         <td><Link className="green-link" href={accountHref(balance.account.id)}>{balance.account.code} · {balance.account.name}</Link></td>
-                        <td className="mono">{formatMinor(opening.absoluteMinor, balance.account.currencyCode)} {sideLabel(opening.balanceSide)}</td>
-                        <td className="mono">{formatMinor(balance.debitTotalMinor, balance.account.currencyCode)}</td>
-                        <td className="mono">{formatMinor(balance.creditTotalMinor, balance.account.currencyCode)}</td>
-                        <td className="mono">{formatMinor(closing.absoluteMinor, balance.account.currencyCode)} {sideLabel(closing.balanceSide)}</td>
+                        <td className="numeric">{formatMinor(opening.absoluteMinor, balance.account.currencyCode)} {sideLabel(opening.balanceSide)}</td>
+                        <td className="numeric">{formatMinor(balance.debitTotalMinor, balance.account.currencyCode)}</td>
+                        <td className="numeric">{formatMinor(balance.creditTotalMinor, balance.account.currencyCode)}</td>
+                        <td className="numeric">{formatMinor(closing.absoluteMinor, balance.account.currencyCode)} {sideLabel(closing.balanceSide)}</td>
                       </tr>
                     );
                   })}
@@ -236,7 +236,7 @@ export default async function GeneralLedgerView({
           </div>
         ) : (
           <div className="table-scroll">
-            <table className="clickable-rows">
+            <table>
               <thead>
                 <tr>
                   <th>Date</th>
@@ -246,9 +246,9 @@ export default async function GeneralLedgerView({
                   <th>Journal</th>
                   <th>Office</th>
                   <th>Memo</th>
-                  <th>Debit</th>
-                  <th>Credit</th>
-                  <th>Account running balance</th>
+                  <th className="numeric">Debit</th>
+                  <th className="numeric">Credit</th>
+                  <th className="numeric">Account running balance</th>
                 </tr>
               </thead>
               <tbody>
@@ -267,14 +267,14 @@ export default async function GeneralLedgerView({
                         {entry.payeeReference ? <small>{entry.payeeReference}</small> : null}
                       </td>
                       <td>
-                        <Link className="green-link" href={journalHref}><strong>{entry.referenceType.replaceAll("_", " ")}</strong></Link>
-                        <small>{entry.referenceId ?? entry.journalId}</small>
+                        <Link className="green-link" href={journalHref}>View entry</Link>
+                        <small>{entry.referenceType.replaceAll("_", " ")}</small>
                       </td>
                       <td>{entry.officeName}</td>
                       <td>{entry.memo ?? entry.narration}</td>
-                      <td className="mono">{entry.direction === "DEBIT" ? formatMinor(entry.amountMinor, entry.account.currencyCode) : "—"}</td>
-                      <td className="mono">{entry.direction === "CREDIT" ? formatMinor(entry.amountMinor, entry.account.currencyCode) : "—"}</td>
-                      <td className="mono">
+                      <td className="numeric">{entry.direction === "DEBIT" ? formatMinor(entry.amountMinor, entry.account.currencyCode) : "—"}</td>
+                      <td className="numeric">{entry.direction === "CREDIT" ? formatMinor(entry.amountMinor, entry.account.currencyCode) : "—"}</td>
+                      <td className="numeric">
                         {`${formatMinor(running.absoluteMinor, entry.account.currencyCode)} ${sideLabel(running.balanceSide)}`}
                       </td>
                     </tr>
@@ -290,13 +290,13 @@ export default async function GeneralLedgerView({
                   <td>—</td>
                   <td>—</td>
                   <td>—</td>
-                  <td className="mono">
+                  <td className="numeric">
                     <strong>{formatMinor(report.debitTotalMinor, "UGX")}</strong>
                   </td>
-                  <td className="mono">
+                  <td className="numeric">
                     <strong>{formatMinor(report.creditTotalMinor, "UGX")}</strong>
                   </td>
-                  <td className="mono">
+                  <td className="numeric">
                     <strong>—</strong>
                   </td>
                 </tr>
