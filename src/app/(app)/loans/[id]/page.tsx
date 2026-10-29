@@ -672,13 +672,13 @@ export default async function LoanPage({
         <Link className={activeTab === "details" ? "active" : ""} href={`/loans/${loan.id}?tab=details`}>Details</Link>
         <Link className={activeTab === "schedule" ? "active" : ""} href={`/loans/${loan.id}?tab=schedule`}>Schedule</Link>
         <Link className={activeTab === "payments" || activeTab === "record-payment" ? "active" : ""} href={`/loans/${loan.id}?tab=payments`}>Payments</Link>
+        <Link className={activeTab === "charges" ? "active" : ""} href={`/loans/${loan.id}?tab=charges`}>Charges</Link>
         <details className="loan-file-menu">
-          <summary className={["fees", "charges", "overdue-charges", "collateral", "guarantors", "documents", "notes", "servicing", "return-to-draft"].includes(activeTab ?? "") ? "active" : undefined}>
+          <summary className={["fees", "overdue-charges", "collateral", "guarantors", "documents", "notes", "servicing", "return-to-draft"].includes(activeTab ?? "") ? "active" : undefined}>
             Loan file
           </summary>
           <div>
             {loan.denominationCurrency === "UGX" ? <Link className={activeTab === "fees" ? "active" : ""} href={`/loans/${loan.id}?tab=fees`}>Fees</Link> : null}
-            <Link className={activeTab === "charges" ? "active" : ""} href={`/loans/${loan.id}?tab=charges`}>Charges</Link>
             <Link className={activeTab === "overdue-charges" ? "active" : ""} href={`/loans/${loan.id}?tab=overdue-charges`}>Overdue charges</Link>
             <Link className={activeTab === "collateral" ? "active" : ""} href={`/loans/${loan.id}?tab=collateral`}>Collateral</Link>
             <Link className={activeTab === "guarantors" ? "active" : ""} href={`/loans/${loan.id}?tab=guarantors`}>Guarantors</Link>
@@ -931,6 +931,40 @@ export default async function LoanPage({
           </dl>
         </section>
       ) : null}
+      {activeTab === "charges" || activeTab === "details" ? (
+        <section className="panel">
+          <div className="panel-heading">
+            <div>
+              <h2>Charges</h2>
+              <p>Fees and penalties on this loan, including after disbursement. Waive a paid charge to refund it to savings.</p>
+            </div>
+          </div>
+          <LoanChargesPanel
+            loanId={loan.id}
+            canManage={canManageCharges}
+            chargeDefinitions={chargeDefinitions.map((definition) => ({
+              id: definition.id,
+              name: definition.name,
+              calculationType: definition.calculationType,
+              amountMinor: definition.amountMinor?.toString() ?? null,
+              percentageBps: definition.percentageBps,
+              currencyCode: definition.currencyCode,
+              penalty: definition.penalty,
+            }))}
+            principalMinor={loan.principalMinor.toString()}
+            charges={loan.charges.map((charge) => ({
+              id: charge.id,
+              name: charge.name,
+              amountMinor: charge.amountMinor.toString(),
+              currencyCode: charge.currencyCode,
+              status: charge.status,
+              dueOnFormatted: charge.dueOn
+                ? new Intl.DateTimeFormat("en-UG", { dateStyle: "medium" }).format(charge.dueOn)
+                : null,
+            }))}
+          />
+        </section>
+      ) : null}
       {activeTab === "details" && owner?.kind === "client" ? (
         <section className="panel">
           <div className="panel-heading">
@@ -1026,40 +1060,6 @@ export default async function LoanPage({
               )}
             </div>
           </div>
-        </section>
-      ) : null}
-      {activeTab === "charges" ? (
-        <section className="panel">
-          <div className="panel-heading">
-            <div>
-              <h2>Charges</h2>
-              <p>Fees and penalties on this loan, including after disbursement. Waive a paid charge to refund it to savings.</p>
-            </div>
-          </div>
-          <LoanChargesPanel
-            loanId={loan.id}
-            canManage={canManageCharges}
-            chargeDefinitions={chargeDefinitions.map((definition) => ({
-              id: definition.id,
-              name: definition.name,
-              calculationType: definition.calculationType,
-              amountMinor: definition.amountMinor?.toString() ?? null,
-              percentageBps: definition.percentageBps,
-              currencyCode: definition.currencyCode,
-              penalty: definition.penalty,
-            }))}
-            principalMinor={loan.principalMinor.toString()}
-            charges={loan.charges.map((charge) => ({
-              id: charge.id,
-              name: charge.name,
-              amountMinor: charge.amountMinor.toString(),
-              currencyCode: charge.currencyCode,
-              status: charge.status,
-              dueOnFormatted: charge.dueOn
-                ? new Intl.DateTimeFormat("en-UG", { dateStyle: "medium" }).format(charge.dueOn)
-                : null,
-            }))}
-          />
         </section>
       ) : null}
       {activeTab === "overdue-charges" ? (

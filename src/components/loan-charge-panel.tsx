@@ -195,7 +195,7 @@ export function LoanChargesPanel({
             key: "actions",
             header: "",
             render: (charge) => (
-              <div style={{ position: "relative", zIndex: 1 }}>
+              <div style={{ position: "relative", zIndex: 2 }}>
                 {canManage && (charge.status === "PENDING" || charge.status === "PAID") ? (
                   <div className="account-card-actions">
                     {charge.status === "PENDING" ? (
