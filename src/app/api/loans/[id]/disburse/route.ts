@@ -9,14 +9,19 @@ import { PAYEE_TYPES } from "@/modules/ledger/domain/journal";
 import { disburseLoanAndPayOffPrevious } from "@/modules/lending/application/disburse-loan";
 import { processingFeeBpsSchema } from "@/modules/lending/domain/processing-fee";
 
+const optionalUuid = z.preprocess(
+  (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
+  z.string().uuid().optional(),
+);
+
 const schema = z.object({
   processingFeeBps: processingFeeBpsSchema.optional(),
-  savingsAccountId: z.string().uuid().optional(),
-  paymentMethodSettlementAccountId: z.string().uuid().optional(),
+  savingsAccountId: optionalUuid,
+  paymentMethodSettlementAccountId: optionalUuid,
   businessDate: z.iso.date(),
   externalReference: z.string().trim().max(200).optional(),
   idempotencyKey: z.string().uuid(),
-  topUpOfLoanId: z.string().uuid().optional(),
+  topUpOfLoanId: optionalUuid,
   payeeType: z.enum(PAYEE_TYPES).optional(),
   payeeName: z.string().trim().max(200).optional(),
   payeeReference: z.string().trim().max(200).optional(),

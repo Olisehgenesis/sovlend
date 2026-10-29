@@ -81,7 +81,7 @@ export function DisburseLoanForm({
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        savingsAccountId,
+        savingsAccountId: savingsAccountId || undefined,
         processingFeeBps: payout?.currency === "UGX" ? Math.round(parsedProcessing.data * 100) : undefined,
         paymentMethodSettlementAccountId: paymentMethodSettlementAccountId || undefined,
         businessDate: formData.get("businessDate"),
@@ -143,6 +143,9 @@ export function DisburseLoanForm({
       ) : null}
       <fieldset>
         <legend>Loan payout</legend>
+        {savingsAccounts.length === 0 ? (
+          <p className="field-hint">This client has no savings accounts yet. Disbursement will open the LIF, member contribution, and security accounts and credit the proceeds there.</p>
+        ) : null}
         {settlementAccounts.length > 0 ? (
           <label>
             Payment method
