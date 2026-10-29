@@ -7,6 +7,7 @@ import { prisma } from "@/lib/prisma";
 import { AuthorizationService, PermissionDeniedError } from "@/modules/identity/application/authorization-service";
 import { getUserDataScope } from "@/modules/identity/application/data-scope";
 import { permissions } from "@/modules/identity/domain/permissions";
+import { canBypassOriginationMakerChecker } from "@/modules/lending/application/loan-application-access";
 import { loanServiceActionTypes, requestLoanServiceAction } from "@/modules/lending/application/loan-service-actions";
 
 const createSchema = z.object({
@@ -34,10 +35,12 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   });
   const authorization = new AuthorizationService(prisma);
   const context = { actorUserId: session.user.id, organizationId: scope.organizationId, officeId: loan.officeId };
-  const [canManageReversals, canCancelDirectly] = await Promise.all([
+  const [canManageReversals, canCancelDirectly, actor] = await Promise.all([
     authorization.isAllowed({ ...context, permission: permissions.loanReverse }),
     authorization.isAllowed({ ...context, permission: permissions.loanRepaymentReverse }),
+    prisma.user.findUnique({ where: { id: session.user.id }, select: { systemRole: true } }),
   ]);
+  const canDecideOwnServicing = canBypassOriginationMakerChecker(actor?.systemRole);
 
   return NextResponse.json({
     requests: requests.map((item) => ({
@@ -53,7 +56,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
       decisionNote: item.decisionNote,
       canDecide: item.status === "PENDING" && (
         (item.actionType === "TRANSACTION_REVERSAL" && canCancelDirectly) ||
-        (canManageReversals && item.requestedById !== session.user.id)
+        (canManageReversals && (item.requestedById !== session.user.id || canDecideOwnServicing))
       ),
       isOwnRequest: item.requestedById === session.user.id,
     })),

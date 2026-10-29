@@ -11,6 +11,7 @@ import { buildLoanDisbursementSavingsIdempotencyKey } from "@/modules/savings/ap
 import { buildLoanOverpaymentSavingsIdempotencyKey } from "./post-repayment";
 
 import { isLoanPaymentTransaction, transactionTypeVariants } from "@/lib/loan-transaction-type-variants";
+import { canBypassOriginationMakerChecker } from "./loan-application-access";
 
 import { calculateLoanPayoff, type PayoffInstallment } from "../domain/loan-payoff";
 import {
@@ -159,7 +160,12 @@ export async function decideLoanServiceAction(
   const permissionContext = { actorUserId: command.actorUserId, organizationId: loan.office.organizationId, officeId: loan.officeId };
   const canCancelDirectly = request.actionType === "TRANSACTION_REVERSAL" &&
     await authorization.isAllowed({ ...permissionContext, permission: permissions.loanRepaymentReverse });
-  if (request.requestedById === command.actorUserId && !canCancelDirectly) throw new Error("Maker-checker violation: the requester cannot decide their own servicing action");
+  if (request.requestedById === command.actorUserId && !canCancelDirectly) {
+    const actor = await prisma.user.findUnique({ where: { id: command.actorUserId }, select: { systemRole: true } });
+    if (!canBypassOriginationMakerChecker(actor?.systemRole)) {
+      throw new Error("Maker-checker violation: the requester cannot decide their own servicing action");
+    }
+  }
   if (!canCancelDirectly) await authorization.assertAllowed({ ...permissionContext, permission: permissions.loanReverse });
 
   if (command.decision === "REJECT") {

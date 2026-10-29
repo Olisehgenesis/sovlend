@@ -14,6 +14,7 @@ import { prisma } from "@/lib/prisma";
 import { AuthorizationService } from "@/modules/identity/application/authorization-service";
 import { getUserDataScope, groupScopeWhere } from "@/modules/identity/application/data-scope";
 import { permissions } from "@/modules/identity/domain/permissions";
+import { canBypassOriginationMakerChecker } from "@/modules/lending/application/loan-application-access";
 import { assignableStaffWhere } from "@/modules/identity/domain/staff-roles";
 import { installmentOutstandingMinor } from "@/modules/lending/domain/loan-outstanding";
 import { formatMinor } from "@/modules/money/domain/format-minor";
@@ -290,7 +291,7 @@ export default async function GroupDetailPage({ params, searchParams }: { params
     "UGX";
 
   const authorization = new AuthorizationService(prisma);
-  const [canManage, canTransact, canApproveSavings, officeStaff, settlementAccounts] = await Promise.all([
+  const [canManage, canTransact, canApproveSavings, officeStaff, settlementAccounts, actor] = await Promise.all([
     authorization.isAllowed({
       actorUserId: session.user.id,
       permission: permissions.clientManage,
@@ -322,7 +323,9 @@ export default async function GroupDetailPage({ params, searchParams }: { params
       select: { id: true, name: true, type: true, provider: true, accountReference: true, currencyCode: true },
       orderBy: [{ type: "asc" }, { name: "asc" }],
     }),
+    prisma.user.findUnique({ where: { id: session.user.id }, select: { systemRole: true } }),
   ]);
+  const canApproveOwnSavings = canBypassOriginationMakerChecker(actor?.systemRole);
 
   return (
     <main className="directory-page">
@@ -642,7 +645,7 @@ export default async function GroupDetailPage({ params, searchParams }: { params
                           <td className="mono">{formatMinor(balanceMinor, account.currencyCode)}</td>
                           <td>{account.currencyCode}</td>
                           <td>
-                            {account.status === "SUBMITTED" && canApproveSavings && account.submittedById !== session.user.id ? (
+                            {account.status === "SUBMITTED" && canApproveSavings && (account.submittedById !== session.user.id || canApproveOwnSavings) ? (
                               <ApproveSavingsAccountButton groupId={group.id} savingsAccountId={account.id} />
                             ) : null}
                           </td>

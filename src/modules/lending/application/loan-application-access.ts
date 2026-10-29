@@ -1,20 +1,18 @@
 import type { UserRole } from "@prisma/client";
 
-export function canSelfApproveLoanApplication(systemRole: UserRole | null | undefined) {
+/** Branch/general managers and admins may originate, approve, disburse, and activate savings themselves. */
+export function canBypassOriginationMakerChecker(systemRole: UserRole | null | undefined) {
   return systemRole === "BRANCH_MANAGER" || systemRole === "GENERAL_MANAGER" || systemRole === "ADMIN";
 }
 
-// Branch managers/admins already carry full override authority (see canSelfApproveLoanApplication),
-// and tellers are the staff who physically hand out cash at disbursement time in real branch
-// operations, so they're exempted from the application maker-checker split too. Loan officers -
-// the actual "makers" of most applications - remain bound by it.
+export function canSelfApproveLoanApplication(systemRole: UserRole | null | undefined) {
+  return canBypassOriginationMakerChecker(systemRole);
+}
+
+// Managers already carry full override authority. Tellers hand out cash at the counter, so they
+// may also disburse a loan they did not need a second person for. Loan officers stay bound.
 export function canDisburseWithoutMakerCheckerSplit(systemRole: UserRole | null | undefined) {
-  return (
-    systemRole === "BRANCH_MANAGER" ||
-    systemRole === "GENERAL_MANAGER" ||
-    systemRole === "ADMIN" ||
-    systemRole === "TELLER"
-  );
+  return canBypassOriginationMakerChecker(systemRole) || systemRole === "TELLER";
 }
 
 

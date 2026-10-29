@@ -19,7 +19,7 @@ import { AuthorizationService } from "@/modules/identity/application/authorizati
 import { getUserDataScope } from "@/modules/identity/application/data-scope";
 import { permissions } from "@/modules/identity/domain/permissions";
 import { assignableStaffWhere } from "@/modules/identity/domain/staff-roles";
-import { canEditSubmittedLoanApplication, canSelfApproveLoanApplication } from "@/modules/lending/application/loan-application-access";
+import { canDisburseWithoutMakerCheckerSplit, canEditSubmittedLoanApplication, canSelfApproveLoanApplication } from "@/modules/lending/application/loan-application-access";
 import { loanDecisionAvailability } from "@/modules/lending/application/loan-application-decision";
 import { isLoanApplicationExpired } from "@/modules/lending/application/loan-application-expiry";
 import { readChargeSnapshot, readCollateralSnapshot, readTermsSnapshot } from "@/modules/lending/application/loan-application-payload";
@@ -163,6 +163,7 @@ export default async function LoanApplicationPage({
   const displayedStatus = application.loan?.status === "DRAFT" ? application.status : application.loan?.status ?? application.status;
   const actorApproved = application.approvals.some((approval) => !approval.revokedAt && approval.reviewerId === session.user.id);
   const actorCanSelfApprove = canSelfApproveLoanApplication(actor?.systemRole);
+  const actorCanDisburseOwnOrigination = canDisburseWithoutMakerCheckerSplit(actor?.systemRole);
   const applicationExpired = isLoanApplicationExpired(application.applicationExpiresOn);
   const canManageEvidence = actorHasLoanApplyPermission;
   const canManageCollateral = canManageEvidence && (application.status === "SUBMITTED" || application.status === "DRAFT");
@@ -324,8 +325,7 @@ export default async function LoanApplicationPage({
       </article>
     ) : application.status === "APPROVED" &&
       application.loan?.status === "APPROVED" &&
-      application.submittedById !== session.user.id &&
-      !actorApproved ? (
+      (actorCanDisburseOwnOrigination || (application.submittedById !== session.user.id && !actorApproved)) ? (
       <article className="panel">
         <DisburseLoanForm
           loanId={application.loan.id}

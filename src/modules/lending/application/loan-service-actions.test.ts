@@ -115,6 +115,7 @@ function buildPrismaMock(options: { excess?: bigint; savingsFunded?: boolean; du
     accountingClosure: { findFirst: vi.fn(async () => null) },
     auditEvent: { create: vi.fn(async () => ({})) },
     outboxEvent: { create: vi.fn(async () => ({})) },
+    user: { findUnique: vi.fn(async () => ({ systemRole: "LOAN_OFFICER" })) },
   };
   const transaction = vi.fn(async (callback: (client: typeof tx) => Promise<unknown>) => {
     const before = structuredClone({ installment, payment, loan, request, savings });
@@ -256,6 +257,13 @@ describe("direct repayment cancellation permissions", () => {
     const { prisma, request } = buildPrismaMock();
     request.actionType = "PREPAY";
     await expect(decideLoanServiceAction(prisma, { requestId, actorUserId: "maker", decision: "APPROVE" })).rejects.toThrow("Maker-checker violation");
+  });
+
+  it("lets branch managers decide servicing they requested", async () => {
+    const { prisma, request, tx } = buildPrismaMock();
+    request.actionType = "PREPAY";
+    tx.user.findUnique.mockResolvedValue({ systemRole: "BRANCH_MANAGER" });
+    expect((await decideLoanServiceAction(prisma, { requestId, actorUserId: "maker", decision: "REJECT" })).status).toBe("REJECTED");
   });
 
   it("creates and executes an audited direct cancellation atomically", async () => {

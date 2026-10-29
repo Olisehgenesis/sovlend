@@ -4,6 +4,7 @@ import { processingFeeBps } from "@/modules/lending/domain/processing-fee";
 import { LoanFeesPanel } from "@/components/loan-fees-panel";
 import { ReturnLoanToDraftPanel } from "@/components/return-loan-to-draft-panel";
 import { LoanDeleteRejectPanel } from "@/components/loan-delete-reject-panel";
+import { canBypassOriginationMakerChecker } from "@/modules/lending/application/loan-application-access";
 import { canReturnLoanToDraft } from "@/modules/lending/application/return-loan-to-draft-access";
 import { loanDecisionAvailability } from "@/modules/lending/application/loan-application-decision";
 import Link from "next/link";
@@ -1253,7 +1254,10 @@ export default async function LoanPage({
               decisionNote: item.decisionNote,
               canDecide: item.status === "PENDING" && (
                 (item.actionType === "TRANSACTION_REVERSAL" && canCancelRepaymentsDirectly) ||
-                (canRequestServiceActions && item.requestedById !== session.user.id)
+                (canRequestServiceActions && (
+                  item.requestedById !== session.user.id ||
+                  canBypassOriginationMakerChecker(session.user.systemRole as Parameters<typeof canBypassOriginationMakerChecker>[0])
+                ))
               ),
               isOwnRequest: item.requestedById === session.user.id,
             }))}

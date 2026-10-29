@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { canEditSubmittedLoanApplication, canSelfApproveLoanApplication } from "./loan-application-access";
+import { canBypassOriginationMakerChecker, canDisburseWithoutMakerCheckerSplit, canEditSubmittedLoanApplication, canSelfApproveLoanApplication } from "./loan-application-access";
 
 describe("loan application edit access", () => {
   it("lets the submitter fix a pending application", () => {
@@ -16,5 +16,14 @@ describe("loan application edit access", () => {
   it("keeps non-approvers from editing another user's submission", () => {
     expect(canEditSubmittedLoanApplication({ actorUserId: "officer-2", actorSystemRole: "LOAN_OFFICER", submittedById: "maker-1" })).toBe(false);
     expect(canSelfApproveLoanApplication("LOAN_OFFICER")).toBe(false);
+  });
+
+  it("lets managers approve and disburse work they originated", () => {
+    expect(canBypassOriginationMakerChecker("BRANCH_MANAGER")).toBe(true);
+    expect(canBypassOriginationMakerChecker("GENERAL_MANAGER")).toBe(true);
+    expect(canDisburseWithoutMakerCheckerSplit("BRANCH_MANAGER")).toBe(true);
+    expect(canDisburseWithoutMakerCheckerSplit("TELLER")).toBe(true);
+    expect(canDisburseWithoutMakerCheckerSplit("LOAN_OFFICER")).toBe(false);
+    expect(canBypassOriginationMakerChecker("LOAN_OFFICER")).toBe(false);
   });
 });

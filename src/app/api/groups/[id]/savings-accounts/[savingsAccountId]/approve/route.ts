@@ -6,6 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { AuthorizationService, PermissionDeniedError } from "@/modules/identity/application/authorization-service";
 import { getUserDataScope, groupScopeWhere } from "@/modules/identity/application/data-scope";
 import { permissions } from "@/modules/identity/domain/permissions";
+import { canBypassOriginationMakerChecker } from "@/modules/lending/application/loan-application-access";
 
 export async function POST(_request: Request, { params }: { params: Promise<{ id: string; savingsAccountId: string }> }) {
   const session = await auth.api.getSession({ headers: await headers() });
@@ -26,7 +27,12 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
   const savingsAccount = await prisma.savingsAccount.findFirst({ where: { id: savingsAccountId, groupId: group.id } });
   if (!savingsAccount) return NextResponse.json({ error: "Savings account not found" }, { status: 404 });
   if (savingsAccount.status !== "SUBMITTED") return NextResponse.json({ error: "Only submitted accounts can be approved" }, { status: 400 });
-  if (savingsAccount.submittedById === session.user.id) return NextResponse.json({ error: "You cannot approve an account you requested yourself" }, { status: 403 });
+  if (savingsAccount.submittedById === session.user.id) {
+    const actor = await prisma.user.findUnique({ where: { id: session.user.id }, select: { systemRole: true } });
+    if (!canBypassOriginationMakerChecker(actor?.systemRole)) {
+      return NextResponse.json({ error: "You cannot approve an account you requested yourself" }, { status: 403 });
+    }
+  }
 
   await prisma.savingsAccount.update({
     where: { id: savingsAccount.id },
