@@ -14,6 +14,7 @@ import { createLightningGateway } from "@/modules/investments/infrastructure/cre
 import { reminderJobId, reminderJobSchema, reminderStillApplies } from "@/modules/notifications/domain/reminder";
 import { installmentOutstandingMinor } from "@/modules/lending/domain/loan-outstanding";
 import { standingOrderSweepJobSchema } from "@/modules/notifications/domain/standing-order-sweep";
+import { repaymentSmsMessage } from "@/modules/notifications/domain/sms-copy";
 import { sendSms } from "@/modules/notifications/infrastructure/sms";
 import { formatMinor } from "@/modules/money/domain/format-minor";
 import { CachedPriceService } from "@/modules/pricing/application/cached-price-service";
@@ -106,12 +107,12 @@ const reminderWorker = new Worker(
     const dueDate = installment.dueOn.toISOString().slice(0, 10);
     const body = `${amount} is due for loan ${data.accountNumber} on ${dueDate}.`;
 
-    const smsMessage =
-      data.type === "REPAYMENT_DUE_SOON"
-        ? `Reminder: your loan ${data.accountNumber} payment of ${amount} is due on ${dueDate}. Pay on time to avoid penalties.`
-        : data.type === "REPAYMENT_DUE_TODAY"
-          ? `Your loan ${data.accountNumber} payment of ${amount} is due TODAY (${dueDate}). Please pay to avoid penalties.`
-          : `Your loan ${data.accountNumber} payment of ${amount} is OVERDUE (was due ${dueDate})${BigInt(data.feesDueMinor) > 0n ? `, including ${formatMinor(BigInt(data.feesDueMinor), data.currencyCode)} in fees/penalties` : ""}. Please pay immediately.`;
+    const smsMessage = repaymentSmsMessage({
+      type: data.type,
+      amount,
+      dueDate,
+      fees: BigInt(data.feesDueMinor) > 0n ? formatMinor(BigInt(data.feesDueMinor), data.currencyCode) : null,
+    });
 
     const smsResult = data.mobileNumber ? await sendSms(data.mobileNumber, smsMessage) : { ok: false, error: "Client has no mobile number on file" };
     const channels = smsResult.ok ? ["IN_APP", "SMS"] : ["IN_APP"];

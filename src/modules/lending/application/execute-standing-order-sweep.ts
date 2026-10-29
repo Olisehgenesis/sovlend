@@ -10,6 +10,7 @@ import {
   standingOrderSweepJobId,
   type StandingOrderSweepJob,
 } from "@/modules/notifications/domain/standing-order-sweep";
+import { standingOrderSmsMessage } from "@/modules/notifications/domain/sms-copy";
 import { sendSms } from "@/modules/notifications/infrastructure/sms";
 import { recordSavingsTransactionInTransaction } from "@/modules/savings/application/record-savings-transaction";
 
@@ -119,7 +120,7 @@ async function upsertStandingOrderSweepNotification(
   now: Date,
 ): Promise<void> {
   const amountText = formatMinor(amountMinor, context.currencyCode);
-  const smsMessage = `We collected ${amountText} from your savings towards loan ${context.accountNumber} (standing order). Thank you.`;
+  const smsMessage = standingOrderSmsMessage(amountText, context.accountNumber);
   const smsResult = context.mobileNumber
     ? await sendSms(context.mobileNumber, smsMessage)
     : { ok: false, error: "Client has no mobile number on file" };

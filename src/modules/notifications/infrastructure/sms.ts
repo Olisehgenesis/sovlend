@@ -4,6 +4,15 @@ export type SendSmsResult = Readonly<{ ok: boolean; messageId?: string; error?: 
 
 const YOOLA_BASE_URL = "https://yoolasms.com/api/v1";
 
+/** Yoola expects international digits. Local UG numbers like 0766... become 256766... */
+export function normalizeSmsPhone(phone: string): string {
+  const digits = phone.replace(/\D/g, "");
+  if (digits.startsWith("256") && digits.length >= 12) return digits;
+  if (digits.startsWith("0") && digits.length === 10) return `256${digits.slice(1)}`;
+  if (digits.length === 9) return `256${digits}`;
+  return digits;
+}
+
 export async function sendSms(phone: string, message: string): Promise<SendSmsResult> {
   const apiKey = process.env.YOOLA_SMS_API_KEY;
   if (!apiKey) return { ok: false, error: "YOOLA_SMS_API_KEY is not configured" };
@@ -14,8 +23,7 @@ export async function sendSms(phone: string, message: string): Promise<SendSmsRe
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         api_key: apiKey,
-        sender: process.env.YOOLA_SMS_SENDER_ID || undefined,
-        mobiles: phone,
+        phone: normalizeSmsPhone(phone),
         message,
       }),
     });
