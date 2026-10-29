@@ -162,6 +162,22 @@ describe("recordSavingsTransactionInTransaction", () => {
     expect(captures.savingsTransactionData).toMatchObject({ amountMinor: -30_000n, settlementAccountId: "settlement-1" });
   });
 
+  it("lets a withdrawal take the account negative when allowNegativeBalance is set", async () => {
+    const { transaction, captures } = buildTransactionMock({ openingBalanceMinor: 5_000n });
+
+    await recordSavingsTransactionInTransaction(transaction, {
+      savingsAccountId: "savings-1",
+      actorUserId: "teller-1",
+      transactionType: "WITHDRAWAL",
+      amountMinor: 10_000n,
+      settlementAccountId: "settlement-1",
+      idempotencyKey: "wd-overdraft",
+      allowNegativeBalance: true,
+    });
+
+    expect(captures.savingsTransactionData).toMatchObject({ amountMinor: -10_000n });
+  });
+
   it("posts a withdrawal against a journal account instead of settlement and records the client name", async () => {
     const { transaction, captures } = buildTransactionMock({ openingBalanceMinor: 100_000n });
     (transaction.ledgerAccount.findFirst as ReturnType<typeof vi.fn>).mockImplementation(async ({ where }: { where: { id?: string; code?: string } }) => {

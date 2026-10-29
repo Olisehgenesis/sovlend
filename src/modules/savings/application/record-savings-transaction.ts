@@ -29,6 +29,7 @@ export type PostSavingsTransactionCommand = Readonly<{
   // teller/API-recorded deposit and withdrawal flows this fixes (see Problem 1 in the accounting
   // audit: these previously never posted a journal at all).
   postJournal?: boolean;
+  allowNegativeBalance?: boolean;
 }>;
 
 export type Tx = Prisma.TransactionClient;
@@ -103,7 +104,7 @@ export async function recordSavingsTransactionInTransaction(transaction: Tx, com
       : null;
 
   const currentBalance = current.transactions.reduce((sum, item) => sum + item.amountMinor, 0n);
-  if (command.transactionType === "WITHDRAWAL" && command.amountMinor > currentBalance) {
+  if (command.transactionType === "WITHDRAWAL" && command.amountMinor > currentBalance && !command.allowNegativeBalance) {
     throw new Error("Withdrawal exceeds available balance");
   }
 
