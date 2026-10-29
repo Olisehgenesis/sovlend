@@ -76,11 +76,37 @@ export function LoanChargesPanel({
     setFormVersion((current) => current + 1);
   }
 
+  async function waiveAllCollected() {
+    const targets = charges.filter((charge) => charge.status === "PENDING" || charge.status === "PAID");
+    if (targets.length === 0) {
+      toast.error("There are no charges left to waive on this loan");
+      return;
+    }
+    const confirmed = window.confirm(
+      `Waive ${targets.length} charge(s) on this loan? Amounts already taken at disbursement are refunded to member savings.`,
+    );
+    if (!confirmed) return;
+    setPendingId("all:WAIVED");
+    let failed = 0;
+    for (const charge of targets) {
+      const response = await fetch(`/api/loans/${loanId}/charges/${charge.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "WAIVED" }),
+      });
+      if (!response.ok) failed += 1;
+    }
+    setPendingId(null);
+    if (failed > 0) toast.error(`${failed} charge(s) could not be waived`);
+    else toast.success("Charges waived. Collected amounts were refunded to savings.");
+    router.refresh();
+  }
+
   async function setStatus(chargeId: string, status: "PAID" | "WAIVED") {
     const confirmed = window.confirm(
       status === "PAID"
         ? "Mark this loan charge as paid? Use this only when the amount has already been collected."
-        : "Waive this loan charge? The amount will no longer be due on this loan.",
+        : "Waive this loan charge? If it was already taken at disbursement, the amount is refunded to the member's savings.",
     );
     if (!confirmed) return;
     setPendingId(`${chargeId}:${status}`);
@@ -170,11 +196,13 @@ export function LoanChargesPanel({
             header: "",
             render: (charge) => (
               <div style={{ position: "relative", zIndex: 1 }}>
-                {canManage && charge.status === "PENDING" ? (
+                {canManage && (charge.status === "PENDING" || charge.status === "PAID") ? (
                   <div className="account-card-actions">
-                    <button className="icon-action" disabled={pendingId?.startsWith(`${charge.id}:`) ?? false} onClick={() => setStatus(charge.id, "PAID")} title="Mark paid" type="button">
-                      {pendingId === `${charge.id}:PAID` ? <LoaderCircle className="spin" size={14} /> : <CheckCircle2 size={14} />}
-                    </button>
+                    {charge.status === "PENDING" ? (
+                      <button className="icon-action" disabled={pendingId?.startsWith(`${charge.id}:`) ?? false} onClick={() => setStatus(charge.id, "PAID")} title="Mark paid" type="button">
+                        {pendingId === `${charge.id}:PAID` ? <LoaderCircle className="spin" size={14} /> : <CheckCircle2 size={14} />}
+                      </button>
+                    ) : null}
                     <button className="icon-action" disabled={pendingId?.startsWith(`${charge.id}:`) ?? false} onClick={() => setStatus(charge.id, "WAIVED")} title="Waive" type="button">
                       {pendingId === `${charge.id}:WAIVED` ? <LoaderCircle className="spin" size={14} /> : <XCircle size={14} />}
                     </button>
@@ -201,6 +229,9 @@ export function LoanChargesPanel({
             <BrandActionButton icon={<Plus size={16} />} onClick={() => dialogRef.current?.showModal()} type="button">
               Add charge
             </BrandActionButton>
+            <button className="secondary-action" disabled={pendingId === "all:WAIVED"} onClick={() => void waiveAllCollected()} type="button">
+              {pendingId === "all:WAIVED" ? <LoaderCircle className="spin" size={16} /> : <XCircle size={16} />} Waive all charges
+            </button>
           </div>
           <Dialog onClose={resetDialog} ref={dialogRef} title="Add loan charge">
             <form action={createCharges} className="entity-form compact-mapping" key={formVersion}>

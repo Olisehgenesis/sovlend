@@ -14,13 +14,13 @@ export function LoanChargeActions({ loanId, chargeId, status }: { loanId: string
   const router = useRouter();
   const [pending, setPending] = useState<"PAID" | "WAIVED" | null>(null);
 
-  if (status !== "PENDING") return null;
+  if (status !== "PENDING" && status !== "PAID") return null;
 
   async function setStatus(next: "PAID" | "WAIVED") {
     const confirmed = window.confirm(
       next === "PAID"
         ? "Mark this loan charge as paid? Use this only when the amount has already been collected."
-        : "Waive this loan charge? The amount will no longer be due on this loan.",
+        : "Waive this loan charge? If it was already taken at disbursement, the amount is refunded to the member's savings.",
     );
     if (!confirmed) return;
     setPending(next);
@@ -41,9 +41,11 @@ export function LoanChargeActions({ loanId, chargeId, status }: { loanId: string
 
   return (
     <div className="header-actions">
-      <BrandActionButton disabled={pending !== null} icon={pending === "PAID" ? <LoaderCircle className="spin" size={16} /> : <CheckCircle2 size={16} />} onClick={() => setStatus("PAID")} type="button">
-        Pay charge
-      </BrandActionButton>
+      {status === "PENDING" ? (
+        <BrandActionButton disabled={pending !== null} icon={pending === "PAID" ? <LoaderCircle className="spin" size={16} /> : <CheckCircle2 size={16} />} onClick={() => setStatus("PAID")} type="button">
+          Pay charge
+        </BrandActionButton>
+      ) : null}
       <button className="secondary-action" disabled={pending !== null} onClick={() => setStatus("WAIVED")} type="button">
         {pending === "WAIVED" ? <LoaderCircle className="spin" size={16} /> : <XCircle size={16} />} Waive charge
       </button>

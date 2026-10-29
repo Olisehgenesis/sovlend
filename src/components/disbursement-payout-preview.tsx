@@ -1,6 +1,6 @@
 "use client";
 
-import { buildDisbursementPayoutChoice, disbursementCashToMemberMinor, extraDisbursementChargesMinor, isStatutoryDisbursementCharge } from "@/modules/lending/domain/disbursement-payout";
+import { buildDisbursementPayoutChoice, disbursementCashToMemberMinor, extraDisbursementChargesMinor, selectDisbursementExtraCharges } from "@/modules/lending/domain/disbursement-payout";
 import { formatMinor } from "@/modules/money/domain/format-minor";
 
 export type DisbursementPayoutCharge = Readonly<{ name: string; amountMinor: string }>;
@@ -23,6 +23,9 @@ export type DisbursementPayoutContext = Readonly<{
   securityAccountNumber?: string | null;
   contributionAccountNumber?: string | null;
   collectCrb?: boolean;
+  collectProcessingFee?: boolean;
+  collectLif?: boolean;
+  collectExtraCharges?: boolean;
   processingFeeBps?: number;
   lifExempt?: boolean;
 }>;
@@ -44,7 +47,10 @@ export function DisbursementPayoutPreview({
 }) {
   let error = "";
   let choice: ReturnType<typeof buildDisbursementPayoutChoice> | null = null;
-  const extraCharges = context.extraCharges.filter((charge) => !isStatutoryDisbursementCharge(charge.name));
+  const extraCharges = selectDisbursementExtraCharges(context.extraCharges, {
+    collectProcessingFee: context.collectProcessingFee,
+    collectExtraCharges: context.collectExtraCharges,
+  });
   try {
     choice = buildDisbursementPayoutChoice({
       principalMinor: asMinor(context.principalMinor),
@@ -60,8 +66,8 @@ export function DisbursementPayoutPreview({
       })),
       liquidateLoanId,
       collectCrb: context.collectCrb,
-      processingFeeBps: context.processingFeeBps,
-      lifExempt: context.lifExempt,
+      processingFeeBps: context.collectProcessingFee === false ? 0 : context.processingFeeBps,
+      lifExempt: context.lifExempt || context.collectLif === false,
     });
   } catch (caught) {
     error = caught instanceof Error ? caught.message : "Could not build this disbursement preview.";

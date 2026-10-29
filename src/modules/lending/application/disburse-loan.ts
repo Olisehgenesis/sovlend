@@ -25,6 +25,7 @@ import {
   disbursementCashToMemberMinor,
   extraDisbursementChargesMinor,
   isStatutoryDisbursementCharge,
+  selectDisbursementExtraCharges,
   statutoryDisbursementChargeSpecs,
   type OpenLoanForPayout,
 } from "../domain/disbursement-payout";
@@ -55,6 +56,10 @@ const termsSchema = z.object({
 
 export type LoanDisbursementCommand = {
   processingFeeBps?: number;
+  collectCrb?: boolean;
+  collectProcessingFee?: boolean;
+  collectLif?: boolean;
+  collectExtraCharges?: boolean;
   loanId: string;
   actorUserId: string;
   // Which of the client's/group's savings accounts receives the net proceeds. Optional when
@@ -486,7 +491,13 @@ export async function disburseLoan(
   }
 
   const terms = termsSchema.parse(loan.termsSnapshot);
-  const appliedProcessingFeeBps = termsSchema.shape.processingFeeBps.parse(command.processingFeeBps ?? terms.processingFeeBps);
+  const collectCrb = command.collectCrb ?? loan.product.collectCrb !== false;
+  const collectProcessingFee = command.collectProcessingFee ?? loan.product.collectProcessingFee !== false;
+  const collectLif = command.collectLif ?? loan.product.collectLif !== false;
+  const collectExtraCharges = command.collectExtraCharges ?? loan.product.collectExtraCharges !== false;
+  const appliedProcessingFeeBps = collectProcessingFee
+    ? termsSchema.shape.processingFeeBps.parse(command.processingFeeBps ?? terms.processingFeeBps)
+    : 0;
 
   const authorization = new AuthorizationService(prisma);
 
@@ -518,8 +529,8 @@ export async function disburseLoan(
           where: { loanId: loan.id, dueOn: null, status: "PENDING" },
           select: { id: true, amountMinor: true, name: true },
         });
-        const extraCharges = immediateCharges.filter((charge) => !isStatutoryDisbursementCharge(charge.name));
-        const extraChargesMinor = extraDisbursementChargesMinor(immediateCharges);
+        const extraCharges = selectDisbursementExtraCharges(immediateCharges, { collectProcessingFee, collectExtraCharges });
+        const extraChargesMinor = extraDisbursementChargesMinor(extraCharges);
         const ownerAccountNumber = loan.client?.accountNumber ?? loan.group?.accountNumber;
         if (!ownerAccountNumber) {
           throw new Error("Borrower account number is required before disbursement");
@@ -583,9 +594,9 @@ export async function disburseLoan(
           extraChargesMinor,
           otherLoans: otherLoanPayouts,
           liquidateLoanId: command.topUpOfLoanId,
-          collectCrb: loan.product.collectCrb,
+          collectCrb,
           processingFeeBps: appliedProcessingFeeBps,
-          lifExempt: terms.lifExempt,
+          lifExempt: terms.lifExempt || !collectLif,
         });
         const payout = choice.payout;
         const contributionCreditMinor = disbursementCashToMemberMinor(payout);
@@ -593,19 +604,15 @@ export async function disburseLoan(
 
         const processingIncomeAccountId =
           productMapping.processingFeeIncomeAccountId ?? productMapping.feeIncomeAccountId;
-        if (!processingIncomeAccountId) {
+        if ((payout.processingFeeMinor > 0n || extraCharges.some((charge) => charge.name.toLowerCase().includes("processing"))) && !processingIncomeAccountId) {
           throw new Error("Processing fee income account is not configured for this loan product");
         }
-        const crbIncomeAccountId = await resolveLedgerAccountIdByCode(
-          transaction,
-          "202020",
-          "CRB income account",
-        );
-        const crbPayableAccountId = await resolveLedgerAccountIdByCode(
-          transaction,
-          "202021",
-          "CRB payable account",
-        );
+        const crbIncomeAccountId = payout.crbIncomeMinor > 0n
+          ? await resolveLedgerAccountIdByCode(transaction, "202020", "CRB income account")
+          : null;
+        const crbPayableAccountId = payout.crbPayableMinor > 0n
+          ? await resolveLedgerAccountIdByCode(transaction, "202021", "CRB payable account")
+          : null;
         const lifLiabilityAccountId = await resolveSavingsLiabilityAccountId(transaction, {
           organizationId: loan.office.organizationId,
           savingsProductId: lifAccount.product?.id ?? lifAccount.productId,
@@ -709,6 +716,8 @@ export async function disburseLoan(
             "Admission fee",
             "Admission fee income account",
           );
+        } else if (nameLower.includes("processing")) {
+          addFeeLine(processingIncomeAccountId, charge.amountMinor, "Loan processing fee", "Processing fee income account");
         } else {
           addFeeLine(productMapping.feeIncomeAccountId, charge.amountMinor, "Disbursement fees", "Fee income account");
         }
@@ -793,10 +802,20 @@ export async function disburseLoan(
         });
       }
 
-      if (immediateCharges.length > 0) {
+      const deductedChargeIds = extraCharges.map((charge) => charge.id);
+      if (deductedChargeIds.length > 0) {
         await transaction.charge.updateMany({
-          where: { id: { in: immediateCharges.map((charge) => charge.id) } },
+          where: { id: { in: deductedChargeIds } },
           data: { status: "PAID" },
+        });
+      }
+      const skippedChargeIds = immediateCharges
+        .filter((charge) => !isStatutoryDisbursementCharge(charge.name) && !deductedChargeIds.includes(charge.id))
+        .map((charge) => charge.id);
+      if (skippedChargeIds.length > 0) {
+        await transaction.charge.updateMany({
+          where: { id: { in: skippedChargeIds } },
+          data: { status: "WAIVED" },
         });
       }
 
@@ -845,7 +864,7 @@ export async function disburseLoan(
             ]
           : []),
         ...feeJournalLines,
-        ...(payout.processingFeeMinor > 0n || payout.crbIncomeMinor > 0n
+        ...(payout.crbIncomeMinor > 0n && crbIncomeAccountId
           ? [
               {
                 accountId: crbIncomeAccountId,
@@ -854,6 +873,10 @@ export async function disburseLoan(
                 amountMinor: payout.crbIncomeMinor,
                 memo: "CRB income",
               },
+            ]
+          : []),
+        ...(payout.crbPayableMinor > 0n && crbPayableAccountId
+          ? [
               {
                 accountId: crbPayableAccountId,
                 currencyCode: loan.denominationCurrency,

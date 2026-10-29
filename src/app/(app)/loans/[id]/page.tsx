@@ -478,6 +478,9 @@ export default async function LoanPage({
     processingFeeBps: processingRateBps,
     lifExempt,
     collectCrb: loan.product.collectCrb,
+    collectProcessingFee: loan.product.collectProcessingFee,
+    collectLif: loan.product.collectLif,
+    collectExtraCharges: loan.product.collectExtraCharges,
   };
   const isOpenLoan = ["ACTIVE", "IN_ARREARS", "OVERPAID"].includes(loan.status);
   const nextDueInstallment = [...schedule]
@@ -1030,7 +1033,7 @@ export default async function LoanPage({
           <div className="panel-heading">
             <div>
               <h2>Charges</h2>
-              <p>Fees and penalties applied to this loan</p>
+              <p>Fees and penalties on this loan, including after disbursement. Waive a paid charge to refund it to savings.</p>
             </div>
           </div>
           <LoanChargesPanel

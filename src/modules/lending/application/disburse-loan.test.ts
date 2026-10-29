@@ -391,7 +391,7 @@ describe("disburseLoan", () => {
     authorizationState.seenContexts = [];
   });
 
-  it("credits member contributions net of LIF, processing, and CRB, and keeps the journal balanced", async () => {
+  it("credits member contributions net of LIF and processing, and skips CRB when the product does not collect it", async () => {
     const { prisma, captures } = buildPrismaMock({ charges: [], collectCrb: false });
 
     await disburseLoan(prisma, {
@@ -405,7 +405,7 @@ describe("disburseLoan", () => {
     expect(captures.loanTransactionData).toMatchObject({
       settlementChannel: "Savings SV-MSA",
       settlementAccountId: undefined,
-      settlementAmountMinor: 56_600_000n,
+      settlementAmountMinor: 58_100_000n,
       denominationAmountMinor: 70_000_000n,
     });
     expect(captures.savingsTransactions).toEqual(
@@ -418,7 +418,7 @@ describe("disburseLoan", () => {
         expect.objectContaining({
           savingsAccountId: "savings-contribution",
           transactionType: "DEPOSIT",
-          amountMinor: 56_600_000n,
+          amountMinor: 58_100_000n,
           reason: "Loan disbursement",
         }),
       ]),
@@ -426,10 +426,8 @@ describe("disburseLoan", () => {
     expect(captures.journalLines).toEqual([
       { journalId: "journal-1", accountId: "ledger-principal", direction: "DEBIT", amountMinor: 70_000_000n, memo: "LN-0001" },
       { journalId: "journal-1", accountId: "ledger-fee-income", direction: "CREDIT", amountMinor: 1_400_000n, memo: "Loan processing fee" },
-      { journalId: "journal-1", accountId: "ledger-crb-income", direction: "CREDIT", amountMinor: 500_000n, memo: "CRB income" },
-      { journalId: "journal-1", accountId: "ledger-crb-payable", direction: "CREDIT", amountMinor: 1_000_000n, memo: "CRB payable to UMRA" },
       { journalId: "journal-1", accountId: "ledger-lif", direction: "CREDIT", amountMinor: 10_500_000n, memo: "SV-LIF" },
-      { journalId: "journal-1", accountId: "ledger-savings-liability", direction: "CREDIT", amountMinor: 56_600_000n, memo: "SV-MSA" },
+      { journalId: "journal-1", accountId: "ledger-savings-liability", direction: "CREDIT", amountMinor: 58_100_000n, memo: "SV-MSA" },
     ]);
     expect(captures.chargeUpdateArgs).toBeNull();
     expect(captures.chargeCreates).toEqual([
@@ -439,18 +437,6 @@ describe("disburseLoan", () => {
         amountMinor: 1_400_000n,
         status: "PAID",
         dueOn: null,
-      }),
-      expect.objectContaining({
-        loanId: "loan-1",
-        name: "CRB income",
-        amountMinor: 500_000n,
-        status: "PAID",
-      }),
-      expect.objectContaining({
-        loanId: "loan-1",
-        name: "CRB fee",
-        amountMinor: 1_000_000n,
-        status: "PAID",
       }),
     ]);
     expectBalanced(captures.journalLines as unknown[]);
@@ -645,13 +631,13 @@ describe("disburseLoan", () => {
 
     expect(captures.journalLines).toEqual([
       { journalId: "journal-1", accountId: "ledger-principal", direction: "DEBIT", amountMinor: 70_000_000n, memo: "LN-0001" },
-      { journalId: "journal-1", accountId: "ledger-processing-income", direction: "CREDIT", amountMinor: 1_400_000n, memo: "Loan processing fee" },
+      { journalId: "journal-1", accountId: "ledger-processing-income", direction: "CREDIT", amountMinor: 1_425_000n, memo: "Loan processing fee" },
       { journalId: "journal-1", accountId: "ledger-admission-income", direction: "CREDIT", amountMinor: 40_000n, memo: "Admission fee" },
       { journalId: "journal-1", accountId: "ledger-fee-income", direction: "CREDIT", amountMinor: 10_000n, memo: "Disbursement fees" },
       { journalId: "journal-1", accountId: "ledger-crb-income", direction: "CREDIT", amountMinor: 500_000n, memo: "CRB income" },
       { journalId: "journal-1", accountId: "ledger-crb-payable", direction: "CREDIT", amountMinor: 1_000_000n, memo: "CRB payable to UMRA" },
       { journalId: "journal-1", accountId: "ledger-lif", direction: "CREDIT", amountMinor: 10_500_000n, memo: "SV-LIF" },
-      { journalId: "journal-1", accountId: "ledger-savings-liability", direction: "CREDIT", amountMinor: 56_550_000n, memo: "SV-MSA" },
+      { journalId: "journal-1", accountId: "ledger-savings-liability", direction: "CREDIT", amountMinor: 56_525_000n, memo: "SV-MSA" },
     ]);
     expectBalanced(captures.journalLines as unknown[]);
   });
@@ -675,11 +661,11 @@ describe("disburseLoan", () => {
     // identical to today's behavior when the new mapping fields are not configured.
     expect(captures.journalLines).toEqual([
       { journalId: "journal-1", accountId: "ledger-principal", direction: "DEBIT", amountMinor: 70_000_000n, memo: "LN-0001" },
-      { journalId: "journal-1", accountId: "ledger-fee-income", direction: "CREDIT", amountMinor: 1_440_000n, memo: "Disbursement fees" },
+      { journalId: "journal-1", accountId: "ledger-fee-income", direction: "CREDIT", amountMinor: 1_465_000n, memo: "Disbursement fees" },
       { journalId: "journal-1", accountId: "ledger-crb-income", direction: "CREDIT", amountMinor: 500_000n, memo: "CRB income" },
       { journalId: "journal-1", accountId: "ledger-crb-payable", direction: "CREDIT", amountMinor: 1_000_000n, memo: "CRB payable to UMRA" },
       { journalId: "journal-1", accountId: "ledger-lif", direction: "CREDIT", amountMinor: 10_500_000n, memo: "SV-LIF" },
-      { journalId: "journal-1", accountId: "ledger-savings-liability", direction: "CREDIT", amountMinor: 56_560_000n, memo: "SV-MSA" },
+      { journalId: "journal-1", accountId: "ledger-savings-liability", direction: "CREDIT", amountMinor: 56_535_000n, memo: "SV-MSA" },
     ]);
     expectBalanced(captures.journalLines as unknown[]);
   });

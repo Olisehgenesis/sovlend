@@ -4,6 +4,7 @@ import {
   buildDisbursementPayout,
   buildDisbursementPayoutChoice,
   extraDisbursementChargesMinor,
+  selectDisbursementExtraCharges,
   percentOfMinor,
   disbursementOverviewRows,
   disbursementCashToMemberMinor,
@@ -87,14 +88,24 @@ describe("disbursement payout", () => {
     expect(payout.withdrawableMinor).toBe(42_200_000n);
   });
 
-  it("ignores catalog processing/CRB/LIF charges so statutory deductions are not doubled", () => {
+  it("lets a product skip catalog processing and other extra fees", () => {
+    const charges = [
+      { name: "Loan processing fee", amountMinor: 1_000_000n },
+      { name: "Admission fee", amountMinor: 40_000n },
+    ];
+    expect(selectDisbursementExtraCharges(charges, { collectProcessingFee: false, collectExtraCharges: true }).map((charge) => charge.name)).toEqual(["Admission fee"]);
+    expect(selectDisbursementExtraCharges(charges, { collectProcessingFee: true, collectExtraCharges: false }).map((charge) => charge.name)).toEqual(["Loan processing fee"]);
+    expect(selectDisbursementExtraCharges(charges, { collectProcessingFee: false, collectExtraCharges: false })).toEqual([]);
+  });
+
+  it("takes the catalog loan processing fee off proceeds while skipping duplicate CRB/LIF rows", () => {
     expect(
       extraDisbursementChargesMinor([
         { name: "Loan processing fee", amountMinor: 1_000_000n },
         { name: "Admission fee", amountMinor: 40_000n },
         { name: "CRB", amountMinor: 1_500_000n },
       ]),
-    ).toBe(40_000n);
+    ).toBe(1_040_000n);
   });
 
   it("liquidates the old loan from withdrawable proceeds when they cover the outstanding", () => {
@@ -179,7 +190,7 @@ describe("disbursement payout", () => {
     ]);
   });
 
-  it("collects compulsory CRB even when a legacy product has it disabled, preserving historical overview behavior", () => {
+  it("skips CRB when the product does not collect it", () => {
     const payout = buildDisbursementPayout({
       principalMinor: 70_000_000n,
       existingLifMinor: 0n,
@@ -187,14 +198,10 @@ describe("disbursement payout", () => {
       extraChargesMinor: 0n,
       collectCrb: false,
     });
-    expect(payout.crbTotalMinor).toBe(1_500_000n);
-    expect(payout.crbIncomeMinor).toBe(500_000n);
-    expect(payout.crbPayableMinor).toBe(1_000_000n);
-    expect(payout.withdrawableMinor).toBe(56_600_000n);
+    expect(payout.crbTotalMinor).toBe(0n);
+    expect(payout.withdrawableMinor).toBe(58_100_000n);
     expect(statutoryDisbursementChargeSpecs(payout)).toEqual([
       { name: "Processing fee", amountMinor: 1_400_000n },
-      { name: "CRB income", amountMinor: 500_000n },
-      { name: "CRB fee", amountMinor: 1_000_000n },
     ]);
     expect(disbursementOverviewRows({ principalMinor: 70_000_000n, disbursed: true, collectCrb: false }).some((row) => row.key === "crb")).toBe(false);
   });

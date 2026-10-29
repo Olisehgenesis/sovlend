@@ -16,6 +16,10 @@ const optionalUuid = z.preprocess(
 
 const schema = z.object({
   processingFeeBps: processingFeeBpsSchema.optional(),
+  collectCrb: z.boolean().optional(),
+  collectProcessingFee: z.boolean().optional(),
+  collectLif: z.boolean().optional(),
+  collectExtraCharges: z.boolean().optional(),
   savingsAccountId: optionalUuid,
   paymentMethodSettlementAccountId: optionalUuid,
   businessDate: z.iso.date(),
@@ -36,6 +40,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const { disbursement, payoff } = await disburseLoanAndPayOffPrevious(prisma, {
       loanId: (await params).id,
       processingFeeBps: parsed.data.processingFeeBps,
+      collectCrb: parsed.data.collectCrb,
+      collectProcessingFee: parsed.data.collectProcessingFee,
+      collectLif: parsed.data.collectLif,
+      collectExtraCharges: parsed.data.collectExtraCharges,
       actorUserId: session.user.id,
       savingsAccountId: parsed.data.savingsAccountId,
       paymentMethodSettlementAccountId: parsed.data.paymentMethodSettlementAccountId,

@@ -52,13 +52,34 @@ export function percentOfMinor(amountMinor: bigint, bps: number) {
 
 export function isStatutoryDisbursementCharge(name: string) {
   const normalized = name.trim().toLowerCase();
+  // Only the auto-created disbursement rows. Catalog "Loan processing fee" (flat 10,000) must
+  // still come off proceeds; matching any name that merely contains "processing" used to skip it.
   return (
-    normalized.includes("processing") ||
-    normalized.includes("crb") ||
+    normalized === PROCESSING_FEE_CHARGE_NAME.toLowerCase() ||
+    normalized === CRB_INCOME_CHARGE_NAME.toLowerCase() ||
+    normalized === CRB_FEE_CHARGE_NAME.toLowerCase() ||
+    normalized === "crb" ||
     normalized.includes("credit reference") ||
     normalized.includes("lif") ||
     normalized.includes("insurance")
   );
+}
+
+export function isProcessingCatalogCharge(name: string) {
+  return name.trim().toLowerCase().includes("processing");
+}
+
+export function selectDisbursementExtraCharges<T extends { name: string }>(
+  charges: readonly T[],
+  flags: { collectProcessingFee?: boolean; collectExtraCharges?: boolean } = {},
+): T[] {
+  const collectProcessingFee = flags.collectProcessingFee !== false;
+  const collectExtraCharges = flags.collectExtraCharges !== false;
+  return charges.filter((charge) => {
+    if (isStatutoryDisbursementCharge(charge.name)) return false;
+    if (isProcessingCatalogCharge(charge.name)) return collectProcessingFee;
+    return collectExtraCharges;
+  });
 }
 
 export function extraDisbursementChargesMinor(charges: readonly { name: string; amountMinor: bigint }[]) {
@@ -81,10 +102,10 @@ export function buildDisbursementPayout(input: {
   const remainingActivePrincipalMinor = input.remainingActivePrincipalMinor < 0n ? 0n : input.remainingActivePrincipalMinor;
   const existingLifMinor = input.existingLifMinor < 0n ? 0n : input.existingLifMinor;
   const extraChargesMinor = input.extraChargesMinor < 0n ? 0n : input.extraChargesMinor;
-  // New UGX disbursements always collect CRB, including legacy products with the flag disabled.
-  const crbTotalMinor = CRB_TOTAL_MINOR;
-  const crbPayableMinor = CRB_PAYABLE_MINOR;
-  const crbIncomeMinor = CRB_INCOME_MINOR;
+  const collectCrb = input.collectCrb !== false;
+  const crbTotalMinor = collectCrb ? CRB_TOTAL_MINOR : 0n;
+  const crbPayableMinor = collectCrb ? CRB_PAYABLE_MINOR : 0n;
+  const crbIncomeMinor = collectCrb ? CRB_INCOME_MINOR : 0n;
   const lifRequiredMinor = percentOfMinor((input.lifExempt ? 0n : input.principalMinor) + remainingActivePrincipalMinor, LIF_HOLD_BPS);
   const processingFeeMinor = percentOfMinor(input.principalMinor, processingFeeBpsSchema.parse(input.processingFeeBps ?? PROCESSING_FEE_BPS));
   // A loan-specific exemption must not move existing savings or other loans' LIF.

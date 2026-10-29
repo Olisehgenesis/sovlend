@@ -55,6 +55,10 @@ export function DisburseLoanForm({
   const [pending, setPending] = useState(false);
   const [processingPercent, setProcessingPercent] = useState(String((payout?.processingFeeBps ?? 200) / 100));
   const parsedProcessing = processingFeePercentSchema.safeParse(processingPercent === "" ? NaN : processingPercent);
+  const [collectCrb, setCollectCrb] = useState(payout?.collectCrb !== false);
+  const [collectProcessingFee, setCollectProcessingFee] = useState(payout?.collectProcessingFee !== false);
+  const [collectLif, setCollectLif] = useState(payout?.collectLif !== false);
+  const [collectExtraCharges, setCollectExtraCharges] = useState(payout?.collectExtraCharges !== false);
   const [payOffPrevious, setPayOffPrevious] = useState(initialAsTopUp && payoffLoanOptions.length > 0);
   const [selectedTopUpLoanId, setSelectedTopUpLoanId] = useState(payoffLoanOptions[0]?.id ?? "");
   const [payeeType, setPayeeType] = useState<PayeeType | "">("");
@@ -82,7 +86,11 @@ export function DisburseLoanForm({
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         savingsAccountId: savingsAccountId || undefined,
-        processingFeeBps: payout?.currency === "UGX" ? Math.round(parsedProcessing.data * 100) : undefined,
+        processingFeeBps: payout?.currency === "UGX" && collectProcessingFee ? Math.round(parsedProcessing.data * 100) : 0,
+        collectCrb,
+        collectProcessingFee,
+        collectLif,
+        collectExtraCharges,
         paymentMethodSettlementAccountId: paymentMethodSettlementAccountId || undefined,
         businessDate: formData.get("businessDate"),
         externalReference: formData.get("externalReference") || undefined,
@@ -108,7 +116,7 @@ export function DisburseLoanForm({
     onSuccess?.();
   }
 
-  const submitDisabled = pending || (payout?.currency === "UGX" && !parsedProcessing.success);
+  const submitDisabled = pending || (payout?.currency === "UGX" && collectProcessingFee && !parsedProcessing.success);
 
   return (
     <form action={disburse} className="entity-form compact-mapping">
@@ -122,15 +130,29 @@ export function DisburseLoanForm({
         </fieldset>
       ) : null}
       {payout?.currency === "UGX" || preview?.currency === "UGX" ? (
-        <p className="field-hint"><strong>Processing at the selected rate and compulsory CRB UGX 15,000 are deducted from proceeds.</strong> Do not add them again as extra charges. CRB splits into UGX 10,000 payable to UMRA (GL 202021) and UGX 5,000 income (GL 202020). They are not added to the repayment schedule.</p>
+        <p className="field-hint"><strong>Untick any deduction this loan should not take.</strong> Processing, the catalog UGX 10,000 fee, CRB, LIF, and other catalog fees only come off proceeds when ticked. They are not added to the repayment schedule.</p>
       ) : null}
       {payout ? (
         <fieldset>
           <legend>Disbursement preview</legend>
-          {payout.currency === "UGX" ? <label>Processing fee % for this loan<input type="number" min={0} max={100} step="0.01" required value={processingPercent} disabled={pending} onChange={(event) => setProcessingPercent(event.target.value)} /><small>Changing this updates the preview and actual deduction for this loan only. The change is recorded in the disbursement audit.</small></label> : null}
-          {!parsedProcessing.success ? <p role="alert">Enter a valid processing percentage before disbursing.</p> :
+          <div className="check-row">
+            <label><input checked={collectCrb} disabled={pending} onChange={(event) => setCollectCrb(event.target.checked)} type="checkbox" /> Collect CRB</label>
+            <label><input checked={collectProcessingFee} disabled={pending} onChange={(event) => setCollectProcessingFee(event.target.checked)} type="checkbox" /> Collect processing fee</label>
+            <label><input checked={collectLif} disabled={pending} onChange={(event) => setCollectLif(event.target.checked)} type="checkbox" /> Hold LIF</label>
+            <label><input checked={collectExtraCharges} disabled={pending} onChange={(event) => setCollectExtraCharges(event.target.checked)} type="checkbox" /> Collect other catalog fees</label>
+          </div>
+          {payout.currency === "UGX" && collectProcessingFee ? <label>Processing fee % for this loan<input type="number" min={0} max={100} step="0.01" required value={processingPercent} disabled={pending} onChange={(event) => setProcessingPercent(event.target.value)} /><small>Changing this updates the preview and actual deduction for this loan only. The change is recorded in the disbursement audit.</small></label> : null}
+          {collectProcessingFee && !parsedProcessing.success ? <p role="alert">Enter a valid processing percentage before disbursing.</p> :
           <DisbursementPayoutPreview
-            context={{ ...payout, processingFeeBps: Math.round(parsedProcessing.data * 100) }}
+            context={{
+              ...payout,
+              collectCrb,
+              collectProcessingFee,
+              collectLif,
+              collectExtraCharges,
+              processingFeeBps: collectProcessingFee && parsedProcessing.success ? Math.round(parsedProcessing.data * 100) : 0,
+              lifExempt: payout.lifExempt || !collectLif,
+            }}
             liquidateLoanId={payOffPrevious ? selectedTopUpLoanId || payoffLoanOptions[0]?.id : null}
           />}
         </fieldset>

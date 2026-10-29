@@ -21,6 +21,9 @@ type LoanProductDraft = Readonly<{
   amortizationMethod: string;
   interestMethod: "Flat" | "Declining Balance";
   collectCrb: boolean;
+  collectProcessingFee: boolean;
+  collectLif: boolean;
+  collectExtraCharges: boolean;
   processingFeePercent: string;
 }>;
 
@@ -73,6 +76,9 @@ export function CreateLoanProductForm() {
         amortizationMethod: formData.get("amortizationMethod"),
         interestMethod: formData.get("interestMethod"),
         collectCrb: formData.get("collectCrb") === "on",
+        collectProcessingFee: formData.get("collectProcessingFee") === "on",
+        collectLif: formData.get("collectLif") === "on",
+        collectExtraCharges: formData.get("collectExtraCharges") === "on",
         processingFeePercent: formData.get("processingFeePercent"),
       }),
     });
@@ -114,8 +120,11 @@ export function CreateLoanProductForm() {
         <label>Amortization method<input defaultValue="Equal installments" name="amortizationMethod" required /></label>
       </div>
       <div className="check-row">
-        <input type="hidden" name="collectCrb" value="on" />
-        <p className="field-hint">CRB is compulsory: UGX 15,000 (10,000 payable to UMRA + 5,000 income).</p>
+        <label><input defaultChecked name="collectCrb" type="checkbox" /> Collect CRB (UGX 15,000)</label>
+        <label><input defaultChecked name="collectProcessingFee" type="checkbox" /> Collect processing fee (rate + UGX 10,000 catalog fee)</label>
+        <label><input defaultChecked name="collectLif" type="checkbox" /> Hold LIF (15% insurance fund)</label>
+        <label><input defaultChecked name="collectExtraCharges" type="checkbox" /> Collect other catalog fees (admission, legal, and so on)</label>
+        <p className="field-hint">Untick any deduction this product should not take from disbursement.</p>
       </div>
     </fieldset>
     <div className="form-actions"><BrandActionButton disabled={pending} icon={pending ? <LoaderCircle className="spin" size={16} /> : <Plus size={16} />} type="submit">Create loan product</BrandActionButton></div>
@@ -144,6 +153,9 @@ export function EditLoanProductForm({ product }: { product: LoanProductDraft }) 
         amortizationMethod: formData.get("amortizationMethod"),
         interestMethod: formData.get("interestMethod"),
         collectCrb: formData.get("collectCrb") === "on",
+        collectProcessingFee: formData.get("collectProcessingFee") === "on",
+        collectLif: formData.get("collectLif") === "on",
+        collectExtraCharges: formData.get("collectExtraCharges") === "on",
         processingFeePercent: formData.get("processingFeePercent"),
       }),
     });
@@ -184,8 +196,11 @@ export function EditLoanProductForm({ product }: { product: LoanProductDraft }) 
         <label>Amortization method<input defaultValue={product.amortizationMethod} name="amortizationMethod" required /></label>
       </div>
       <div className="check-row">
-        <input type="hidden" name="collectCrb" value="on" />
-        <p className="field-hint">CRB is compulsory: UGX 15,000 (10,000 payable to UMRA + 5,000 income).</p>
+        <label><input defaultChecked={product.collectCrb} name="collectCrb" type="checkbox" /> Collect CRB (UGX 15,000)</label>
+        <label><input defaultChecked={product.collectProcessingFee} name="collectProcessingFee" type="checkbox" /> Collect processing fee (rate + UGX 10,000 catalog fee)</label>
+        <label><input defaultChecked={product.collectLif} name="collectLif" type="checkbox" /> Hold LIF (15% insurance fund)</label>
+        <label><input defaultChecked={product.collectExtraCharges} name="collectExtraCharges" type="checkbox" /> Collect other catalog fees (admission, legal, and so on)</label>
+        <p className="field-hint">Untick any deduction this product should not take. On loans already disbursed, waive the charge on the loan Charges tab to refund it.</p>
       </div>
     </fieldset>
     <div className="form-actions"><BrandActionButton disabled={pending} icon={pending ? <LoaderCircle className="spin" size={18} /> : <Save size={18} />} type="submit">Save changes</BrandActionButton></div>

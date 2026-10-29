@@ -297,6 +297,10 @@ export default async function LoanApplicationPage({
     lifAccountNumber: lifAccount?.accountNumber,
     securityAccountNumber: securityAccount?.accountNumber,
     contributionAccountNumber: contributionAccount?.accountNumber,
+    collectCrb: application.product.collectCrb,
+    collectProcessingFee: application.product.collectProcessingFee,
+    collectLif: application.product.collectLif,
+    collectExtraCharges: application.product.collectExtraCharges,
   };
 
   const actionPanel =
@@ -507,8 +511,8 @@ export default async function LoanApplicationPage({
                 <dd>{formatMinor(percentOfMinor(reviewedLoan?.principalMinor ?? application.proposedPrincipalMinor, processingRateBps), "UGX")} · deducted at disbursement; editable for this loan</dd>
               </div>
               <div>
-                <dt>CRB (compulsory)</dt>
-                <dd>{formatMinor(CRB_TOTAL_MINOR, "UGX")} · 10,000 payable to UMRA + 5,000 income</dd>
+                <dt>CRB</dt>
+                <dd>{application.product.collectCrb ? `${formatMinor(CRB_TOTAL_MINOR, "UGX")} · 10,000 payable to UMRA + 5,000 income` : "Not collected on this product"}</dd>
               </div>
             </> : null}
             <div>

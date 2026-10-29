@@ -22,7 +22,10 @@ const updateSchema = z.object({
   repaymentFrequency: z.string().trim().regex(/^\d+\s+(day|days|week|weeks|month|months)$/i, "Repayment frequency must be like '1 Months'"),
   amortizationMethod: z.string().trim().min(1).max(120),
   interestMethod: z.enum(["Flat", "Declining Balance"]),
-  collectCrb: z.literal(true, { error: "CRB is compulsory and cannot be disabled" }).default(true),
+  collectCrb: z.boolean().default(true),
+  collectProcessingFee: z.boolean().default(true),
+  collectLif: z.boolean().default(true),
+  collectExtraCharges: z.boolean().default(true),
 });
 
 // Archiving only flips `active`; the row is never deleted so existing loans keep their terms snapshot intact.
@@ -62,6 +65,9 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       amortizationMethod: parsed.data.amortizationMethod,
       interestMethod: parsed.data.interestMethod,
       collectCrb: parsed.data.collectCrb,
+      collectProcessingFee: parsed.data.collectProcessingFee,
+      collectLif: parsed.data.collectLif,
+      collectExtraCharges: parsed.data.collectExtraCharges,
       ...(parsed.data.processingFeePercent !== undefined ? { processingFeeBps: Math.round(parsed.data.processingFeePercent * 100) } : {}),
     },
   });
