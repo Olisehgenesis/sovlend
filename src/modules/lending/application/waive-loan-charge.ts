@@ -9,54 +9,57 @@ import { resolveSavingsLiabilityAccountId } from "@/modules/savings/application/
 
 import { CRB_FEE_CHARGE_NAME, CRB_INCOME_CHARGE_NAME, MEMBER_CONTRIBUTION_SAVINGS_SHORT_NAME } from "../domain/disbursement-payout";
 
-export async function setLoanChargeStatus(
+type ChargeStatus = "PENDING" | "PAID" | "WAIVED";
+
+async function resolveChargeIncomeAccountId(
   prisma: PrismaClient,
-  command: { loanId: string; chargeId: string; actorUserId: string; status: "PENDING" | "PAID" | "WAIVED" },
+  chargeName: string,
+  productId: string | null,
+  organizationId: string,
 ) {
-  const loan = await prisma.loan.findUniqueOrThrow({
-    where: { id: command.loanId },
-    include: {
-      office: { select: { organizationId: true } },
-      client: { select: { accountNumber: true } },
-      group: { select: { accountNumber: true } },
-    },
-  });
-  const charge = await prisma.charge.findFirst({ where: { id: command.chargeId, loanId: loan.id } });
-  if (!charge) throw new Error("Charge not found");
-  if (charge.status === command.status) return charge;
-
-  if (command.status !== "WAIVED") {
-    return prisma.charge.update({ where: { id: charge.id }, data: { status: command.status } });
-  }
-
-  if (charge.status !== "PAID") {
-    return prisma.charge.update({ where: { id: charge.id }, data: { status: "WAIVED" } });
-  }
-
-  const businessDate = new Date(`${new Date().toISOString().slice(0, 10)}T00:00:00.000Z`);
-  await assertPeriodOpen(prisma, { officeId: loan.officeId, businessDate });
-
-  const mapping = await prisma.loanProductAccountingMapping.findUnique({ where: { productId: loan.productId } });
-  const name = charge.name.trim().toLowerCase();
-  let incomeAccountId: string | null = null;
+  const mapping = productId
+    ? await prisma.loanProductAccountingMapping.findUnique({ where: { productId } })
+    : null;
+  const defaults = mapping
+    ? null
+    : await prisma.loanAccountingDefaults.findUnique({ where: { organizationId } });
+  const feeIncomeAccountId = mapping?.feeIncomeAccountId ?? defaults?.feeIncomeAccountId ?? null;
+  const name = chargeName.trim().toLowerCase();
   if (name === CRB_INCOME_CHARGE_NAME.toLowerCase() || name === "crb") {
-    incomeAccountId = (await prisma.ledgerAccount.findFirst({ where: { code: "202020", active: true }, select: { id: true } }))?.id ?? null;
-  } else if (name === CRB_FEE_CHARGE_NAME.toLowerCase()) {
-    incomeAccountId = (await prisma.ledgerAccount.findFirst({ where: { code: "202021", active: true }, select: { id: true } }))?.id ?? null;
-  } else if (name.includes("processing")) {
-    incomeAccountId = mapping?.processingFeeIncomeAccountId ?? mapping?.feeIncomeAccountId ?? null;
-  } else if (name.includes("admission")) {
-    incomeAccountId = mapping?.admissionFeeIncomeAccountId ?? mapping?.feeIncomeAccountId ?? null;
-  } else {
-    incomeAccountId = mapping?.feeIncomeAccountId ?? null;
+    return (await prisma.ledgerAccount.findFirst({ where: { code: "202020", active: true }, select: { id: true } }))?.id ?? null;
   }
-  if (!incomeAccountId) throw new Error("No ledger account is configured to reverse this charge");
+  if (name === CRB_FEE_CHARGE_NAME.toLowerCase()) {
+    return (await prisma.ledgerAccount.findFirst({ where: { code: "202021", active: true }, select: { id: true } }))?.id ?? null;
+  }
+  if (name.includes("processing")) return mapping?.processingFeeIncomeAccountId ?? feeIncomeAccountId;
+  if (name.includes("admission")) return mapping?.admissionFeeIncomeAccountId ?? feeIncomeAccountId;
+  return feeIncomeAccountId;
+}
 
-  const owner = loan.client ?? loan.group;
-  if (!owner) throw new Error("Borrower is required to refund a waived charge");
+async function refundPaidCharge(
+  prisma: PrismaClient,
+  command: {
+    charge: { id: string; name: string; amountMinor: bigint; currencyCode: string; status: string };
+    actorUserId: string;
+    officeId: string;
+    organizationId: string;
+    productId: string | null;
+    clientId: string | null;
+    groupId: string | null;
+    accountLabel: string;
+  },
+) {
+  const { charge } = command;
+  const businessDate = new Date(`${new Date().toISOString().slice(0, 10)}T00:00:00.000Z`);
+  await assertPeriodOpen(prisma, { officeId: command.officeId, businessDate });
+
+  const incomeAccountId = await resolveChargeIncomeAccountId(prisma, charge.name, command.productId, command.organizationId);
+  if (!incomeAccountId) throw new Error("No ledger account is configured to reverse this charge");
+  if (!command.clientId && !command.groupId) throw new Error("Borrower is required to refund a waived charge");
+
   const savings = await prisma.savingsAccount.findFirst({
     where: {
-      ...(loan.clientId ? { clientId: loan.clientId } : { groupId: loan.groupId }),
+      ...(command.clientId ? { clientId: command.clientId } : { groupId: command.groupId }),
       status: "ACTIVE",
       currencyCode: charge.currencyCode,
       product: { shortName: MEMBER_CONTRIBUTION_SAVINGS_SHORT_NAME },
@@ -81,7 +84,7 @@ export async function setLoanChargeStatus(
       postJournal: false,
     });
     const liabilityAccountId = await resolveSavingsLiabilityAccountId(tx, {
-      organizationId: loan.office.organizationId,
+      organizationId: command.organizationId,
       savingsProductId: savings.productId,
       savingsProductShortName: savings.product?.shortName ?? MEMBER_CONTRIBUTION_SAVINGS_SHORT_NAME,
     });
@@ -92,11 +95,11 @@ export async function setLoanChargeStatus(
     assertBalancedJournal(lines);
     const journal = await tx.journal.create({
       data: {
-        officeId: loan.officeId,
+        officeId: command.officeId,
         businessDate,
-        referenceType: "LOAN_CHARGE_WAIVER",
+        referenceType: "CHARGE_WAIVER",
         referenceId: savingsTx.id,
-        narration: `Waive ${charge.name} on ${loan.accountNumber}`,
+        narration: `Waive ${charge.name} on ${command.accountLabel}`,
         idempotencyKey: `journal:charge-waiver:${charge.id}`,
       },
     });
@@ -106,18 +109,96 @@ export async function setLoanChargeStatus(
     await tx.journal.update({ where: { id: journal.id }, data: { status: "POSTED", postedAt: new Date() } });
 
     const correlationId = randomUUID();
-    const metadata = { loanId: loan.id, chargeId: charge.id, amountMinor: charge.amountMinor.toString(), savingsAccountId: savings.id };
+    const metadata = { chargeId: charge.id, amountMinor: charge.amountMinor.toString(), savingsAccountId: savings.id };
     await tx.auditEvent.create({
       data: {
         actorId: command.actorUserId,
-        action: "loan.charge.waived",
+        action: "charge.waived",
         entityType: "Charge",
         entityId: charge.id,
         correlationId,
         metadata,
-        eventHash: createHash("sha256").update(JSON.stringify({ correlationId, action: "loan.charge.waived", metadata })).digest("hex"),
+        eventHash: createHash("sha256").update(JSON.stringify({ correlationId, action: "charge.waived", metadata })).digest("hex"),
       },
     });
     return updated;
+  });
+}
+
+export async function setLoanChargeStatus(
+  prisma: PrismaClient,
+  command: { loanId: string; chargeId: string; actorUserId: string; status: ChargeStatus },
+) {
+  const loan = await prisma.loan.findUniqueOrThrow({
+    where: { id: command.loanId },
+    include: {
+      office: { select: { organizationId: true } },
+      client: { select: { accountNumber: true } },
+      group: { select: { accountNumber: true } },
+    },
+  });
+  const charge = await prisma.charge.findFirst({ where: { id: command.chargeId, loanId: loan.id } });
+  if (!charge) throw new Error("Charge not found");
+  if (charge.status === command.status) return charge;
+  if (command.status !== "WAIVED") {
+    return prisma.charge.update({ where: { id: charge.id }, data: { status: command.status } });
+  }
+  if (charge.status !== "PAID") {
+    return prisma.charge.update({ where: { id: charge.id }, data: { status: "WAIVED" } });
+  }
+  const owner = loan.client ?? loan.group;
+  if (!owner) throw new Error("Borrower is required to refund a waived charge");
+  return refundPaidCharge(prisma, {
+    charge,
+    actorUserId: command.actorUserId,
+    officeId: loan.officeId,
+    organizationId: loan.office.organizationId,
+    productId: loan.productId,
+    clientId: loan.clientId,
+    groupId: loan.groupId,
+    accountLabel: loan.accountNumber,
+  });
+}
+
+export async function setClientChargeStatus(
+  prisma: PrismaClient,
+  command: { clientId: string; chargeId: string; actorUserId: string; status: ChargeStatus },
+) {
+  const charge = await prisma.charge.findFirst({ where: { id: command.chargeId, clientId: command.clientId } });
+  if (!charge) throw new Error("Charge not found");
+  if (charge.loanId) {
+    return setLoanChargeStatus(prisma, {
+      loanId: charge.loanId,
+      chargeId: charge.id,
+      actorUserId: command.actorUserId,
+      status: command.status,
+    });
+  }
+  if (charge.status === command.status) return charge;
+  if (command.status !== "WAIVED") {
+    return prisma.charge.update({ where: { id: charge.id }, data: { status: command.status } });
+  }
+  if (charge.status !== "PAID") {
+    return prisma.charge.update({ where: { id: charge.id }, data: { status: "WAIVED" } });
+  }
+
+  const client = await prisma.client.findUniqueOrThrow({
+    where: { id: command.clientId },
+    select: { id: true, accountNumber: true, officeId: true, organizationId: true },
+  });
+  const loan = await prisma.loan.findFirst({
+    where: { clientId: client.id },
+    orderBy: { createdAt: "desc" },
+    select: { productId: true },
+  });
+  return refundPaidCharge(prisma, {
+    charge,
+    actorUserId: command.actorUserId,
+    officeId: client.officeId,
+    organizationId: client.organizationId,
+    productId: loan?.productId ?? null,
+    clientId: client.id,
+    groupId: null,
+    accountLabel: client.accountNumber,
   });
 }

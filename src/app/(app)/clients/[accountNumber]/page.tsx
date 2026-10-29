@@ -323,7 +323,7 @@ export default async function ClientDetailPage({ params, searchParams }: { param
 
       {activeTab === "charges" ? (
         <section className="panel">
-          <div className="panel-heading"><div><h2>Charges</h2><p>Fees and penalties applied to this client</p></div></div>
+          <div className="panel-heading"><div><h2>Charges</h2><p>Fees and penalties on this client, including after disbursement. Waive a paid charge to refund it to savings.</p></div></div>
           <ChargesList canManage={canManage} charges={client.charges.map((charge) => ({ id: charge.id, name: charge.name, amountFormatted: formatMinor(charge.amountMinor, charge.currencyCode), status: charge.status, dueOnFormatted: charge.dueOn ? new Intl.DateTimeFormat("en-UG", { dateStyle: "medium" }).format(charge.dueOn) : null }))} clientId={client.id} />
           {canManage ? <AddChargeForm clientId={client.id} /> : null}
         </section>

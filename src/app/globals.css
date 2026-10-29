@@ -216,6 +216,7 @@ tbody tr:last-child td { border-bottom: 0; }.mono { font-family: var(--font-mono
 .clickable-rows td:first-child { color: var(--muted); }
 .clickable-rows td.row-index { width: 3rem; z-index: 4; }
 .row-link { position: absolute; inset: 0; z-index: 1; }
+.clickable-rows td .account-card-actions { position: relative; z-index: 2; }
 .row-link:focus-visible { outline: 2px solid var(--forest); outline-offset: -2px; }
 /* Repayment schedule / payment row shading: paid installments are green, overdue (past due
    date, still owed) are red, and installments not yet due are left neutral grey. */

@@ -7,6 +7,7 @@ import { prisma } from "@/lib/prisma";
 import { AuthorizationService, PermissionDeniedError } from "@/modules/identity/application/authorization-service";
 import { clientScopeWhere, getUserDataScope } from "@/modules/identity/application/data-scope";
 import { permissions } from "@/modules/identity/domain/permissions";
+import { setClientChargeStatus } from "@/modules/lending/application/waive-loan-charge";
 
 const schema = z.object({ status: z.enum(["PENDING", "PAID", "WAIVED"]) });
 
@@ -28,9 +29,17 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     throw error;
   }
 
-  const charge = await prisma.charge.findFirst({ where: { id: chargeId, clientId: client.id } });
-  if (!charge) return NextResponse.json({ error: "Charge not found" }, { status: 404 });
-
-  await prisma.charge.update({ where: { id: charge.id }, data: { status: parsed.data.status } });
+  try {
+    await setClientChargeStatus(prisma, {
+      clientId: client.id,
+      chargeId,
+      actorUserId: session.user.id,
+      status: parsed.data.status,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Could not update this charge";
+    if (message === "Charge not found") return NextResponse.json({ error: message }, { status: 404 });
+    return NextResponse.json({ error: message }, { status: 400 });
+  }
   return NextResponse.json({ ok: true });
 }

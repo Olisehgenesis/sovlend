@@ -489,50 +489,93 @@ export type ChargeRow = Readonly<{ id: string; name: string; amountFormatted: st
 export function ChargesList({ clientId, charges, canManage }: { clientId: string; charges: readonly ChargeRow[]; canManage: boolean }) {
   const router = useRouter();
   const [pendingAction, setPendingAction] = useState<{ chargeId: string; status: "PAID" | "WAIVED" } | null>(null);
+  const [pendingAll, setPendingAll] = useState(false);
+  const waivable = charges.filter((charge) => charge.status === "PENDING" || charge.status === "PAID");
+
+  async function patchStatus(chargeId: string, status: "PAID" | "WAIVED") {
+    const response = await fetch(`/api/clients/${clientId}/charges/${chargeId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status }),
+    });
+    const result = await response.json().catch(() => ({}));
+    return { ok: response.ok, error: typeof result.error === "string" ? result.error : null };
+  }
 
   async function setStatus(chargeId: string, status: "PAID" | "WAIVED") {
     const confirmed = window.confirm(
       status === "PAID"
         ? "Mark this client charge as paid? Use this only when the charge has already been collected."
-        : "Waive this client charge? The amount will no longer be due from the client.",
+        : "Waive this charge? If it was already taken at disbursement, the amount is refunded to member savings.",
     );
     if (!confirmed) return;
     setPendingAction({ chargeId, status });
-    const response = await fetch(`/api/clients/${clientId}/charges/${chargeId}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status }) });
-    const result = await response.json().catch(() => ({}));
+    const result = await patchStatus(chargeId, status);
     setPendingAction(null);
-    if (!response.ok) {
+    if (!result.ok) {
       toast.error(result.error ?? (status === "PAID" ? "Could not mark this client charge as paid" : "Could not waive this client charge"));
       return;
     }
-    toast.success(status === "PAID" ? "Client charge marked as paid" : "Client charge waived");
+    toast.success(status === "PAID" ? "Client charge marked as paid" : "Charge waived");
+    router.refresh();
+  }
+
+  async function waiveAllCollected() {
+    if (waivable.length === 0) {
+      toast.error("There are no charges left to waive on this client");
+      return;
+    }
+    const confirmed = window.confirm(
+      `Waive ${waivable.length} charge(s) on this client? Amounts already taken are refunded to member savings.`,
+    );
+    if (!confirmed) return;
+    setPendingAll(true);
+    let failed = 0;
+    for (const charge of waivable) {
+      const result = await patchStatus(charge.id, "WAIVED");
+      if (!result.ok) failed += 1;
+    }
+    setPendingAll(false);
+    if (failed > 0) toast.error(`${failed} charge(s) could not be waived`);
+    else toast.success("Charges waived. Collected amounts were refunded to savings.");
     router.refresh();
   }
 
   if (charges.length === 0) return <div className="empty-state compact-empty"><strong>No charges recorded</strong><p>Fees and penalties applied to this client will appear here. Use the form below to add a one-off charge.</p></div>;
 
   return (
-    <div className="table-scroll">
-      <table>
-        <thead><tr><th>Charge</th><th>Amount</th><th>Due</th><th>Status</th><th></th></tr></thead>
-        <tbody>
-          {charges.map((charge) => (
-            <tr key={charge.id}>
-              <td>{charge.name}</td>
-              <td className="mono">{charge.amountFormatted}</td>
-              <td>{charge.dueOnFormatted ?? "\u2014"}</td>
-              <td><span className={`status ${charge.status === "PAID" ? "up-to-date" : charge.status === "WAIVED" ? "review" : "in-arrears"}`}>{charge.status}</span></td>
-              <td>{canManage && charge.status === "PENDING" ? (
-                <div className="account-card-actions">
-                  <button className="icon-action" disabled={pendingAction?.chargeId === charge.id} onClick={() => setStatus(charge.id, "PAID")} title="Mark paid" type="button">{pendingAction?.chargeId === charge.id && pendingAction.status === "PAID" ? <LoaderCircle className="spin" size={15} /> : <CheckCircle2 size={15} />}</button>
-                  <button className="icon-action" disabled={pendingAction?.chargeId === charge.id} onClick={() => setStatus(charge.id, "WAIVED")} title="Waive" type="button">{pendingAction?.chargeId === charge.id && pendingAction.status === "WAIVED" ? <LoaderCircle className="spin" size={15} /> : <XCircle size={15} />}</button>
-                </div>
-              ) : null}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+    <>
+      <div className="table-scroll">
+        <table>
+          <thead><tr><th>Charge</th><th>Amount</th><th>Due</th><th>Status</th><th></th></tr></thead>
+          <tbody>
+            {charges.map((charge) => (
+              <tr key={charge.id}>
+                <td>{charge.name}</td>
+                <td className="mono">{charge.amountFormatted}</td>
+                <td>{charge.dueOnFormatted ?? "\u2014"}</td>
+                <td><span className={`status ${charge.status === "PAID" ? "up-to-date" : charge.status === "WAIVED" ? "review" : "in-arrears"}`}>{charge.status}</span></td>
+                <td>{canManage && (charge.status === "PENDING" || charge.status === "PAID") ? (
+                  <div className="account-card-actions">
+                    {charge.status === "PENDING" ? (
+                      <button className="icon-action" disabled={pendingAll || pendingAction?.chargeId === charge.id} onClick={() => setStatus(charge.id, "PAID")} title="Mark paid" type="button">{pendingAction?.chargeId === charge.id && pendingAction.status === "PAID" ? <LoaderCircle className="spin" size={15} /> : <CheckCircle2 size={15} />}</button>
+                    ) : null}
+                    <button className="icon-action" disabled={pendingAll || pendingAction?.chargeId === charge.id} onClick={() => setStatus(charge.id, "WAIVED")} title="Waive" type="button">{pendingAction?.chargeId === charge.id && pendingAction.status === "WAIVED" ? <LoaderCircle className="spin" size={15} /> : <XCircle size={15} />}</button>
+                  </div>
+                ) : null}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {canManage && waivable.length > 0 ? (
+        <div className="form-actions">
+          <button className="secondary-action" disabled={pendingAll} onClick={() => void waiveAllCollected()} type="button">
+            {pendingAll ? <LoaderCircle className="spin" size={16} /> : <XCircle size={16} />} Waive all charges
+          </button>
+        </div>
+      ) : null}
+    </>
   );
 }
 
