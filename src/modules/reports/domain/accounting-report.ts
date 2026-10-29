@@ -7,13 +7,13 @@ import { displaySavingsProductName } from "@/modules/savings/domain/savings-prod
 export const reportDateFormatter = new Intl.DateTimeFormat("en-UG", { dateStyle: "medium" });
 
 const DETAIL_ACCOUNT_WHERE = {
-  active: true,
   usage: "DETAIL",
   currencyCode: "UGX",
 } as const;
 
 type ReportPrisma = PrismaClient | Prisma.TransactionClient;
 export type BalanceSide = "DEBIT" | "CREDIT" | "ZERO";
+export type LedgerAccountInclude = "movement" | "balance" | "all";
 export type ReportOffice = { id: string; name: string };
 export type ReportAccount = { id: string; code: string; name: string; type: AccountType; currencyCode: string };
 
@@ -351,6 +351,29 @@ export function resolveAccountTypeFilter(requestedAccountType: string | null | u
     : null;
 }
 
+export function resolveLedgerAccountInclude(value: string | null | undefined): LedgerAccountInclude {
+  if (value === "movement" || value === "balance" || value === "all") return value;
+  return "balance";
+}
+
+function compareAccountCodes(left: string, right: string) {
+  return left.localeCompare(right, undefined, { numeric: true, sensitivity: "base" });
+}
+
+function applyLedgerAccountFilters(
+  accounts: readonly ReportAccount[],
+  filters: { fromCode?: string | null; toCode?: string | null; accountType?: AccountType | null },
+) {
+  const fromCode = filters.fromCode?.trim() || null;
+  const toCode = filters.toCode?.trim() || null;
+  return accounts.filter((account) => {
+    if (filters.accountType && account.type !== filters.accountType) return false;
+    if (fromCode && compareAccountCodes(account.code, fromCode) < 0) return false;
+    if (toCode && compareAccountCodes(account.code, toCode) > 0) return false;
+    return true;
+  });
+}
+
 export function accountTypeLabel(type: AccountType) {
   switch (type) {
     case "ASSET":
@@ -589,14 +612,26 @@ export async function getGeneralLedgerJournal(db: ReportPrisma, scope: UserDataS
 export async function getGeneralLedgerReport(
   db: ReportPrisma,
   scope: UserDataScope,
-  filters: { startDate: Date; endDate: Date; officeId: string | null; accountId: string | null },
+  filters: {
+    startDate: Date;
+    endDate: Date;
+    officeId: string | null;
+    accountId: string | null;
+    fromCode?: string | null;
+    toCode?: string | null;
+    accountType?: AccountType | null;
+    include?: LedgerAccountInclude;
+  },
 ): Promise<GeneralLedgerReport> {
   const accounts = await listAccountingReportAccounts(db);
   const selectedAccount = filters.accountId
     ? accounts.find((account) => account.id === filters.accountId) ?? null
     : null;
   if (filters.accountId && !selectedAccount) throw new Error("Invalid account filter");
-  const reportAccounts = selectedAccount ? [selectedAccount] : accounts;
+  const include = filters.include ?? "balance";
+  const reportAccounts = selectedAccount
+    ? [selectedAccount]
+    : applyLedgerAccountFilters(accounts, filters);
 
   if (reportAccounts.length === 0) {
     return {
@@ -616,9 +651,17 @@ export async function getGeneralLedgerReport(
     };
   }
 
+  const scopedAccountIds = selectedAccount || reportAccounts.length === accounts.length
+    ? null
+    : reportAccounts.map((account) => account.id);
+  const accountIdFilter = selectedAccount
+    ? { accountId: selectedAccount.id }
+    : scopedAccountIds
+      ? { accountId: { in: scopedAccountIds } }
+      : {};
   const lines = await db.journalLine.findMany({
     where: {
-      ...(selectedAccount ? { accountId: selectedAccount.id } : {}),
+      ...accountIdFilter,
       account: DETAIL_ACCOUNT_WHERE,
       journal: {
         status: "POSTED",
@@ -656,7 +699,7 @@ export async function getGeneralLedgerReport(
   const openingLines = await db.journalLine.groupBy({
     by: ["accountId", "direction"],
     where: {
-      ...(selectedAccount ? { accountId: selectedAccount.id } : {}),
+      ...accountIdFilter,
       account: DETAIL_ACCOUNT_WHERE,
       journal: {
         status: "POSTED",
@@ -736,13 +779,14 @@ export async function getGeneralLedgerReport(
     });
   }
 
-  const accountsWithActivity = new Set([
-    ...entries.map((entry) => entry.account.id),
-    ...[...openingBalances].filter(([, amount]) => amount !== 0n).map(([id]) => id),
-  ]);
+  const accountsWithMovement = new Set(entries.map((entry) => entry.account.id));
   const accountBalances = reportAccounts.flatMap((account) => {
-    if (!accountsWithActivity.has(account.id) && account.id !== selectedAccount?.id) return [];
-    const closingBalanceMinor = runningBalances.get(account.id) ?? 0n;
+    const closingBalanceMinor = runningBalances.get(account.id) ?? openingBalances.get(account.id) ?? 0n;
+    const moved = accountsWithMovement.has(account.id);
+    if (account.id !== selectedAccount?.id) {
+      if (include === "movement" && !moved) return [];
+      if (include === "balance" && !moved && closingBalanceMinor === 0n) return [];
+    }
     return [{
       account,
       openingBalanceMinor: openingBalances.get(account.id) ?? 0n,
@@ -979,10 +1023,17 @@ export async function getJournalReconciliationReport(
     // The transaction amount (the larger of the two totals -- equal when balanced) is filtered
     // in-memory rather than in the SQL query since it's a derived sum across a journal's lines.
     .filter((journal) => {
-      const transactionAmountMinor = journal.debitTotalMinor > journal.creditTotalMinor ? journal.debitTotalMinor : journal.creditTotalMinor;
-      if (minAmountMinor !== null && transactionAmountMinor < minAmountMinor) return false;
-      if (maxAmountMinor !== null && transactionAmountMinor > maxAmountMinor) return false;
-      return true;
+      const lineAmounts = filters.accountId
+        ? journal.lines.filter((line) => line.id === filters.accountId).map((line) => line.amountMinor)
+        : [];
+      const amounts = lineAmounts.length > 0
+        ? lineAmounts
+        : [journal.debitTotalMinor > journal.creditTotalMinor ? journal.debitTotalMinor : journal.creditTotalMinor];
+      return amounts.some((amountMinor) => {
+        if (minAmountMinor !== null && amountMinor < minAmountMinor) return false;
+        if (maxAmountMinor !== null && amountMinor > maxAmountMinor) return false;
+        return true;
+      });
     });
 
   for (const journal of serializedJournals) {
@@ -1143,8 +1194,15 @@ export function serializeTrialBalanceReport(report: TrialBalanceReport) {
 }
 
 export function generalLedgerReportCsv(report: GeneralLedgerReport) {
+  const entries = [...report.entries].sort((left, right) => {
+    const codeCompare = compareAccountCodes(left.account.code, right.account.code);
+    if (codeCompare !== 0) return codeCompare;
+    const dateCompare = left.businessDate.getTime() - right.businessDate.getTime();
+    if (dateCompare !== 0) return dateCompare;
+    return left.id.localeCompare(right.id);
+  });
   return rowsToCsv(
-    report.entries.map((entry) => ({
+    entries.map((entry) => ({
       Date: dateToString(entry.businessDate),
       "Account Type": entry.account.type,
       "GL Account Code": entry.account.code,

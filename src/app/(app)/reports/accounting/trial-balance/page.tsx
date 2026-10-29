@@ -204,7 +204,8 @@ export default async function TrialBalancePage({
         ) : (
           <div className="statement-body">
             <div className="statement-columns-heading">
-              <span className="statement-columns-heading-account">Account</span>
+              <span>Code</span>
+              <span>Account</span>
               <span className="statement-columns-heading-amount">Debit</span>
               <span className="statement-columns-heading-amount">Credit</span>
             </div>
@@ -212,10 +213,14 @@ export default async function TrialBalancePage({
               const allRows = report.rows.filter((row) => row.type === section.type);
               const rows = showZero ? allRows : allRows.filter((row) => row.balanceMinor !== 0n);
               if (allRows.length === 0) return null;
-              const sectionTotal = allRows.reduce(
-                (sum, row) => sum + summarizeBalance(row.type, row.balanceMinor).absoluteMinor,
-                0n,
-              );
+              const sectionDebitMinor = allRows.reduce((sum, row) => {
+                const balance = summarizeBalance(row.type, row.balanceMinor);
+                return balance.balanceSide === "DEBIT" ? sum + balance.absoluteMinor : sum;
+              }, 0n);
+              const sectionCreditMinor = allRows.reduce((sum, row) => {
+                const balance = summarizeBalance(row.type, row.balanceMinor);
+                return balance.balanceSide === "CREDIT" ? sum + balance.absoluteMinor : sum;
+              }, 0n);
 
               return (
                 <details className="statement-section" key={section.type} open>
@@ -239,8 +244,10 @@ export default async function TrialBalancePage({
                     </div>
                   )}
                   <div className="statement-subtotal">
+                    <span />
                     <span>Total {section.label.toLowerCase()}</span>
-                    <span className="mono">{formatMinor(sectionTotal, "UGX")}</span>
+                    <span className="mono">{sectionDebitMinor === 0n ? null : formatMinor(sectionDebitMinor, "UGX")}</span>
+                    <span className="mono">{sectionCreditMinor === 0n ? null : formatMinor(sectionCreditMinor, "UGX")}</span>
                   </div>
                 </details>
               );
@@ -249,20 +256,26 @@ export default async function TrialBalancePage({
             <div className="statement-section statement-grand-total">
               <div className="statement-rows">
                 <div className="statement-row">
+                  <span />
                   <span>Total debits</span>
                   <span className="mono">{formatMinor(report.totalDebitsMinor, "UGX")}</span>
+                  <span />
                 </div>
                 <div className="statement-row">
+                  <span />
                   <span>Total credits</span>
+                  <span />
                   <span className="mono">{formatMinor(report.totalCreditsMinor, "UGX")}</span>
                 </div>
                 <div className="statement-row">
+                  <span />
                   <span>
                     <strong>Difference</strong>
                   </span>
                   <span className="mono">
                     <strong>{formatMinor(report.differenceMinor, "UGX")}</strong>
                   </span>
+                  <span />
                 </div>
               </div>
             </div>

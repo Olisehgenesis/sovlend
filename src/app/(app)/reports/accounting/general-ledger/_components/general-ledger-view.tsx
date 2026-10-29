@@ -14,6 +14,7 @@ import { permissions } from "@/modules/identity/domain/permissions";
 import { formatMinor } from "@/modules/money/domain/format-minor";
 import { loadReportPickerOptions } from "@/modules/reports/report-catalog";
 import {
+  accountingAccountTypeSections,
   buildReportQueryString,
   currentMonthDateRange,
   formatDateInputValue,
@@ -23,10 +24,14 @@ import {
   listAccountingReportOffices,
   normalizeDateRange,
   parseDateInput,
+  resolveAccountTypeFilter,
   resolveDatePreset,
+  resolveLedgerAccountInclude,
   resolveOfficeFilter,
   sideLabel,
   summarizeBalance,
+  type GeneralLedgerAccountBalance,
+  type GeneralLedgerEntry,
   type ReportDatePreset,
 } from "@/modules/reports/domain/accounting-report";
 
@@ -41,7 +46,17 @@ export default async function GeneralLedgerView({
   searchParams,
   selectedAccountId,
 }: {
-  searchParams: Promise<{ startDate?: string; endDate?: string; officeId?: string; preset?: string; accountId?: string }>;
+  searchParams: Promise<{
+    startDate?: string;
+    endDate?: string;
+    officeId?: string;
+    preset?: string;
+    accountId?: string;
+    fromCode?: string;
+    toCode?: string;
+    accountType?: string;
+    include?: string;
+  }>;
   selectedAccountId?: string;
 }) {
   const session = await auth.api.getSession({ headers: await headers() });
@@ -75,15 +90,32 @@ export default async function GeneralLedgerView({
       );
   const officeId = resolveOfficeFilter(offices, params.officeId ?? null);
   const accountId = selectedAccountId || params.accountId || null;
+  const accountType = resolveAccountTypeFilter(params.accountType ?? null);
+  const include = resolveLedgerAccountInclude(params.include);
+  const fromCode = params.fromCode?.trim() || null;
+  const toCode = params.toCode?.trim() || null;
   if (accountId && !accounts.some((account) => account.id === accountId)) notFound();
   if (params.officeId && !officeId) notFound();
-  const report = await getGeneralLedgerReport(prisma, scope, { startDate, endDate, officeId, accountId });
+  const report = await getGeneralLedgerReport(prisma, scope, {
+    startDate,
+    endDate,
+    officeId,
+    accountId,
+    fromCode,
+    toCode,
+    accountType,
+    include,
+  });
   const activeOfficeName = offices.find((office) => office.id === officeId)?.name ?? "All offices";
   const queryString = buildReportQueryString({
     startDate: formatDateInputValue(startDate),
     endDate: formatDateInputValue(endDate),
     officeId,
     accountId,
+    fromCode,
+    toCode,
+    accountType,
+    include: include === "balance" ? null : include,
   });
   const basePath = selectedAccountId ? `/reports/accounting/general-ledger/accounts/${selectedAccountId}` : "/reports/accounting/general-ledger";
   const accountHref = (id: string) => `/reports/accounting/general-ledger/accounts/${id}?${buildReportQueryString({
@@ -101,7 +133,7 @@ export default async function GeneralLedgerView({
           <p className="eyebrow">Accounting statements</p>
           <h1>{report.account?.name ?? "General Ledger"}</h1>
           <p>
-            {report.account ? `${report.account.code} · ${report.account.type}` : "All GL accounts"} · movements from {formatReportDate(report.startDate)} to {formatReportDate(report.endDate)} · {activeOfficeName}
+            {report.account ? `${report.account.code} · ${report.account.type}` : "One section per account"} · movements from {formatReportDate(report.startDate)} to {formatReportDate(report.endDate)} · {activeOfficeName}
           </p>
         </div>
         <ReportPicker current="/reports/accounting/general-ledger" options={pickerOptions} />
@@ -124,7 +156,7 @@ export default async function GeneralLedgerView({
             {DATE_PRESETS.map((item) => (
               <Link
                 className={`pill-link ${preset === item.value ? "active" : ""}`}
-                href={`${basePath}?${buildReportQueryString({ preset: item.value, officeId, accountId })}`}
+                href={`${basePath}?${buildReportQueryString({ preset: item.value, officeId, accountId, fromCode, toCode, accountType, include: include === "balance" ? null : include })}`}
                 key={item.value}
               >
                 {item.label}
@@ -168,6 +200,35 @@ export default async function GeneralLedgerView({
                 }))]}
               />
             </label>
+            <div className="form-row three">
+              <label>
+                From account code
+                <input defaultValue={fromCode ?? ""} name="fromCode" placeholder="CA-001" />
+              </label>
+              <label>
+                To account code
+                <input defaultValue={toCode ?? ""} name="toCode" placeholder="CA-003" />
+              </label>
+              <label>
+                Account type
+                <select defaultValue={accountType ?? ""} name="accountType">
+                  <option value="">All types</option>
+                  {accountingAccountTypeSections.map((section) => (
+                    <option key={section.type} value={section.type}>
+                      {section.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+            <label>
+              Accounts to print
+              <select defaultValue={include} name="include">
+                <option value="movement">Only accounts with movement this period</option>
+                <option value="balance">Accounts with a balance or movement</option>
+                <option value="all">Every account</option>
+              </select>
+            </label>
           </fieldset>
           <div className="form-actions">
             <button className="invest-button" type="submit">
@@ -180,7 +241,7 @@ export default async function GeneralLedgerView({
       <section className="panel">
         <div className="panel-heading">
           <div>
-            <h2>{report.account ? "Account transactions" : "All ledger accounts"}</h2>
+            <h2>{report.account ? "Account register" : "General ledger by account"}</h2>
             <p>
               {report.journalCount.toLocaleString()} posted journal{report.journalCount === 1 ? "" : "s"} · {report.lineCount.toLocaleString()} ledger line
               {report.lineCount === 1 ? "" : "s"}
@@ -192,119 +253,133 @@ export default async function GeneralLedgerView({
           </span> : null}
         </div>
 
-        {report.accountBalances.length > 0 ? (
-          <details className="panel" open={Boolean(report.account)}>
-            <summary>Account opening, movement, and closing balances ({report.accountBalances.length})</summary>
-            <div className="table-scroll">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Account type</th>
-                    <th>GL account</th>
-                    <th className="numeric">Opening balance</th>
-                    <th className="numeric">Period debits</th>
-                    <th className="numeric">Period credits</th>
-                    <th className="numeric">Closing balance</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {report.accountBalances.map((balance) => {
-                    const opening = summarizeBalance(balance.account.type, balance.openingBalanceMinor);
-                    const closing = summarizeBalance(balance.account.type, balance.closingBalanceMinor);
-                    return (
-                      <tr key={balance.account.id}>
-                        <td>{balance.account.type}</td>
-                        <td><Link className="green-link" href={accountHref(balance.account.id)}>{balance.account.code} · {balance.account.name}</Link></td>
-                        <td className="numeric">{formatMinor(opening.absoluteMinor, balance.account.currencyCode)} {sideLabel(opening.balanceSide)}</td>
-                        <td className="numeric">{formatMinor(balance.debitTotalMinor, balance.account.currencyCode)}</td>
-                        <td className="numeric">{formatMinor(balance.creditTotalMinor, balance.account.currencyCode)}</td>
-                        <td className="numeric">{formatMinor(closing.absoluteMinor, balance.account.currencyCode)} {sideLabel(closing.balanceSide)}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </details>
-        ) : null}
-
-        {report.lineCount === 0 ? (
+        {report.accountBalances.length === 0 ? (
           <div className="empty-state">
             <BookOpenText size={28} />
             <strong>No posted entries in this period</strong>
-            <p>Try a wider date range or a different office. The General Ledger includes every active detail account.</p>
+            <p>Try a wider date range, a different office, or include accounts that still have a balance.</p>
           </div>
         ) : (
-          <div className="table-scroll">
-            <table>
-              <thead>
-                <tr>
-                  <th>Date</th>
-                  <th>Account type</th>
-                  <th>GL account name / code</th>
-                  <th>Vendor / client</th>
-                  <th>Journal</th>
-                  <th>Office</th>
-                  <th>Memo</th>
-                  <th className="numeric">Debit</th>
-                  <th className="numeric">Credit</th>
-                  <th className="numeric">Account running balance</th>
-                </tr>
-              </thead>
-              <tbody>
-                {report.entries.map((entry) => {
-                  const running = summarizeBalance(entry.account.type, entry.runningBalanceMinor);
-                  const journalHref = `/reports/accounting/general-ledger/entries/${entry.journalId}?${queryString}`;
-                  return (
-                    <tr key={entry.id}>
-                      <td>
-                        <Link className="green-link" href={journalHref}>{formatReportDate(entry.businessDate)}</Link>
-                      </td>
-                      <td>{entry.account.type}</td>
-                      <td><Link className="green-link" href={accountHref(entry.account.id)}>{entry.account.name}</Link><small>{entry.account.code}</small></td>
-                      <td>
-                        {entry.payeeName ?? "—"}
-                        {entry.payeeReference ? <small>{entry.payeeReference}</small> : null}
-                      </td>
-                      <td>
-                        <Link className="green-link" href={journalHref}>View entry</Link>
-                        <small>{entry.referenceType.replaceAll("_", " ")}</small>
-                      </td>
-                      <td>{entry.officeName}</td>
-                      <td>{entry.memo ?? entry.narration}</td>
-                      <td className="numeric">{entry.direction === "DEBIT" ? formatMinor(entry.amountMinor, entry.account.currencyCode) : "—"}</td>
-                      <td className="numeric">{entry.direction === "CREDIT" ? formatMinor(entry.amountMinor, entry.account.currencyCode) : "—"}</td>
-                      <td className="numeric">
-                        {`${formatMinor(running.absoluteMinor, entry.account.currencyCode)} ${sideLabel(running.balanceSide)}`}
-                      </td>
-                    </tr>
-                  );
-                })}
-                <tr>
-                  <td>
-                    <strong>Totals</strong>
-                  </td>
-                  <td>—</td>
-                  <td>—</td>
-                  <td>—</td>
-                  <td>—</td>
-                  <td>—</td>
-                  <td>—</td>
-                  <td className="numeric">
-                    <strong>{formatMinor(report.debitTotalMinor, "UGX")}</strong>
-                  </td>
-                  <td className="numeric">
-                    <strong>{formatMinor(report.creditTotalMinor, "UGX")}</strong>
-                  </td>
-                  <td className="numeric">
-                    <strong>—</strong>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
+          report.accountBalances.map((balance) => (
+            <LedgerAccountSection
+              accountHref={accountHref(balance.account.id)}
+              balance={balance}
+              entries={report.entries.filter((entry) => entry.account.id === balance.account.id)}
+              key={balance.account.id}
+              queryString={queryString}
+            />
+          ))
         )}
       </section>
     </main>
+  );
+}
+
+function LedgerAccountSection({
+  accountHref,
+  balance,
+  entries,
+  queryString,
+}: {
+  accountHref: string;
+  balance: GeneralLedgerAccountBalance;
+  entries: GeneralLedgerEntry[];
+  queryString: string;
+}) {
+  const opening = summarizeBalance(balance.account.type, balance.openingBalanceMinor);
+  const closing = summarizeBalance(balance.account.type, balance.closingBalanceMinor);
+  return (
+    <div className="ledger-account-block">
+      <div className="ledger-account-heading">
+        <div>
+          <h3>
+            <Link className="green-link" href={accountHref}>
+              {balance.account.code} · {balance.account.name}
+            </Link>
+          </h3>
+          <p className="ledger-account-meta">{balance.account.type} · {balance.account.currencyCode}</p>
+        </div>
+        <div className="ledger-balance-strip">
+          <div>
+            <span>Opening</span>
+            <strong>{formatMinor(opening.absoluteMinor, balance.account.currencyCode)} {sideLabel(opening.balanceSide)}</strong>
+          </div>
+          <div>
+            <span>Debits</span>
+            <strong>{formatMinor(balance.debitTotalMinor, balance.account.currencyCode)}</strong>
+          </div>
+          <div>
+            <span>Credits</span>
+            <strong>{formatMinor(balance.creditTotalMinor, balance.account.currencyCode)}</strong>
+          </div>
+          <div>
+            <span>Closing</span>
+            <strong>{formatMinor(closing.absoluteMinor, balance.account.currencyCode)} {sideLabel(closing.balanceSide)}</strong>
+          </div>
+        </div>
+      </div>
+      <div className="table-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Vendor / client</th>
+              <th>Journal</th>
+              <th>Office</th>
+              <th>Memo</th>
+              <th className="numeric">Debit</th>
+              <th className="numeric">Credit</th>
+              <th className="numeric">Running balance</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td colSpan={5}><strong>Opening balance</strong></td>
+              <td className="numeric">—</td>
+              <td className="numeric">—</td>
+              <td className="numeric">
+                {formatMinor(opening.absoluteMinor, balance.account.currencyCode)} {sideLabel(opening.balanceSide)}
+              </td>
+            </tr>
+            {entries.map((entry) => {
+              const running = summarizeBalance(entry.account.type, entry.runningBalanceMinor);
+              const journalHref = `/reports/accounting/general-ledger/entries/${entry.journalId}?${queryString}`;
+              return (
+                <tr key={entry.id}>
+                  <td>
+                    <Link className="green-link" href={journalHref}>{formatReportDate(entry.businessDate)}</Link>
+                  </td>
+                  <td>
+                    {entry.payeeName ?? "—"}
+                    {entry.payeeReference ? <small>{entry.payeeReference}</small> : null}
+                  </td>
+                  <td>
+                    <Link className="green-link" href={journalHref}>View entry</Link>
+                    <small>{entry.referenceType.replaceAll("_", " ")}</small>
+                  </td>
+                  <td>{entry.officeName}</td>
+                  <td>{entry.memo ?? entry.narration}</td>
+                  <td className="numeric">{entry.direction === "DEBIT" ? formatMinor(entry.amountMinor, entry.account.currencyCode) : "—"}</td>
+                  <td className="numeric">{entry.direction === "CREDIT" ? formatMinor(entry.amountMinor, entry.account.currencyCode) : "—"}</td>
+                  <td className="numeric">
+                    {`${formatMinor(running.absoluteMinor, entry.account.currencyCode)} ${sideLabel(running.balanceSide)}`}
+                  </td>
+                </tr>
+              );
+            })}
+            <tr>
+              <td colSpan={5}><strong>Closing balance</strong></td>
+              <td className="numeric"><strong>{formatMinor(balance.debitTotalMinor, balance.account.currencyCode)}</strong></td>
+              <td className="numeric"><strong>{formatMinor(balance.creditTotalMinor, balance.account.currencyCode)}</strong></td>
+              <td className="numeric">
+                <strong>
+                  {formatMinor(closing.absoluteMinor, balance.account.currencyCode)} {sideLabel(closing.balanceSide)}
+                </strong>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
   );
 }

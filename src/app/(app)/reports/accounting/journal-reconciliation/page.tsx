@@ -50,12 +50,8 @@ const DATE_PRESETS: { value: ReportDatePreset; label: string }[] = [
   { value: "year", label: "This year" },
 ];
 
-function visibleLines(journal: JournalReconciliationJournal, accountId: string | null, search: string | null) {
-  const lines = accountId ? journal.lines.filter((line) => line.id === accountId) : journal.lines;
-  if (!search) return lines;
-  const query = search.trim().toLowerCase();
-  const accountMatches = lines.filter((line) => line.name.toLowerCase().includes(query) || line.code.toLowerCase().includes(query));
-  return accountMatches.length > 0 ? accountMatches : lines;
+function visibleLines(journal: JournalReconciliationJournal) {
+  return journal.lines;
 }
 
 export default async function JournalReconciliationPage({
@@ -161,11 +157,9 @@ export default async function JournalReconciliationPage({
       searchText: `${account.type} ${account.currencyCode}`,
     })),
   ];
-  const runningByLineId = new Map(ledger?.entries.map((entry) => [entry.id, entry]) ?? []);
   const accountBalance = ledger?.accountBalances.find((balance) => balance.account.id === accountId) ?? null;
-  const showRunningBalance = Boolean(accountBalance) && !search && entrySource === "ALL" && minAmountMinor === null && maxAmountMinor === null;
   const rows = report.journals.flatMap((journal) => {
-    const lines = visibleLines(journal, accountId, search);
+    const lines = visibleLines(journal);
     return lines.map((line, index) => ({
       line,
       journal,
@@ -322,7 +316,7 @@ export default async function JournalReconciliationPage({
       <section className="panel">
         <div className="panel-heading">
           <div>
-            <h2>{selectedAccount ? "Transactions on this account" : "Transactions"}</h2>
+            <h2>{selectedAccount ? "Journals that touch this account" : "Journals"}</h2>
             <p>
               {rows.length.toLocaleString()} transaction{rows.length === 1 ? "" : "s"}
               {" · "}
@@ -332,7 +326,7 @@ export default async function JournalReconciliationPage({
           {unbalanced.length > 0 ? <span className="status review">Out of balance</span> : null}
         </div>
 
-        {showRunningBalance && accountBalance ? (
+        {accountBalance ? (
           <div className="ledger-balance-strip">
             <div>
               <span>Opening</span>
@@ -402,17 +396,14 @@ export default async function JournalReconciliationPage({
               <thead>
                 <tr>
                   <th>Date</th>
-                  {selectedAccount ? null : <th>Account</th>}
+                  <th>Account</th>
                   <th>Description</th>
                   <th className="numeric">Debit</th>
                   <th className="numeric">Credit</th>
-                  {showRunningBalance ? <th className="numeric">Balance</th> : null}
                 </tr>
               </thead>
               <tbody>
                 {rows.map(({ line, journal, anchor }) => {
-                  const running = runningByLineId.get(line.lineId);
-                  const runningSummary = running ? summarizeBalance(line.type, running.runningBalanceMinor) : null;
                   return (
                     <tr className={journal.id === highlightedJournalId ? "posted-journal" : undefined} id={anchor ? `journal-${journal.id}` : undefined} key={line.lineId}>
                       <td>
@@ -420,12 +411,10 @@ export default async function JournalReconciliationPage({
                         <small>View entry</small>
                         {officeId ? null : <small>{journal.officeName}</small>}
                       </td>
-                      {selectedAccount ? null : (
-                        <td>
-                          <Link className="green-link" href={filterHref({ accountId: line.id })}>{line.name}</Link>
-                          <small>{line.code}</small>
-                        </td>
-                      )}
+                      <td>
+                        <Link className="green-link" href={filterHref({ accountId: line.id })}>{line.name}</Link>
+                        <small>{line.code}</small>
+                      </td>
                       <td>
                         {line.memo ?? journal.narration}
                         {journal.payeeName ? <small>{journal.payeeName}</small> : null}
@@ -433,11 +422,6 @@ export default async function JournalReconciliationPage({
                       </td>
                       <td className="numeric">{line.direction === "DEBIT" ? formatMinor(line.amountMinor, line.currencyCode) : "—"}</td>
                       <td className="numeric">{line.direction === "CREDIT" ? formatMinor(line.amountMinor, line.currencyCode) : "—"}</td>
-                      {showRunningBalance ? (
-                        <td className="numeric">
-                          {runningSummary ? `${formatMinor(runningSummary.absoluteMinor, line.currencyCode)} ${sideLabel(runningSummary.balanceSide)}` : "—"}
-                        </td>
-                      ) : null}
                     </tr>
                   );
                 })}

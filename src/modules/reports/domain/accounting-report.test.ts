@@ -145,8 +145,12 @@ describe("getGeneralLedgerReport", () => {
         findMany: vi.fn(async () => accounts),
       },
       journalLine: {
-        findMany: vi.fn(async ({ where }: { where: { accountId?: string } }) =>
-          periodLines.filter((line) => !where.accountId || line.account.id === where.accountId)),
+        findMany: vi.fn(async ({ where }: { where: { accountId?: string | { in: string[] } } }) =>
+          periodLines.filter((line) => {
+            if (!where.accountId) return true;
+            if (typeof where.accountId === "string") return line.account.id === where.accountId;
+            return where.accountId.in.includes(line.account.id);
+          })),
         groupBy: vi.fn(async () => [
           { accountId: "cash", direction: "DEBIT", _sum: { amountMinor: 10_000n } },
           { accountId: "income", direction: "CREDIT", _sum: { amountMinor: 10_000n } },
@@ -208,6 +212,34 @@ describe("getGeneralLedgerReport", () => {
       officeId: null,
       accountId: "missing",
     })).rejects.toThrow("Invalid account filter");
+
+    const ranged = await getGeneralLedgerReport(db, scope, {
+      startDate: new Date("2026-09-01T00:00:00.000Z"),
+      endDate: new Date("2026-09-30T00:00:00.000Z"),
+      officeId: null,
+      accountId: null,
+      fromCode: "10001",
+      toCode: "10002",
+    });
+    expect(ranged.accountBalances.map((balance) => balance.account.code)).toEqual(["10001", "10002"]);
+
+    const assets = await getGeneralLedgerReport(db, scope, {
+      startDate: new Date("2026-09-01T00:00:00.000Z"),
+      endDate: new Date("2026-09-30T00:00:00.000Z"),
+      officeId: null,
+      accountId: null,
+      accountType: "ASSET",
+    });
+    expect(assets.accountBalances.every((balance) => balance.account.type === "ASSET")).toBe(true);
+
+    const everyAccount = await getGeneralLedgerReport(db, scope, {
+      startDate: new Date("2026-09-01T00:00:00.000Z"),
+      endDate: new Date("2026-09-30T00:00:00.000Z"),
+      officeId: null,
+      accountId: null,
+      include: "all",
+    });
+    expect(everyAccount.accountBalances.map((balance) => balance.account.id)).toEqual(["empty", "cash", "loan", "income"]);
   });
 });
 
@@ -334,7 +366,17 @@ describe("parseAmountFilterMinor / minorToAmountInputValue", () => {
   });
 });
 
-function buildJournal(overrides: Partial<{ id: string; referenceType: string; referenceId: string | null; narration: string; lines: Array<{ direction: "DEBIT" | "CREDIT"; amountMinor: bigint }> }>) {
+function buildJournal(overrides: Partial<{
+  id: string;
+  referenceType: string;
+  referenceId: string | null;
+  narration: string;
+  lines: Array<{
+    direction: "DEBIT" | "CREDIT";
+    amountMinor: bigint;
+    account?: { id: string; code: string; name: string; type: "ASSET" | "LIABILITY" | "EQUITY" | "REVENUE" | "EXPENSE"; currencyCode: string };
+  }>;
+}>) {
   const lines = overrides.lines ?? [
     { direction: "DEBIT" as const, amountMinor: 10_000n },
     { direction: "CREDIT" as const, amountMinor: 10_000n },
@@ -354,7 +396,7 @@ function buildJournal(overrides: Partial<{ id: string; referenceType: string; re
       direction: line.direction,
       amountMinor: line.amountMinor,
       memo: null,
-      account: { id: "account-1", code: "1000", name: "Cash", type: "ASSET", currencyCode: "UGX" },
+      account: line.account ?? { id: "account-1", code: "1000", name: "Cash", type: "ASSET" as const, currencyCode: "UGX" },
     })),
   };
 }
@@ -453,6 +495,30 @@ describe("getJournalReconciliationReport", () => {
     expect(report.journals[0]!.id).toBe("medium");
     expect(report.totalDebitsMinor).toBe(10_000n);
     expect(report.totalCreditsMinor).toBe(10_000n);
+  });
+
+  it("filters by the selected account line amount instead of the whole journal total", async () => {
+    const journals = [
+      buildJournal({
+        id: "touching",
+        lines: [
+          { direction: "DEBIT", amountMinor: 1_000n, account: { id: "cash", code: "10001", name: "Cash", type: "ASSET", currencyCode: "UGX" } },
+          { direction: "CREDIT", amountMinor: 100_000n, account: { id: "income", code: "30001", name: "Interest", type: "REVENUE", currencyCode: "UGX" } },
+        ],
+      }),
+    ];
+    const findMany = vi.fn(async () => journals);
+    const db = { journal: { findMany } } as never;
+    const report = await getJournalReconciliationReport(db, scope, {
+      startDate: new Date("2026-09-01"),
+      endDate: new Date("2026-09-30"),
+      officeId: null,
+      accountId: "cash",
+      minAmountMinor: 500n,
+      maxAmountMinor: 5_000n,
+    });
+    expect(report.journalCount).toBe(1);
+    expect(report.journals[0]!.id).toBe("touching");
   });
 
   it("still flags unbalanced journals as an issue when no amount filter is applied", async () => {

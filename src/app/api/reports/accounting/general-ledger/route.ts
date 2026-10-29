@@ -15,7 +15,9 @@ import {
   normalizeDateRange,
   parseDateInput,
   resolveAccountFilter,
+  resolveAccountTypeFilter,
   resolveDatePreset,
+  resolveLedgerAccountInclude,
   resolveOfficeFilter,
   serializeGeneralLedgerReport,
 } from "@/modules/reports/domain/accounting-report";
@@ -66,6 +68,10 @@ export async function GET(request: Request) {
     endDate,
     officeId,
     accountId,
+    fromCode: url.searchParams.get("fromCode"),
+    toCode: url.searchParams.get("toCode"),
+    accountType: resolveAccountTypeFilter(url.searchParams.get("accountType")),
+    include: resolveLedgerAccountInclude(url.searchParams.get("include")),
   });
 
   if (url.searchParams.get("format")?.toLowerCase() === "csv") {
