@@ -65,7 +65,7 @@ export default async function ClientDetailPage({ params, searchParams }: { param
       documents: { orderBy: { createdAt: "desc" } },
       loans: { orderBy: { createdAt: "desc" }, include: { product: { select: { name: true } }, installments: { select: { dueOn: true, principalDueMinor: true, principalPaidMinor: true, interestDueMinor: true, interestPaidMinor: true, feesDueMinor: true, feesPaidMinor: true, penaltiesDueMinor: true, penaltiesPaidMinor: true, monitoringFeeDueMinor: true, monitoringFeePaidMinor: true } } } },
       savingsAccounts: { orderBy: { createdAt: "desc" }, include: { product: { select: { name: true } }, transactions: { select: { amountMinor: true } } } },
-      charges: { orderBy: { createdAt: "desc" } },
+      charges: { where: { loanId: null }, orderBy: { createdAt: "desc" } },
       notes: { orderBy: { createdAt: "desc" }, include: { author: { select: { name: true } } } },
     },
   });
@@ -323,7 +323,7 @@ export default async function ClientDetailPage({ params, searchParams }: { param
 
       {activeTab === "charges" ? (
         <section className="panel">
-          <div className="panel-heading"><div><h2>Charges</h2><p>Fees and penalties on this client, including after disbursement. Waive a paid charge to refund it to savings.</p></div></div>
+          <div className="panel-heading"><div><h2>Charges</h2><p>One-off client fees only. CRB, processing, and other loan fees sit on each loan — open the loan and use Charges there.</p></div></div>
           <ChargesList canManage={canManage} charges={client.charges.map((charge) => ({ id: charge.id, name: charge.name, amountFormatted: formatMinor(charge.amountMinor, charge.currencyCode), status: charge.status, dueOnFormatted: charge.dueOn ? new Intl.DateTimeFormat("en-UG", { dateStyle: "medium" }).format(charge.dueOn) : null }))} clientId={client.id} />
           {canManage ? <AddChargeForm clientId={client.id} /> : null}
         </section>
