@@ -3,9 +3,10 @@ import { headers } from "next/headers";
 import { processingFeeBps } from "@/modules/lending/domain/processing-fee";
 import { LoanFeesPanel } from "@/components/loan-fees-panel";
 import { ReturnLoanToDraftPanel } from "@/components/return-loan-to-draft-panel";
+import { ReturnLoanToReviewPanel } from "@/components/return-loan-to-review-panel";
 import { LoanDeleteRejectPanel } from "@/components/loan-delete-reject-panel";
 import { canBypassOriginationMakerChecker } from "@/modules/lending/application/loan-application-access";
-import { canReturnLoanToDraft } from "@/modules/lending/application/return-loan-to-draft-access";
+import { canReturnLoanToDraft, canReturnLoanToReview } from "@/modules/lending/application/return-loan-to-draft-access";
 import { loanDecisionAvailability } from "@/modules/lending/application/loan-application-decision";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
@@ -105,6 +106,7 @@ export default async function LoanPage({
     tab === "charges" ||
     tab === "fees" ||
     tab === "return-to-draft" ||
+    tab === "return-to-review" ||
     tab === "overdue-charges" ||
     tab === "documents" ||
     tab === "notes" ||
@@ -153,10 +155,12 @@ export default async function LoanPage({
     notFound();
 
   const authorization = new AuthorizationService(prisma);
-  const canReturnToDraft = loan.status === "APPROVED" && !loan.disbursedOn && await canReturnLoanToDraft(prisma, scope, {
+  const returnContext = {
     actorUserId: session.user.id, officeId: loan.officeId,
     principalMinor: loan.principalMinor, currencyCode: loan.denominationCurrency,
-  });
+  };
+  const canReturnToDraft = loan.status === "APPROVED" && !loan.disbursedOn && await canReturnLoanToDraft(prisma, scope, returnContext);
+  const canReturnToReview = loan.status === "APPROVED" && !loan.disbursedOn && await canReturnLoanToReview(prisma, scope, returnContext);
   const loanDecision = await loanDecisionAvailability(prisma, scope, { applicationId: loan.applicationId, actorUserId: session.user.id });
   const canEditFees = loan.status === "APPROVED" && !loan.disbursedOn && await authorization.isAllowed({
     actorUserId: session.user.id, permission: permissions.loanDisburse,
@@ -675,7 +679,7 @@ export default async function LoanPage({
           </div>
         </details>
         <details className="loan-file-menu">
-          <summary className={["collateral", "guarantors", "documents", "notes", "servicing", "return-to-draft"].includes(activeTab ?? "") ? "active" : undefined}>
+          <summary className={["collateral", "guarantors", "documents", "notes", "servicing", "return-to-draft", "return-to-review"].includes(activeTab ?? "") ? "active" : undefined}>
             Loan file
           </summary>
           <div>
@@ -684,10 +688,13 @@ export default async function LoanPage({
             <Link className={activeTab === "documents" ? "active" : ""} href={`/loans/${loan.id}?tab=documents`}>Documents</Link>
             <Link className={activeTab === "notes" ? "active" : ""} href={`/loans/${loan.id}?tab=notes`}>Notes</Link>
             <Link className={activeTab === "servicing" ? "active" : ""} href={`/loans/${loan.id}?tab=servicing`}>Servicing</Link>
+            {canReturnToReview ? <Link className={activeTab === "return-to-review" ? "active" : ""} href={`/loans/${loan.id}?tab=return-to-review`}>Return to review</Link> : null}
             {canReturnToDraft ? <Link className={activeTab === "return-to-draft" ? "active" : ""} href={`/loans/${loan.id}?tab=return-to-draft`}>Return to draft</Link> : null}
           </div>
         </details>
       </nav>
+      {activeTab === "return-to-review" && canReturnToReview ? <ReturnLoanToReviewPanel loanId={loan.id} updatedAt={loan.updatedAt.toISOString()} /> : null}
+      {activeTab === "return-to-review" && !canReturnToReview ? <section className="panel"><h2>Return to review unavailable</h2><p>This action requires return-to-review access in your office, and an approved loan that has not been disbursed.</p></section> : null}
       {activeTab === "return-to-draft" && canReturnToDraft ? <ReturnLoanToDraftPanel loanId={loan.id} updatedAt={loan.updatedAt.toISOString()} /> : null}
       {activeTab === "return-to-draft" && !canReturnToDraft ? <section className="panel"><h2>Return to draft unavailable</h2><p>This action requires a manager/admin role or approval permission within your office scope, and an approved, undisbursed loan.</p></section> : null}
       {loan.status === "DRAFT" ? <section className="panel"><h2>Unapproved draft</h2><p>Disbursement is blocked until this application is submitted and approved again.</p><Link className="green-link" href={`/loans/applications/${loan.applicationId}`}>Edit draft application</Link></section> : null}

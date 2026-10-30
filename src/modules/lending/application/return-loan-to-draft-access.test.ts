@@ -2,9 +2,13 @@ import type { PrismaClient, UserRole } from "@prisma/client";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 const allowed = vi.hoisted(() => vi.fn(async () => false));
 vi.mock("@/modules/identity/application/authorization-service", () => ({ AuthorizationService: class { isAllowed = allowed; } }));
-import { canReturnLoanToDraft } from "./return-loan-to-draft-access";
+import { canReturnLoanToDraft, canReturnLoanToReview, isAutomaticReturnToReviewUser } from "./return-loan-to-draft-access";
 const scope = { organizationId: "org", officeIds: ["office"], officerUserId: null };
 const context = { actorUserId: "manager", officeId: "office", principalMinor: 300000000n, currencyCode: "UGX" };
+function reviewDb(name: string) {
+  const user = { findUnique: vi.fn(async () => ({ name, systemRole: "LOAN_OFFICER" as const, organizationId: "org", banned: false })) };
+  return { user } as unknown as PrismaClient;
+}
 function mock(systemRole: UserRole) {
   const actor = { systemRole, organizationId: "org", banned: false };
   const user = { findUnique: vi.fn(async () => actor) };
@@ -40,5 +44,27 @@ describe("return to draft access", () => {
     actor.organizationId = "org"; actor.banned = true;
     expect(await canReturnLoanToDraft(db, scope, context)).toBe(false);
     expect(allowed).not.toHaveBeenCalled();
+  });
+});
+
+describe("return to review access", () => {
+  beforeEach(() => { allowed.mockReset(); allowed.mockResolvedValue(false); });
+  it("recognizes Robinah and Oliseh by their first name when they are staff", () => {
+    expect(isAutomaticReturnToReviewUser({ name: "Robinah Nakaggwe", systemRole: "LOAN_OFFICER" })).toBe(true);
+    expect(isAutomaticReturnToReviewUser({ name: "Oliseh Genesis", systemRole: "ADMIN" })).toBe(true);
+    expect(isAutomaticReturnToReviewUser({ name: "Robinah Client", systemRole: "CLIENT" })).toBe(false);
+    expect(isAutomaticReturnToReviewUser({ name: "Jane Officer", systemRole: "LOAN_OFFICER" })).toBe(false);
+  });
+  it("lets Robinah and Oliseh return a loan to review without approval permission", async () => {
+    for (const name of ["Robinah Nakaggwe", "Oliseh"]) {
+      const db = reviewDb(name);
+      expect(await canReturnLoanToReview(db, scope, context)).toBe(true);
+    }
+    expect(allowed).not.toHaveBeenCalled();
+  });
+  it("still requires approval permission for other loan officers", async () => {
+    const db = reviewDb("Jane Officer");
+    expect(await canReturnLoanToReview(db, scope, context)).toBe(false);
+    expect(allowed).toHaveBeenCalled();
   });
 });

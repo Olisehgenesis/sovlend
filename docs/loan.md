@@ -569,6 +569,13 @@ save a processing rate there without disbursing; Overview and the payout preview
 then read the saved loan rate. Updates are office-scoped, audited, and reject
 stale edits/concurrent disbursement. CRB and LIF remain policy deductions, not
 editable percentages in this tab. Posted/disbursed loans are read-only.
+Return to review sends an approved loan that is not currently disbursed back to Needs review.
+A payout that was fully reversed can return to review, and those reversal entries stay on the loan.
+A payout that is still outstanding cannot.
+The loan becomes an unapproved draft so disbursement stays blocked, and the
+same loan number is approved again rather than issued twice. Robinah and Oliseh
+see this action automatically. Branch managers, general managers, admins, and
+anyone who can return a loan to draft can use it as well.
 The Return to draft tab is available to all branch managers, general managers,
 and admins within their assigned office scope, regardless of loan approval limits.
 Other users require loan approval permission within their amount/currency limit.
