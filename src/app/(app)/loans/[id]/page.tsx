@@ -591,23 +591,30 @@ export default async function LoanPage({
             )}
             {loan.client && loan.group ? (
               <>
-                {" "}
-                ·{" "}
+                {" with "}
                 <Link className="green-link" href={`/groups/${loan.group.accountNumber}`}>
                   {loan.group.name}
                 </Link>
               </>
-            ) : null}{" "}
-            {owner?.kind === "group" && !loan.client ? <span className="status review">Group</span> : null}
-            {" "}· {loan.product.name}
+            ) : null}
+            {owner?.kind === "group" && !loan.client ? <span className="status review"> Group</span> : null}
+            {" on "}{loan.product.name}
           </p>
         </div>
         <div className="header-actions">
           {!canDisburseFromHeader && loan.clientId && await authorization.isAllowed({
             actorUserId: session.user.id, permission: permissions.loanApply,
             organizationId: scope.organizationId, officeId: loan.officeId,
-          }) ? <Link className="secondary-action" href={`/loans/new?clientId=${loan.clientId}`}><ArrowUpCircle size={16} /> Top up loan</Link> : null}
+          }) ? <Link className="secondary-action" href={`/loans/new?clientId=${loan.clientId}`}><ArrowUpCircle size={16} /> New application</Link> : null}
           {canUndoDisbursement ? <UndoDisbursementButton loanId={loan.id} /> : null}
+          {canTransact && loan.clientId && savingsTargets.length > 0 ? (
+            <LoanTopUpButton
+              clientId={loan.clientId}
+              currentUserName={session.user.name ?? "Signed in user"}
+              savingsTargets={savingsTargets}
+              settlementAccounts={settlementAccounts}
+            />
+          ) : null}
           {canDisburseFromHeader ? (
             <DisburseLoanButton
               loanId={loan.id}
@@ -630,19 +637,6 @@ export default async function LoanPage({
               settlementAccounts={settlementAccounts}
             />
           ) : null}
-          {canTransact && loan.clientId && savingsTargets.length > 0 ? (
-            <LoanTopUpButton
-              clientId={loan.clientId}
-              currentUserName={session.user.name ?? "Signed in user"}
-              savingsTargets={savingsTargets}
-              settlementAccounts={settlementAccounts}
-            />
-          ) : null}
-          <span
-            className={`status status-prominent ${loan.status === "ACTIVE" ? "up-to-date" : loan.status === "IN_ARREARS" ? "in-arrears" : "review"}`}
-          >
-            {statusLabel(loan.status)}
-          </span>
         </div>
       </header>
       <section className="loan-summary-metrics">
@@ -672,14 +666,19 @@ export default async function LoanPage({
         <Link className={activeTab === "details" ? "active" : ""} href={`/loans/${loan.id}?tab=details`}>Details</Link>
         <Link className={activeTab === "schedule" ? "active" : ""} href={`/loans/${loan.id}?tab=schedule`}>Schedule</Link>
         <Link className={activeTab === "payments" || activeTab === "record-payment" ? "active" : ""} href={`/loans/${loan.id}?tab=payments`}>Payments</Link>
-        <Link className={activeTab === "charges" ? "active" : ""} href={`/loans/${loan.id}?tab=charges`}>Charges</Link>
         <details className="loan-file-menu">
-          <summary className={["fees", "overdue-charges", "collateral", "guarantors", "documents", "notes", "servicing", "return-to-draft"].includes(activeTab ?? "") ? "active" : undefined}>
+          <summary className={["charges", "fees", "overdue-charges"].includes(activeTab ?? "") ? "active" : undefined}>Charges and fees</summary>
+          <div>
+            <Link className={activeTab === "charges" ? "active" : ""} href={`/loans/${loan.id}?tab=charges`}>Charges</Link>
+            {loan.denominationCurrency === "UGX" ? <Link className={activeTab === "fees" ? "active" : ""} href={`/loans/${loan.id}?tab=fees`}>Fees</Link> : null}
+            <Link className={activeTab === "overdue-charges" ? "active" : ""} href={`/loans/${loan.id}?tab=overdue-charges`}>Overdue charges</Link>
+          </div>
+        </details>
+        <details className="loan-file-menu">
+          <summary className={["collateral", "guarantors", "documents", "notes", "servicing", "return-to-draft"].includes(activeTab ?? "") ? "active" : undefined}>
             Loan file
           </summary>
           <div>
-            {loan.denominationCurrency === "UGX" ? <Link className={activeTab === "fees" ? "active" : ""} href={`/loans/${loan.id}?tab=fees`}>Fees</Link> : null}
-            <Link className={activeTab === "overdue-charges" ? "active" : ""} href={`/loans/${loan.id}?tab=overdue-charges`}>Overdue charges</Link>
             <Link className={activeTab === "collateral" ? "active" : ""} href={`/loans/${loan.id}?tab=collateral`}>Collateral</Link>
             <Link className={activeTab === "guarantors" ? "active" : ""} href={`/loans/${loan.id}?tab=guarantors`}>Guarantors</Link>
             <Link className={activeTab === "documents" ? "active" : ""} href={`/loans/${loan.id}?tab=documents`}>Documents</Link>

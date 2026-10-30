@@ -5,6 +5,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { LiveSearchInput } from "@/components/live-search-input";
+import { StatusSelect } from "@/components/status-select";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { getUserDataScope, groupScopeWhere } from "@/modules/identity/application/data-scope";
@@ -132,33 +133,24 @@ export default async function GroupsPage({
               : `${total.toLocaleString()} groups in your office scope`}
           </p>
         </div>
-        <Link className="invest-button" href="/groups/new">
+        <Link className="primary" href="/groups/new">
           <UsersRound size={16} /> Create group
         </Link>
       </header>
       <div className="directory-toolbar">
         <LiveSearchInput placeholder="Search group, account, office or staff" />
-        <div className="directory-filter-chip">
-          <span className="muted-text">Status:</span>
-          {supportedStatusFilters.map((status) => {
-            const statusMeta = groupStatusFilterMeta[status];
-            return (
-              <Link
-                aria-current={requestedStatus === status ? "page" : undefined}
-                className={`status ${requestedStatus === status ? statusMeta.tone : "review"}`}
-                href={statusFilterHref(status)}
-                key={status}
-              >
-                {statusMeta.heading}
-              </Link>
-            );
-          })}
-          {activeStatusMeta ? (
-            <Link className="green-link" href={clearStatusHref}>
-              Clear filter
-            </Link>
-          ) : null}
-        </div>
+        <StatusSelect
+          label="Status"
+          options={[
+            { value: "", label: "All statuses", href: clearStatusHref },
+            ...supportedStatusFilters.map((status) => ({
+              value: status,
+              label: groupStatusFilterMeta[status].heading,
+              href: statusFilterHref(status),
+            })),
+          ]}
+          value={requestedStatus ?? ""}
+        />
       </div>
       <section className="panel">
         {groups.length === 0 ? (
@@ -174,7 +166,7 @@ export default async function GroupsPage({
                   ? "Change the search and try again."
                   : "Create a group to organize clients who borrow or save together."}
             </p>
-            <Link className="invest-button empty-action" href={query || activeStatusMeta ? "/groups" : "/groups/new"}>
+            <Link className="primary empty-action" href={query || activeStatusMeta ? "/groups" : "/groups/new"}>
               {query || activeStatusMeta ? "Show all groups" : "Create group"}
             </Link>
           </div>

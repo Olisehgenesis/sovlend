@@ -131,7 +131,7 @@ export default async function ArrearsReportPage({
             <Link className="secondary-action" href="/reports/risk/arrears">
               Clear
             </Link>
-            <button className="invest-button" type="submit">
+            <button className="primary" type="submit">
               Apply filters
             </button>
           </div>

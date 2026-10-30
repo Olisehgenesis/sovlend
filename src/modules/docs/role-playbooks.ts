@@ -211,7 +211,7 @@ export const rolePlaybooks: readonly RolePlaybook[] = [
       {
         title: "How do I open my investor workspace?",
         steps: [
-          "Use Investor portal from sign-in, not the staff workspace.",
+          "Use Investor sign-in, not the staff workspace.",
           "If you are waiting on access, an organisation manager must approve your request first.",
         ],
       },

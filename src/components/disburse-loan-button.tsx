@@ -39,6 +39,7 @@ export function DisburseLoanButton({
 
   return (
     <>
+      {payoffLoanOptions?.length ? <button className="secondary-action" type="button" onClick={() => { setAsTopUp(true); dialogRef.current?.showModal(); }}><ArrowUpCircle size={16} /> Disburse as top-up</button> : null}
       <BrandActionButton
         icon={<Banknote size={16} />}
         onClick={() => { setAsTopUp(false); dialogRef.current?.showModal(); }}
@@ -46,7 +47,6 @@ export function DisburseLoanButton({
       >
         Disburse
       </BrandActionButton>
-      {payoffLoanOptions?.length ? <button className="secondary-action" type="button" onClick={() => { setAsTopUp(true); dialogRef.current?.showModal(); }}><ArrowUpCircle size={16} /> Disburse as top-up</button> : null}
       <Dialog className={preview || payout ? "loan-preview-modal" : undefined} ref={dialogRef} title="Disburse loan">
         <DisburseLoanForm
           key={String(asTopUp)}

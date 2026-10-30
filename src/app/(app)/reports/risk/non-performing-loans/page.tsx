@@ -133,7 +133,7 @@ export default async function NonPerformingLoansReportPage({
             <Link className="secondary-action" href="/reports/risk/non-performing-loans">
               Clear
             </Link>
-            <button className="invest-button" type="submit">
+            <button className="primary" type="submit">
               Apply filters
             </button>
           </div>

@@ -132,7 +132,7 @@ export default async function ParRollRateReportPage({
             <Link className="secondary-action" href="/reports/risk/par-rollrate">
               Clear
             </Link>
-            <button className="invest-button" type="submit">
+            <button className="primary" type="submit">
               Apply filters
             </button>
           </div>

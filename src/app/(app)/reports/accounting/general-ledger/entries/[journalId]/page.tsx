@@ -102,7 +102,6 @@ export default async function LedgerEntryPage({
       ]} />
       <header className="directory-header">
         <div>
-          <p className="eyebrow">Journal entry</p>
           <h1>{title}</h1>
           <p>{formatReportDate(journal.businessDate)} · {journal.office.name}</p>
         </div>

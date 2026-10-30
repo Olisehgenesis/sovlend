@@ -103,7 +103,7 @@ export default async function SavingsPortfolioByOfficerPage({
             />
           </fieldset>
           <div className="form-actions">
-            <button className="invest-button" type="submit">
+            <button className="primary" type="submit">
               Apply filters
             </button>
             <Link className="secondary-action" href="/reports/savings/portfolio-by-officer">

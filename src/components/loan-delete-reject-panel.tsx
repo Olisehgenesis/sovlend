@@ -58,10 +58,10 @@ export function LoanDeleteRejectPanel({
         <form action={(formData) => submit("reject", formData)} className="entity-form compact-mapping">
           <label>Reason for rejection<textarea name="reason" required rows={2} maxLength={1000} /></label>
           <div className="form-actions">
-            <button className="quiet-danger" disabled={pending !== null} type="submit">
+            <BrandActionButton disabled={pending !== null} type="submit" variant="gold">
               {pending === "reject" ? <LoaderCircle className="spin" size={16} /> : null}
-              Reject application
-            </button>
+              Reject this application
+            </BrandActionButton>
           </div>
         </form>
       ) : null}
@@ -71,7 +71,7 @@ export function LoanDeleteRejectPanel({
           <div className="form-actions">
             <BrandActionButton disabled={pending !== null} type="submit" variant="gold">
               {pending === "delete" ? <LoaderCircle className="spin" size={16} /> : null}
-              Delete loan
+              Delete this application
             </BrandActionButton>
           </div>
         </form>

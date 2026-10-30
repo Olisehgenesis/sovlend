@@ -40,7 +40,7 @@ export function InvestorAccessRequest({ organizations }: { organizations: Array<
           </p>
         </div>
         {submitted ? (
-          <Link className="invest-button" href="/investor/sign-in">Go to investor sign in</Link>
+          <Link className="primary" href="/investor/sign-in">Go to investor sign in</Link>
         ) : (
           <form action={submit} className="stack-form compact-form">
             <label>Business
@@ -52,7 +52,7 @@ export function InvestorAccessRequest({ organizations }: { organizations: Array<
             <label>Your name<input name="name" required /></label>
             <label>Email<input name="email" type="email" required /></label>
             <label>Message<textarea name="message" rows={3} /></label>
-            <button className="invest-button" disabled={pending}>{pending ? <LoaderCircle className="spin" size={18} /> : <Send size={18} />} Request investor access</button>
+            <button className="primary" disabled={pending}>{pending ? <LoaderCircle className="spin" size={18} /> : <Send size={18} />} Request investor access</button>
           </form>
         )}
         <p className="auth-footnote">Already have an account? <Link href="/investor/sign-in">Sign in to the investor portal</Link>.</p>

@@ -379,7 +379,7 @@ export default async function LoanApplicationPage({
             All applications
           </Link>
           {application.loan ? (
-            <Link className="invest-button" href={`/loans/${application.loan.id}`}>
+            <Link className="primary" href={`/loans/${application.loan.id}`}>
               Open loan account
             </Link>
           ) : null}

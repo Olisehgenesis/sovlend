@@ -10,10 +10,9 @@ import { authClient } from "@/lib/auth-client";
 import { SovLendMark } from "@/components/sovlend-mark";
 import { PasswordInput } from "@/components/ui/password-input";
 
-export function SignInForm() {
+export function SignInForm({ audience = "staff" }: { audience?: "staff" | "client" }) {
   const router = useRouter();
   const [pending, setPending] = useState(false);
-  const [mode, setMode] = useState<"staff" | "client">("staff");
 
   async function signInAsClient(formData: FormData) {
     setPending(true);
@@ -48,7 +47,7 @@ export function SignInForm() {
     setPending(false);
 
     if (result.error) {
-      toast.error(result.error.message?.trim() || "Sign-in failed. Check the server is using the local database.");
+      toast.error(result.error.message?.trim() || "That email or password did not match. Try again, or ask an administrator to reset it.");
       return;
     }
 
@@ -75,12 +74,12 @@ export function SignInForm() {
   return (
     <div className="auth-card">
       <div className="auth-brand"><SovLendMark /><span>SovLend</span></div>
-      <div className="auth-copy"><p className="eyebrow">Secure operations</p><h1>Sign in to your workspace</h1><p>Use your work email, or sign in as a client with your account number.</p></div>
-      <div className="auth-tabs" role="tablist">
-        <button className={mode === "staff" ? "auth-tab active" : "auth-tab"} onClick={() => setMode("staff")} role="tab" type="button">Staff</button>
-        <button className={mode === "client" ? "auth-tab active" : "auth-tab"} onClick={() => setMode("client")} role="tab" type="button">Client</button>
+      <div className="auth-copy">
+        <p className="eyebrow">{audience === "staff" ? "Branch desk" : "Your accounts"}</p>
+        <h1>{audience === "staff" ? "Sign in to your workspace" : "Sign in as a client"}</h1>
+        <p>{audience === "staff" ? "Use the email and password from your administrator." : "Use the account number and phone number on your passbook."}</p>
       </div>
-      {mode === "staff" ? (
+      {audience === "staff" ? (
         <form action={signInWithEmail} className="auth-form">
           <label htmlFor="email">Email address</label>
           <div className="auth-input"><Mail size={17} /><input id="email" name="email" type="email" autoComplete="username webauthn" required /></div>
@@ -93,17 +92,24 @@ export function SignInForm() {
           <label htmlFor="accountNumber">Account number</label>
           <div className="auth-input"><IdCard size={17} /><input id="accountNumber" name="accountNumber" type="text" autoComplete="username" required /></div>
           <label htmlFor="mobileNumber">Phone number</label>
-          <div className="auth-input"><Phone size={17} /><input id="mobileNumber" name="mobileNumber" type="tel" autoComplete="current-password" required /></div>
+          <div className="auth-input"><Phone size={17} /><input id="mobileNumber" name="mobileNumber" type="tel" autoComplete="tel" inputMode="tel" required /></div>
           <button className="primary auth-submit" disabled={pending} type="submit">{pending ? <LoaderCircle className="spin" size={17} /> : null} Sign in</button>
         </form>
       )}
-      {mode === "staff" ? (
+      {audience === "staff" ? (
         <>
           <div className="auth-divider"><span>or</span></div>
           <button className="passkey-button" disabled={pending} onClick={signInWithPasskey} type="button"><Fingerprint size={19} /> Sign in with a passkey</button>
+          <div className="auth-doors">
+            <Link href="/sign-in/client">Client sign-in</Link>
+            <Link href="/investor/sign-in"><TrendingUp size={17} /> Investor sign-in</Link>
+          </div>
         </>
-      ) : null}
-      <Link className="investor-portal-button" href="/investor/sign-in"><TrendingUp size={17} /> Investor portal</Link>
+      ) : (
+        <div className="auth-doors">
+          <Link href="/sign-in">Staff sign-in</Link>
+        </div>
+      )}
     </div>
   );
 }

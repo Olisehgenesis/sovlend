@@ -481,7 +481,7 @@ export function ApproveSavingsAccountButton({ clientId, groupId, savingsAccountI
 }
 
 export function ApplyForLoanButton({ clientId }: { clientId: string }) {
-  return <a className="invest-button" href={`/loans/new?clientId=${clientId}`}><Plus size={16} /> Add loan</a>;
+  return <a className="primary" href={`/loans/new?clientId=${clientId}`}><Plus size={16} /> Add loan</a>;
 }
 
 export type ChargeRow = Readonly<{ id: string; name: string; amountFormatted: string; status: string; dueOnFormatted: string | null }>;

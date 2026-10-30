@@ -75,7 +75,6 @@ export default async function IncomeStatementPage({
       <Breadcrumbs items={[{ label: "Reports", href: "/reports" }, { label: "Accounting", href: "/reports" }, { label: "Income Statement" }]} />
       <header className="directory-header">
         <div>
-          <p className="eyebrow">Accounting statements</p>
           <h1>Income Statement</h1>
           <p>
             Profit and loss from {formatReportDate(report.startDate)} to {formatReportDate(report.endDate)} · {activeOfficeName}
@@ -86,12 +85,6 @@ export default async function IncomeStatementPage({
           <a className="secondary-action" href={exportHref}>
             <Download size={16} /> Export CSV
           </a>
-          <a className="secondary-action" href={apiHref}>
-            API JSON
-          </a>
-          <Link className="secondary-action" href="/reports">
-            Reports
-          </Link>
         </div>
       </header>
 
@@ -114,13 +107,6 @@ export default async function IncomeStatementPage({
           <span>{report.netIncomeMinor >= 0n ? "Net income" : "Net loss"}</span>
           <strong>{formatMinor(report.netIncomeMinor, "UGX")}</strong>
           <small>{activeOfficeName}</small>
-        </article>
-        <article className="metric-card">
-          <span>Posted activity</span>
-          <strong>{report.journalCount.toLocaleString()}</strong>
-          <small>
-            journal{report.journalCount === 1 ? "" : "s"} · {report.lineCount.toLocaleString()} line{report.lineCount === 1 ? "" : "s"}
-          </small>
         </article>
       </section>
 
@@ -151,7 +137,7 @@ export default async function IncomeStatementPage({
             </div>
           </fieldset>
           <div className="form-actions">
-            <button className="invest-button" type="submit">
+            <button className="primary" type="submit">
               Apply filters
             </button>
           </div>

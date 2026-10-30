@@ -130,7 +130,6 @@ export default async function GeneralLedgerView({
       <Breadcrumbs items={[{ label: "Reports", href: "/reports" }, { label: "General Ledger", href: report.account ? "/reports/accounting/general-ledger" : undefined }, ...(report.account ? [{ label: report.account.name }] : [])]} />
       <header className="directory-header">
         <div>
-          <p className="eyebrow">Accounting statements</p>
           <h1>{report.account?.name ?? "General Ledger"}</h1>
           <p>
             {report.account ? `${report.account.code} · ${report.account.type}` : "One section per account"} · movements from {formatReportDate(report.startDate)} to {formatReportDate(report.endDate)} · {activeOfficeName}
@@ -200,38 +199,41 @@ export default async function GeneralLedgerView({
                 }))]}
               />
             </label>
-            <div className="form-row three">
+            <details className="more-filters" open={Boolean(fromCode || toCode || accountType || include !== "balance")}>
+              <summary>Account range, type, and which accounts to print</summary>
+              <div className="form-row three">
+                <label>
+                  From account code
+                  <input defaultValue={fromCode ?? ""} name="fromCode" placeholder="CA-001" />
+                </label>
+                <label>
+                  To account code
+                  <input defaultValue={toCode ?? ""} name="toCode" placeholder="CA-003" />
+                </label>
+                <label>
+                  Account type
+                  <select defaultValue={accountType ?? ""} name="accountType">
+                    <option value="">All types</option>
+                    {accountingAccountTypeSections.map((section) => (
+                      <option key={section.type} value={section.type}>
+                        {section.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
               <label>
-                From account code
-                <input defaultValue={fromCode ?? ""} name="fromCode" placeholder="CA-001" />
-              </label>
-              <label>
-                To account code
-                <input defaultValue={toCode ?? ""} name="toCode" placeholder="CA-003" />
-              </label>
-              <label>
-                Account type
-                <select defaultValue={accountType ?? ""} name="accountType">
-                  <option value="">All types</option>
-                  {accountingAccountTypeSections.map((section) => (
-                    <option key={section.type} value={section.type}>
-                      {section.label}
-                    </option>
-                  ))}
+                Accounts to print
+                <select defaultValue={include} name="include">
+                  <option value="movement">Only accounts with movement this period</option>
+                  <option value="balance">Accounts with a balance or movement</option>
+                  <option value="all">Every account</option>
                 </select>
               </label>
-            </div>
-            <label>
-              Accounts to print
-              <select defaultValue={include} name="include">
-                <option value="movement">Only accounts with movement this period</option>
-                <option value="balance">Accounts with a balance or movement</option>
-                <option value="all">Every account</option>
-              </select>
-            </label>
+            </details>
           </fieldset>
           <div className="form-actions">
-            <button className="invest-button" type="submit">
+            <button className="primary" type="submit">
               Apply filters
             </button>
           </div>

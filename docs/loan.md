@@ -588,7 +588,7 @@ loans; it does not change the product or other loans. Overview, Fees, and payout
 preview display the exemption consistently.
 
 The loan header distinguishes **Top up savings** (a savings deposit) from
-**Top up loan** (a new application with the borrower preselected). To use new
+**New application** (a new application with the borrower preselected). To use new
 loan proceeds to settle an existing loan, choose **Disburse as top-up** on the
 approved loan's header or in the disbursement type selector, then select the
 existing loan. Standard disbursement keeps the old loan. The preview deducts

@@ -115,7 +115,7 @@ export default async function LoanExportJobPage({
             Back to exports
           </Link>
           {job.status === "COMPLETED" ? (
-            <a className="invest-button" href={`/api/loans/export-jobs/${job.id}/download`}>
+            <a className="primary" href={`/api/loans/export-jobs/${job.id}/download`}>
               Download package
             </a>
           ) : null}

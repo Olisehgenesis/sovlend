@@ -6,6 +6,7 @@ import { redirect } from "next/navigation";
 
 import { ApproveLoanDialog } from "@/components/approve-loan-dialog";
 import { LiveSearchInput } from "@/components/live-search-input";
+import { StatusSelect } from "@/components/status-select";
 import { TableRowLink } from "@/components/table-row-link";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
@@ -244,50 +245,35 @@ export default async function LoansPage({
           <p>
             {activeStatusMeta
               ? `${loanTotal.toLocaleString()} ${activeStatusMeta.countLabel}`
-              : `${loanTotal.toLocaleString()} active loan accounts`} · {applications.length} applications needing review
+              : `${loanTotal.toLocaleString()} active loan accounts, ${applications.length} applications needing review`}
           </p>
         </div>
         <div className="header-actions">
-          <Link className="secondary-action" href="/">
-            Overview
-          </Link>
           <a className="secondary-action" href="/api/loans/export">
             <Download size={16} /> Export CSV
           </a>
           <Link className="secondary-action" href="/loans/exports">
             <Download size={16} /> Full export
           </Link>
-          <Link className="invest-button" href="/loans/new">
+          <Link className="primary" href="/loans/new">
             <Plus size={16} /> New application
           </Link>
         </div>
       </header>
       <div className="directory-toolbar">
         <LiveSearchInput placeholder="Filter display by name, client account, staff, office, loan name or status" />
-        <div className="directory-filter-chip">
-          <span className="muted-text">Views:</span>
-          {supportedStatusFilters.map((status) => {
-            const statusMeta = loanStatusFilterMeta[status];
-            return (
-              <Link
-                aria-current={requestedStatus === status ? "page" : undefined}
-                className={`status ${requestedStatus === status ? statusMeta.tone : "review"}`}
-                href={statusFilterHref(status)}
-                key={status}
-              >
-                {statusMeta.heading}
-              </Link>
-            );
-          })}
-        </div>
-        {activeStatusMeta ? (
-          <div className="directory-filter-chip">
-            <span className={`status ${activeStatusMeta.tone}`}>Status: {activeStatusMeta.heading}</span>
-            <Link className="green-link" href={clearStatusHref}>
-              Clear filter
-            </Link>
-          </div>
-        ) : null}
+        <StatusSelect
+          label="Status"
+          options={[
+            { value: "", label: "Active loans", href: clearStatusHref },
+            ...supportedStatusFilters.map((status) => ({
+              value: status,
+              label: loanStatusFilterMeta[status].heading,
+              href: statusFilterHref(status),
+            })),
+          ]}
+          value={requestedStatus ?? ""}
+        />
       </div>
       <section className="loan-route-grid">
         <article className="panel">
@@ -305,8 +291,11 @@ export default async function LoansPage({
           {loans.length === 0 ? (
             <div className="empty-state">
               <CircleDollarSign size={28} />
-              <strong>{activeStatusMeta ? activeStatusMeta.emptyTitle : "No matching active loans"}</strong>
-              <p>{activeStatusMeta ? activeStatusMeta.emptyDescription : "Change the filter and try again."}</p>
+            <strong>{activeStatusMeta ? activeStatusMeta.emptyTitle : "No active loans"}</strong>
+            <p>{activeStatusMeta ? activeStatusMeta.emptyDescription : "Start an application, or choose another status."}</p>
+            <Link className="primary empty-action" href={activeStatusMeta ? clearStatusHref : "/loans/new"}>
+              {activeStatusMeta ? "Show active loans" : "New application"}
+            </Link>
             </div>
           ) : (
             <div className="table-scroll">
@@ -417,7 +406,7 @@ export default async function LoansPage({
                           </span>
                           <TableRowLink href={loanHref} label={loanLabel} />
                         </td>
-                        <td>
+                        <td className="numeric">
                           {formatMinor(loan.principalMinor, loan.denominationCurrency)}
                           <TableRowLink href={loanHref} label={loanLabel} />
                         </td>
@@ -431,41 +420,41 @@ export default async function LoansPage({
                           {loan.loanOfficer?.name ?? "Unassigned"}
                           <TableRowLink href={loanHref} label={loanLabel} />
                         </td>
-                        <td>
+                        <td className="numeric">
                           {formatMinor(principalDue, loan.denominationCurrency)}
                           <TableRowLink href={loanHref} label={loanLabel} />
                         </td>
-                        <td>
+                        <td className="numeric">
                           {formatMinor(interestDue, loan.denominationCurrency)}
                           <TableRowLink href={loanHref} label={loanLabel} />
                         </td>
-                        <td>
+                        <td className="numeric">
                           {formatMinor(feesDue, loan.denominationCurrency)}
                           <TableRowLink href={loanHref} label={loanLabel} />
                         </td>
-                        <td>
+                        <td className="numeric">
                           {formatMinor(monitoringFeeDue, loan.denominationCurrency)}
                           <TableRowLink href={loanHref} label={loanLabel} />
                         </td>
-                        <td>
+                        <td className="numeric">
                           {formatMinor(penaltiesDue, loan.denominationCurrency)}
                           <TableRowLink href={loanHref} label={loanLabel} />
                         </td>
-                        <td>
+                        <td className="numeric">
                           {formatMinor(totalDue, loan.denominationCurrency)}
                           <TableRowLink href={loanHref} label={loanLabel} />
                         </td>
-                        <td>
+                        <td className="numeric">
                           {formatMinor(totalPaid, loan.denominationCurrency)}
                           <TableRowLink href={loanHref} label={loanLabel} />
                         </td>
                         {requestedStatus === "OVERPAID" ? (
                           <>
-                            <td>
+                            <td className="numeric">
                               {formatMinor(overpaidBy, loan.denominationCurrency)}
                               <TableRowLink href={loanHref} label={loanLabel} />
                             </td>
-                            <td>
+                            <td className="numeric">
                               {formatMinor(totalExpectedRepayment, loan.denominationCurrency)}
                               <TableRowLink href={loanHref} label={loanLabel} />
                             </td>
@@ -512,8 +501,9 @@ export default async function LoansPage({
           {applications.length === 0 ? (
             <div className="empty-state">
               <CircleDollarSign size={28} />
-              <strong>No pending applications</strong>
-              <p>Create a loan application to begin the workflow.</p>
+            <strong>No applications are waiting</strong>
+            <p>When a loan needs review, it shows up here.</p>
+            <Link className="primary empty-action" href="/loans/new">New application</Link>
             </div>
           ) : (
             <div className="table-scroll">
@@ -541,7 +531,7 @@ export default async function LoansPage({
                       <td>
                         {application.client
                           ? application.group
-                            ? `${application.client.firstName} ${application.client.lastName} · ${application.group.name}`
+                            ? `${application.client.firstName} ${application.client.lastName}, ${application.group.name}`
                             : `${application.client.firstName} ${application.client.lastName}`
                           : `Group: ${application.group?.name ?? "Unknown"}`}
                         <TableRowLink href={href} label={label} primary />
@@ -550,7 +540,7 @@ export default async function LoansPage({
                         {application.product.name}
                         <TableRowLink href={href} label={label} />
                       </td>
-                      <td>
+                      <td className="numeric">
                         {formatMinor(
                           application.approvedPrincipalMinor ?? application.proposedPrincipalMinor,
                           application.product.denominationCurrency,

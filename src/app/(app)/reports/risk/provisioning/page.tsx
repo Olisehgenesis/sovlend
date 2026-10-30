@@ -131,7 +131,7 @@ export default async function ProvisioningReportPage({
             <Link className="secondary-action" href="/reports/risk/provisioning">
               Clear
             </Link>
-            <button className="invest-button" type="submit">
+            <button className="primary" type="submit">
               Apply filters
             </button>
           </div>

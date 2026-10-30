@@ -90,9 +90,6 @@ export async function LoanTodayTransactionsPage({ kind }: { kind: LoanTodayTrans
           </p>
         </div>
         <div className="header-actions">
-          <Link className="secondary-action" href="/">
-            Overview
-          </Link>
           <Link className="secondary-action" href="/loans">
             All loans
           </Link>

@@ -128,7 +128,7 @@ export default async function AgingReportPage({
             <Link className="secondary-action" href="/reports/risk/aging">
               Clear
             </Link>
-            <button className="invest-button" type="submit">
+            <button className="primary" type="submit">
               Apply filters
             </button>
           </div>

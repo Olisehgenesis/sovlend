@@ -1,6 +1,5 @@
 import {
   Bitcoin,
-  BookOpenText,
   CircleDollarSign,
   ShieldCheck,
 } from "lucide-react";
@@ -124,9 +123,10 @@ export default async function Home() {
       <section className="page-heading">
         <div>
           <p className="eyebrow">{generatedAt}</p>
-          <h1>Operations overview</h1>
-          <p>{dashboard.officeName} portfolio and treasury position.</p>
+          <h1>Today at {dashboard.officeName}</h1>
+          <p>Start with what is due, then clear anything overdue.</p>
         </div>
+        <Link className="primary" href="/loans/due-today">Collect due today</Link>
       </section>
 
       <section className="metrics" aria-label="Portfolio metrics">
@@ -142,25 +142,59 @@ export default async function Home() {
       </section>
 
       <section className="grid-main">
-        <article className="panel portfolio-panel">
+        <article className="panel loan-table">
           <div className="panel-heading">
             <div>
-              <h2>Portfolio movement</h2>
-              <p>Disbursement and collection history</p>
+              <h2>Loans needing attention</h2>
+              <p>Overdue or unpaid scheduled amounts</p>
             </div>
           </div>
-          <div className="empty-state">
-            <BookOpenText size={28} />
-            <strong>No chart data yet</strong>
-            <p>Activity will appear after transactions are migrated or recorded.</p>
-          </div>
+          {dashboard.attentionLoans.length === 0 ? (
+            <div className="empty-state">
+              <CircleDollarSign size={28} />
+              <strong>Nothing is waiting</strong>
+              <p>No loan needs a follow-up.</p>
+            </div>
+          ) : (
+            <div className="table-scroll">
+              <table className="clickable-rows">
+                <thead>
+                  <tr>
+                    <th>Borrower</th>
+                    <th>Account</th>
+                    <th>Product</th>
+                    <th className="numeric">Amount due</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {dashboard.attentionLoans.map((loan) => (
+                    <tr key={loan.id}>
+                      <td>
+                        <strong>{loan.borrower}</strong>
+                        <Link className="row-link" href={`/loans/${loan.id}`} aria-label={`Open ${loan.account}`} />
+                      </td>
+                      <td className="mono">{loan.account}</td>
+                      <td>{loan.product}</td>
+                      <td className="numeric">{formatMinor(loan.dueMinor, loan.currencyCode)}</td>
+                      <td>
+                        <span className={`status ${loan.state.toLowerCase().replaceAll("_", "-")}`}>
+                          {statusLabel(loan.state)}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </article>
 
         <aside className="capital-rail">
           <div className="panel-heading">
             <div>
               <h2>Capital position</h2>
-              <p>Economic ownership, not wallet location</p>
+              <p>Investor funds, client savings, and company money.</p>
             </div>
             <ShieldCheck size={19} />
           </div>
@@ -184,11 +218,11 @@ export default async function Home() {
               <>
                 <strong>{ugxCurrencyFormatter.format(dashboard.btcPrice.priceUgx)}</strong>
                 <small>
-                  {dashboard.btcPrice.status.toLowerCase()} · {btcObservedAt}
+                  {dashboard.btcPrice.status.toLowerCase()} as of {btcObservedAt}
                 </small>
               </>
             ) : (
-              <small>No fresh cached rate</small>
+              <small>Rate unavailable. Collections can continue in shillings.</small>
             )}
           </div>
           <div className="custody">
@@ -199,62 +233,14 @@ export default async function Home() {
               <>
                 <strong>{ugxCurrencyFormatter.format(dashboard.usdPrice.priceUgx)}</strong>
                 <small>
-                  {dashboard.usdPrice.status.toLowerCase()} · {usdObservedAt}
+                  {dashboard.usdPrice.status.toLowerCase()} as of {usdObservedAt}
                 </small>
               </>
             ) : (
-              <small>No fresh cached rate</small>
+              <small>Rate unavailable. Collections can continue in shillings.</small>
             )}
           </div>
         </aside>
-      </section>
-
-      <section className="panel loan-table">
-        <div className="panel-heading">
-          <div>
-            <h2>Loans needing attention</h2>
-            <p>Overdue or unpaid scheduled amounts</p>
-          </div>
-        </div>
-        {dashboard.attentionLoans.length === 0 ? (
-          <div className="empty-state">
-            <CircleDollarSign size={28} />
-            <strong>No loans need attention</strong>
-            <p>Imported and newly issued loans will appear here when action is required.</p>
-          </div>
-        ) : (
-          <div className="table-scroll">
-            <table className="clickable-rows">
-              <thead>
-                <tr>
-                  <th>Borrower</th>
-                  <th>Account</th>
-                  <th>Product</th>
-                  <th>Amount due</th>
-                  <th>Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {dashboard.attentionLoans.map((loan) => (
-                  <tr key={loan.id}>
-                    <td>
-                      <strong>{loan.borrower}</strong>
-                      <Link className="row-link" href={`/loans/${loan.id}`} aria-label={`Open ${loan.account}`} />
-                    </td>
-                    <td className="mono">{loan.account}</td>
-                    <td>{loan.product}</td>
-                    <td>{formatMinor(loan.dueMinor, loan.currencyCode)}</td>
-                    <td>
-                      <span className={`status ${loan.state.toLowerCase().replaceAll("_", "-")}`}>
-                        {statusLabel(loan.state)}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
       </section>
     </main>
   );

@@ -73,7 +73,7 @@ export default async function ClientStatementSearchPage({
             </div>
           </fieldset>
           <div className="form-actions">
-            <button className="invest-button" type="submit">
+            <button className="primary" type="submit">
               <Search size={16} /> Search
             </button>
           </div>
@@ -93,7 +93,7 @@ export default async function ClientStatementSearchPage({
             <FileSearch size={28} />
             <strong>Start with a client search</strong>
             <p>Search by name, account number, mobile number, or external id to open a printable statement.</p>
-            <Link className="invest-button empty-action" href="/clients">
+            <Link className="primary empty-action" href="/clients">
               Browse clients
             </Link>
           </div>
@@ -103,7 +103,7 @@ export default async function ClientStatementSearchPage({
             <strong>No matching clients</strong>
             <p>Check the spelling, try a different account number, or browse the client directory first.</p>
             <div className="header-actions">
-              <Link className="invest-button empty-action" href="/reports/client-statement">
+              <Link className="primary empty-action" href="/reports/client-statement">
                 Clear search
               </Link>
               <Link className="secondary-action empty-action" href="/clients">

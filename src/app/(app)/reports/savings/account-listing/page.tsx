@@ -108,7 +108,7 @@ export default async function SavingsAccountListingPage({
             />
           </fieldset>
           <div className="form-actions">
-            <button className="invest-button" type="submit">
+            <button className="primary" type="submit">
               Apply filters
             </button>
             <Link className="secondary-action" href="/reports/savings/account-listing">

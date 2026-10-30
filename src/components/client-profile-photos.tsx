@@ -141,8 +141,8 @@ export function ClientProfilePhotos({ clientId, canManage, photos }: { clientId:
         <div className="profile-camera">
           <video autoPlay muted playsInline ref={videoRef} />
           <div className="form-actions">
-            <BrandActionButton disabled={pending} onClick={takePhoto} type="button">Take photo</BrandActionButton>
-            <BrandActionButton disabled={pending || shots.length === 0} onClick={() => void upload(shots.map((shot) => shot.file), !photos.some((photo) => photo.isPrimary))} type="button" variant="gold">
+            <button className="secondary-action" disabled={pending} onClick={takePhoto} type="button">Take photo</button>
+            <BrandActionButton disabled={pending || shots.length === 0} onClick={() => void upload(shots.map((shot) => shot.file), !photos.some((photo) => photo.isPrimary))} type="button">
               Save {shots.length || ""} captured {shots.length === 1 ? "photo" : "photos"}
             </BrandActionButton>
           </div>

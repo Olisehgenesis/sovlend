@@ -5,6 +5,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { LiveSearchInput } from "@/components/live-search-input";
+import { StatusSelect } from "@/components/status-select";
 import { auth } from "@/lib/auth";
 import { statusLabel } from "@/lib/status-label";
 import { prisma } from "@/lib/prisma";
@@ -177,40 +178,28 @@ export default async function ClientsPage({
           </p>
         </div>
         <div className="header-actions">
-          <Link className="secondary-action" href="/">
-            <span>Overview</span>
-          </Link>
           <a className="secondary-action" href="/api/clients/export">
             <Download size={16} /> Export CSV
           </a>
-          <Link className="invest-button" href="/clients/new">
+          <Link className="primary" href="/clients/new">
             <UserPlus size={16} /> Create client
           </Link>
         </div>
       </header>
       <div className="directory-toolbar">
         <LiveSearchInput placeholder="Search name, account, mobile or office" />
-        <div className="directory-filter-chip">
-          <span className="muted-text">Status:</span>
-          {supportedStatusFilters.map((status) => {
-            const statusMeta = clientStatusFilterMeta[status];
-            return (
-              <Link
-                aria-current={requestedStatus === status ? "page" : undefined}
-                className={requestedStatus === status ? `status ${statusMeta.tone}` : "filter-chip"}
-                href={statusFilterHref(status)}
-                key={status}
-              >
-                {statusMeta.heading}
-              </Link>
-            );
-          })}
-          {activeStatusMeta ? (
-            <Link className="green-link" href={clearStatusHref}>
-              Clear filter
-            </Link>
-          ) : null}
-        </div>
+        <StatusSelect
+          label="Status"
+          options={[
+            { value: "", label: "All statuses", href: clearStatusHref },
+            ...supportedStatusFilters.map((status) => ({
+              value: status,
+              label: clientStatusFilterMeta[status].heading,
+              href: statusFilterHref(status),
+            })),
+          ]}
+          value={requestedStatus ?? ""}
+        />
       </div>
       <section className="panel">
         <div className="table-scroll">
@@ -261,7 +250,7 @@ export default async function ClientsPage({
                   ? "Change the search and try again."
                   : "Create your first client record to start opening savings accounts, recording documents, and applying for loans."}
             </p>
-            <Link className="invest-button empty-action" href={query || activeStatusMeta ? "/clients" : "/clients/new"}>
+            <Link className="primary empty-action" href={query || activeStatusMeta ? "/clients" : "/clients/new"}>
               {query || activeStatusMeta ? "Show all clients" : "Create client"}
             </Link>
           </div>

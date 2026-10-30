@@ -78,7 +78,7 @@ export default async function ProductsPage({
               {query ? " matching" : ""} templates · grouped by repayment cycle
             </p>
           </div>
-          <Link className="invest-button" href="/backoffice/products/loan/new">
+          <Link className="primary" href="/backoffice/products/loan/new">
             <Plus size={16} /> Add
           </Link>
         </div>

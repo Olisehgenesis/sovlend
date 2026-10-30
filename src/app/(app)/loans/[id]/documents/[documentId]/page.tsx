@@ -57,7 +57,7 @@ export default async function LoanDocumentPage({
           <Link className="secondary-action" href={`/loans/${loan.id}?tab=documents`}>
             Back to documents
           </Link>
-          <a className="invest-button" href={`/api/documents/${document.id}`}>
+          <a className="primary" href={`/api/documents/${document.id}`}>
             Download document
           </a>
         </div>

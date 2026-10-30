@@ -7,7 +7,7 @@ import { Printer } from "lucide-react";
  * fill the page, so this renders the client statement as a clean, letterhead-only printout. */
 export function PrintStatementButton() {
   return (
-    <button className="invest-button no-print" onClick={() => window.print()} type="button">
+    <button className="primary no-print" onClick={() => window.print()} type="button">
       <Printer size={16} /> Print statement
     </button>
   );

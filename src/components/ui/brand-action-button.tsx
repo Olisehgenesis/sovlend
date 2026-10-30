@@ -2,7 +2,7 @@
 
 import type { ButtonHTMLAttributes } from "react";
 
-/** Plain forest action button. Gold is the destructive confirm. */
+/** Forest is the only primary. Gold paints rust and is reserved for delete, reject, and undo. */
 export function BrandActionButton({
   variant = "primary",
   icon,
@@ -10,7 +10,7 @@ export function BrandActionButton({
   className,
   ...rest
 }: {
-  variant?: "primary" | "gold" | "blue" | "purple";
+  variant?: "primary" | "gold";
   icon?: React.ReactNode;
 } & ButtonHTMLAttributes<HTMLButtonElement>) {
   const variantClass = variant === "primary" ? "" : ` brand-action-button--${variant}`;

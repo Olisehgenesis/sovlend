@@ -62,7 +62,7 @@ export function UndoDisbursementButton({ loanId }: { loanId: string }) {
           </fieldset>
           <div className="form-actions">
             <BrandActionButton disabled={pending} icon={pending ? <LoaderCircle className="spin" size={18} /> : <Undo2 size={16} />} type="submit" variant="gold">
-              Undo disbursement
+              Undo disbursement and reopen this loan
             </BrandActionButton>
           </div>
         </form>

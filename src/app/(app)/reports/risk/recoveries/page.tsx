@@ -119,7 +119,7 @@ export default async function RecoveriesReportPage({
             <Link className="secondary-action" href="/reports/risk/recoveries">
               Clear
             </Link>
-            <button className="invest-button" type="submit">
+            <button className="primary" type="submit">
               Apply filters
             </button>
           </div>

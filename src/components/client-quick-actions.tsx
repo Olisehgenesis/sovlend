@@ -1,7 +1,7 @@
 "use client";
 
 import { ArrowLeftRight, Banknote, Minus, PiggyBank } from "lucide-react";
-import { useRef, useState } from "react";
+import { useRef, useState, type ReactNode } from "react";
 
 import {
   DepositWithdrawForm,
@@ -77,13 +77,21 @@ export function ClientQuickActions({
     withdraw: "Withdraw from savings",
   };
   const defaultSavingsTarget = savingsTargets.find((account) => account.isDefault) ?? savingsTargets[0] ?? null;
+  const lead: typeof mode | null = canRecordPayment ? "record" : canTopUp ? "topup" : canTransfer ? "transfer" : canWithdraw ? "withdraw" : null;
+  const actions: { id: typeof mode; label: string; icon: ReactNode }[] = [];
+  if (canTransfer) actions.push({ id: "transfer", label: "Transfer", icon: <ArrowLeftRight size={16} /> });
+  if (canTopUp) actions.push({ id: "topup", label: "Top up", icon: <PiggyBank size={16} /> });
+  if (canWithdraw) actions.push({ id: "withdraw", label: "Withdraw", icon: <Minus size={16} /> });
+  if (canRecordPayment) actions.push({ id: "record", label: "Record payment", icon: <Banknote size={16} /> });
+  const orderedActions = [...actions.filter((action) => action.id !== lead), ...actions.filter((action) => action.id === lead)];
 
   return (
     <div className="client-quick-actions">
-      {canTransfer ? <BrandActionButton icon={<ArrowLeftRight size={14} />} onClick={() => open("transfer")} variant="purple">Transfer</BrandActionButton> : null}
-      {canRecordPayment ? <BrandActionButton icon={<Banknote size={14} />} onClick={() => open("record")} variant="primary">Record payment</BrandActionButton> : null}
-      {canTopUp ? <BrandActionButton icon={<PiggyBank size={14} />} onClick={() => open("topup")} variant="gold">Top up</BrandActionButton> : null}
-      {canWithdraw ? <BrandActionButton icon={<Minus size={14} />} onClick={() => open("withdraw")} variant="blue">Withdraw</BrandActionButton> : null}
+      {orderedActions.map((action) => action.id === lead ? (
+        <BrandActionButton icon={action.icon} key={action.id} onClick={() => open(action.id)}>{action.label}</BrandActionButton>
+      ) : (
+        <button className="secondary-action" key={action.id} onClick={() => open(action.id)} type="button">{action.icon}{action.label}</button>
+      ))}
       <Dialog ref={dialogRef} title={titles[mode]}>
         {mode === "transfer" ? (
           <TransferForm

@@ -152,7 +152,7 @@ export function NewSavingsAccountWizard({ clientId, products, officers, charges,
 
           <div className="savings-wizard-actions">
             <button className="secondary-action" onClick={() => (step === 0 ? closeDialog() : setStep((current) => current - 1))} type="button">{step === 0 ? "Cancel" : <><ChevronLeft size={15} /> Back</>}</button>
-            {step < steps.length - 1 ? <button className="invest-button" disabled={step === 0 && !productId} onClick={() => setStep((current) => current + 1)} type="button">Next <ChevronRight size={15} /></button> : <BrandActionButton disabled={pending} icon={pending ? <LoaderCircle className="spin" size={16} /> : <Check size={16} />} onClick={submit} type="button">Submit</BrandActionButton>}
+            {step < steps.length - 1 ? <button className="primary" disabled={step === 0 && !productId} onClick={() => setStep((current) => current + 1)} type="button">Next <ChevronRight size={15} /></button> : <BrandActionButton disabled={pending} icon={pending ? <LoaderCircle className="spin" size={16} /> : <Check size={16} />} onClick={submit} type="button">Submit</BrandActionButton>}
           </div>
         </div>
       </Dialog>

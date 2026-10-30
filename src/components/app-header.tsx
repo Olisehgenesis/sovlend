@@ -37,8 +37,10 @@ function sectionIsCurrent(id: string, pathname: string) {
   if (id === "groups") return pathname.startsWith("/groups");
   if (id === "accounting") return pathname.startsWith("/backoffice/accounting") || pathname.startsWith("/reports/accounting");
   if (id === "reports") return pathname.startsWith("/reports") && !pathname.startsWith("/reports/accounting");
-  if (id === "docs") return pathname.startsWith("/docs");
-  if (id === "more") return ["/backoffice", "/admin", "/settings", "/donations", "/donate"].some((prefix) => pathname.startsWith(prefix)) && !pathname.startsWith("/backoffice/accounting");
+  if (id === "admin") {
+    if (pathname.startsWith("/backoffice/accounting")) return false;
+    return ["/docs", "/admin", "/settings", "/backoffice", "/donations", "/donate"].some((prefix) => pathname.startsWith(prefix));
+  }
   return false;
 }
 
@@ -144,19 +146,12 @@ export function AppHeader({
     },
   ];
 
-  navSections.push({
-    id: "donations",
-    label: "Donations",
-    items: [
-      { type: "link", href: "/donations", label: "Donations overview" },
-      { type: "link", href: "/donate/jumpstart", label: "Public donation page" },
-    ],
-  });
-
   if (admin || canPostLedger) {
     navSections.push({
       id: "accounting",
       label: "Accounting",
+      quiet: true,
+      dropdownClassName: "header-dropdown header-dropdown-reports",
       items: [
         { type: "link", href: "/backoffice/accounting/income", label: "Record income" },
         { type: "link", href: "/backoffice/accounting/expense", label: "Record expense" },
@@ -185,71 +180,57 @@ export function AppHeader({
   navSections.push({
     id: "reports",
     label: "Reports",
+    quiet: true,
     items: reportItems,
     dropdownClassName: "header-dropdown header-dropdown-reports",
   });
 
+  const adminItems: NavItem[] = [
+    { type: "group", key: "admin-playbooks", label: "Playbooks" },
+    { type: "link", href: "/docs", label: "All playbooks" },
+    { type: "link", href: "/docs?role=teller", label: "Teller" },
+    { type: "link", href: "/docs?role=loan-officer", label: "Loan officer" },
+    { type: "link", href: "/docs?role=branch-manager", label: "Branch manager" },
+    { type: "link", href: "/docs?role=general-manager", label: "General manager" },
+    { type: "link", href: "/docs?role=treasury-signer", label: "Treasury signer" },
+    { type: "link", href: "/docs?role=auditor", label: "Auditor" },
+    { type: "link", href: "/docs?role=investor", label: "Investor" },
+    { type: "divider", key: "admin-donations-divider" },
+    { type: "group", key: "admin-donations", label: "Donations" },
+    { type: "link", href: "/donations", label: "Donations overview" },
+    { type: "link", href: "/donate/jumpstart", label: "Public donation page" },
+  ];
+  if (canManageInvestors || admin) {
+    adminItems.push(
+      { type: "divider", key: "admin-investors-divider" },
+      { type: "link", href: "/backoffice/investors", label: "Investor access requests" },
+    );
+  }
+  if (admin) {
+    adminItems.push(
+      { type: "divider", key: "admin-workspace-divider" },
+      { type: "group", key: "admin-workspace", label: "Workspace" },
+      { type: "link", href: "/backoffice", label: "Admin panel" },
+      { type: "link", href: "/backoffice/products", label: "Products" },
+      { type: "link", href: "/admin/users", label: "Users & access" },
+      { type: "link", href: "/settings/team", label: "Team & permissions" },
+      { type: "link", href: "/settings/security", label: "Settings" },
+    );
+  } else if (canManageProducts) {
+    adminItems.push(
+      { type: "divider", key: "admin-products-divider" },
+      { type: "link", href: "/backoffice/products", label: "Products" },
+    );
+  }
   navSections.push({
-    id: "docs",
-    label: "Docs",
-    items: [
-      { type: "link", href: "/docs", label: "All playbooks" },
-      { type: "divider", key: "docs-roles-divider" },
-      { type: "group", key: "docs-roles-group", label: "By role" },
-      { type: "link", href: "/docs?role=teller", label: "Teller" },
-      { type: "link", href: "/docs?role=loan-officer", label: "Loan officer" },
-      { type: "link", href: "/docs?role=branch-manager", label: "Branch manager" },
-      { type: "link", href: "/docs?role=general-manager", label: "General manager" },
-      { type: "link", href: "/docs?role=treasury-signer", label: "Treasury signer" },
-      { type: "link", href: "/docs?role=auditor", label: "Auditor" },
-      { type: "link", href: "/docs?role=investor", label: "Investor" },
-    ],
+    id: "admin",
+    label: "Admin",
+    quiet: true,
+    items: adminItems,
+    dropdownClassName: "header-dropdown header-dropdown-reports",
   });
 
-  if (canManageInvestors) {
-    navSections.push({
-      id: "investors",
-      label: "Investors",
-      items: [{ type: "link", href: "/backoffice/investors", label: "Approve access requests" }],
-    });
-  }
-
-  if (admin) {
-    navSections.push({
-      id: "admin",
-      label: "Admin",
-      items: [
-        { type: "link", href: "/backoffice", label: "Admin panel" },
-        { type: "link", href: "/backoffice/investors", label: "Investor access requests" },
-        { type: "link", href: "/donations", label: "Donations" },
-        { type: "link", href: "/backoffice/products", label: "Products" },
-        { type: "link", href: "/admin/users", label: "Users & access" },
-        { type: "link", href: "/settings/team", label: "Team & permissions" },
-        { type: "link", href: "/settings/security", label: "Settings" },
-      ],
-    });
-  } else if (canManageProducts) {
-    navSections.push({
-      id: "admin",
-      label: "Admin",
-      items: [{ type: "link", href: "/backoffice/products", label: "Products" }],
-    });
-  }
-
-  const dailySectionIds = new Set(["clients", "loans", "accounts", "groups"]);
-  const quietSectionIds = new Set(["accounting", "reports", "docs"]);
-  const parkedSections = navSections.filter((section) => !dailySectionIds.has(section.id) && !quietSectionIds.has(section.id));
-  const moreItems: NavItem[] = parkedSections.flatMap((section) => [
-    { type: "group" as const, key: `more-${section.id}`, label: section.label },
-    ...section.items,
-  ]);
-  const visibleSections: NavSection[] = [
-    ...navSections.filter((section) => dailySectionIds.has(section.id)),
-    ...navSections.filter((section) => quietSectionIds.has(section.id)).map((section) => ({ ...section, quiet: true })),
-    ...(moreItems.length
-      ? [{ id: "more", label: "More", quiet: true, items: moreItems, dropdownClassName: "header-dropdown header-dropdown-reports" }]
-      : []),
-  ];
+  const visibleSections = navSections;
 
   useEffect(() => {
     const timeout = window.setTimeout(() => {

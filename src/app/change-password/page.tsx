@@ -11,7 +11,7 @@ export default async function ChangePasswordPage() {
   return (
     <main className="auth-page">
       <div className="auth-aside">
-        <p className="eyebrow">Sovereign lending infrastructure</p>
+        <p className="eyebrow">Account security</p>
         <strong>Set a password only you know before you continue.</strong>
         <small>You&apos;re signing in with a shared temporary password. Choose a new one to secure your account.</small>
       </div>

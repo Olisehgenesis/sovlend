@@ -101,7 +101,7 @@ export default async function AuditTrailReportPage({
               </label>
             </div>
           </fieldset>
-          <div className="form-actions"><button className="invest-button" type="submit"><Search size={16} /> Apply filters</button></div>
+          <div className="form-actions"><button className="primary" type="submit"><Search size={16} /> Apply filters</button></div>
         </form>
       </section>
 

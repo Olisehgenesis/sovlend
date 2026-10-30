@@ -70,7 +70,7 @@ export default async function FeeRevenueReportPage({ searchParams }: { searchPar
               </label>
             </div>
           </fieldset>
-          <div className="form-actions"><button className="invest-button" type="submit">Apply filters</button></div>
+          <div className="form-actions"><button className="primary" type="submit">Apply filters</button></div>
         </form>
       </section>
 

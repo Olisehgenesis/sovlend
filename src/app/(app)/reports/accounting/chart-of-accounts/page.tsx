@@ -111,7 +111,6 @@ export default async function ChartOfAccountsPage({
       <Breadcrumbs items={[{ label: "Reports", href: "/reports" }, { label: "Accounting", href: "/reports" }, { label: "Chart of Accounts" }]} />
       <header className="directory-header">
         <div>
-          <p className="eyebrow">Accounting statements</p>
           <h1>Chart of Accounts</h1>
           <p>
             Live ledger balances as of {formatReportDate(report.balanceDate)} · {activeOfficeName}
@@ -122,87 +121,13 @@ export default async function ChartOfAccountsPage({
           <a className="secondary-action" href={exportHref}>
             <Download size={16} /> Export CSV
           </a>
-          <a className="secondary-action" href={apiHref}>
-            API JSON
-          </a>
           {session.user.role === "admin" ? (
             <Link className="secondary-action" href="/backoffice/accounting">
               Create account
             </Link>
           ) : null}
-          <Link className="secondary-action" href="/reports">
-            Reports
-          </Link>
         </div>
       </header>
-
-      <section className="metrics" style={{ marginTop: 18 }}>
-        <SummaryCard
-          amountMinor={report.totalAssetsMinor}
-          balanceDate={report.balanceDate}
-          href={`/reports/accounting/chart-of-accounts?${buildReportQueryString({
-            asOfDate: formatDateInputValue(report.balanceDate),
-            startDate: formatDateInputValue(report.activityStartDate),
-            endDate: formatDateInputValue(report.activityEndDate),
-            officeId,
-            accountType: "ASSET",
-          })}`}
-          label="Assets"
-          type="ASSET"
-        />
-        <SummaryCard
-          amountMinor={report.totalLiabilitiesMinor}
-          balanceDate={report.balanceDate}
-          href={`/reports/accounting/chart-of-accounts?${buildReportQueryString({
-            asOfDate: formatDateInputValue(report.balanceDate),
-            startDate: formatDateInputValue(report.activityStartDate),
-            endDate: formatDateInputValue(report.activityEndDate),
-            officeId,
-            accountType: "LIABILITY",
-          })}`}
-          label="Liabilities"
-          type="LIABILITY"
-        />
-        <SummaryCard
-          amountMinor={report.totalEquityMinor}
-          balanceDate={report.balanceDate}
-          href={`/reports/accounting/chart-of-accounts?${buildReportQueryString({
-            asOfDate: formatDateInputValue(report.balanceDate),
-            startDate: formatDateInputValue(report.activityStartDate),
-            endDate: formatDateInputValue(report.activityEndDate),
-            officeId,
-            accountType: "EQUITY",
-          })}`}
-          label="Equity"
-          type="EQUITY"
-        />
-        <SummaryCard
-          amountMinor={report.totalRevenueMinor}
-          balanceDate={report.balanceDate}
-          href={`/reports/accounting/chart-of-accounts?${buildReportQueryString({
-            asOfDate: formatDateInputValue(report.balanceDate),
-            startDate: formatDateInputValue(report.activityStartDate),
-            endDate: formatDateInputValue(report.activityEndDate),
-            officeId,
-            accountType: "REVENUE",
-          })}`}
-          label="Revenue"
-          type="REVENUE"
-        />
-        <SummaryCard
-          amountMinor={report.totalExpensesMinor}
-          balanceDate={report.balanceDate}
-          href={`/reports/accounting/chart-of-accounts?${buildReportQueryString({
-            asOfDate: formatDateInputValue(report.balanceDate),
-            startDate: formatDateInputValue(report.activityStartDate),
-            endDate: formatDateInputValue(report.activityEndDate),
-            officeId,
-            accountType: "EXPENSE",
-          })}`}
-          label="Expenses"
-          type="EXPENSE"
-        />
-      </section>
 
       <section className="panel form-panel">
         <form className="entity-form compact-mapping" method="GET">
@@ -265,7 +190,7 @@ export default async function ChartOfAccountsPage({
             </div>
           </fieldset>
           <div className="form-actions">
-            <button className="invest-button" type="submit">
+            <button className="primary" type="submit">
               Apply filters
             </button>
           </div>
@@ -467,34 +392,6 @@ export default async function ChartOfAccountsPage({
         </section>
       </div>
     </main>
-  );
-}
-
-function SummaryCard({
-  amountMinor,
-  balanceDate,
-  href,
-  label,
-  type,
-}: {
-  amountMinor: bigint;
-  balanceDate: Date;
-  href: string;
-  label: string;
-  type: ChartOfAccountsRow["type"];
-}) {
-  const balance = summarizeBalance(type, amountMinor);
-
-  return (
-    <Link className="metric-card" href={href}>
-      <article>
-        <span>{label}</span>
-        <strong>{formatMinor(balance.absoluteMinor, "UGX")}</strong>
-        <small>
-          As of {formatReportDate(balanceDate)} · {sideLabel(balance.balanceSide)}
-        </small>
-      </article>
-    </Link>
   );
 }
 

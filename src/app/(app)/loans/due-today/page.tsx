@@ -127,9 +127,6 @@ export default async function LoansDueTodayPage() {
           </p>
         </div>
         <div className="header-actions">
-          <Link className="secondary-action" href="/">
-            Overview
-          </Link>
           <Link className="secondary-action" href="/loans">
             All loans
           </Link>
@@ -146,8 +143,9 @@ export default async function LoansDueTodayPage() {
         {rows.length === 0 ? (
           <div className="empty-state">
             <CircleDollarSign size={28} />
-            <strong>No loans due today</strong>
-            <p>There are no installments scheduled in your current office scope today.</p>
+            <strong>Nothing is due today</strong>
+            <p>No installment is scheduled for today. Check arrears if a payment might have been missed.</p>
+            <Link className="primary empty-action" href="/loans?status=IN_ARREARS">Review loans in arrears</Link>
           </div>
         ) : (
           <div className="table-scroll">

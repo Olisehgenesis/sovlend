@@ -72,7 +72,6 @@ export default async function BalanceSheetPage({
       <Breadcrumbs items={[{ label: "Reports", href: "/reports" }, { label: "Accounting", href: "/reports" }, { label: "Balance Sheet" }]} />
       <header className="directory-header">
         <div>
-          <p className="eyebrow">Accounting statements</p>
           <h1>Balance Sheet</h1>
           <p>
             Statement of financial position as of {formatReportDate(report.asOfDate)} · {activeOfficeName}
@@ -83,12 +82,6 @@ export default async function BalanceSheetPage({
           <a className="secondary-action" href={exportHref}>
             <Download size={16} /> Export CSV
           </a>
-          <a className="secondary-action" href={apiHref}>
-            API JSON
-          </a>
-          <Link className="secondary-action" href="/reports">
-            Reports
-          </Link>
         </div>
       </header>
 
@@ -115,7 +108,7 @@ export default async function BalanceSheetPage({
             </div>
           </fieldset>
           <div className="form-actions">
-            <button className="invest-button" type="submit">
+            <button className="primary" type="submit">
               Apply filters
             </button>
           </div>

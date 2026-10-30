@@ -43,6 +43,8 @@ const tabs = [
 
 type TabKey = (typeof tabs)[number]["key"];
 
+const primaryTabKeys = new Set<TabKey>(["general", "loans", "savings", "charges"]);
+
 export default async function ClientDetailPage({ params, searchParams }: { params: Promise<{ accountNumber: string }>; searchParams: Promise<{ tab?: string }> }) {
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session) redirect("/sign-in");
@@ -280,7 +282,15 @@ export default async function ClientDetailPage({ params, searchParams }: { param
       <div className="client-body">
         <div className="client-main">
           <nav className="client-tabs" aria-label="Client record sections">
-            {tabs.map((item) => { const Icon = item.icon; return <Link className={activeTab === item.key ? "active" : ""} href={`/clients/${client.accountNumber}?tab=${item.key}`} key={item.key}><Icon size={15} />{item.label}</Link>; })}
+            {tabs.filter((item) => primaryTabKeys.has(item.key)).map((item) => { const Icon = item.icon; return <Link className={activeTab === item.key ? "active" : ""} href={`/clients/${client.accountNumber}?tab=${item.key}`} key={item.key}><Icon size={15} />{item.label}</Link>; })}
+            <details className="loan-file-menu">
+              <summary className={tabs.some((item) => item.key === activeTab && !primaryTabKeys.has(item.key)) ? "active" : undefined}>Client file</summary>
+              <div>
+                {tabs.filter((item) => !primaryTabKeys.has(item.key)).map((item) => (
+                  <Link className={activeTab === item.key ? "active" : ""} href={`/clients/${client.accountNumber}?tab=${item.key}`} key={item.key}>{item.label}</Link>
+                ))}
+              </div>
+            </details>
           </nav>
 
       {activeTab === "general" ? (

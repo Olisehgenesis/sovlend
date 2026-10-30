@@ -211,7 +211,6 @@ export default async function JournalReconciliationPage({
       <Breadcrumbs items={[{ label: "Reports", href: "/reports" }, { label: "Accounting", href: "/reports" }, { label: "Search journal entries" }]} />
       <header className="directory-header">
         <div>
-          <p className="eyebrow">Accounting</p>
           <h1>{selectedAccount ? selectedAccount.name : "Search journal entries"}</h1>
           <p>
             {selectedAccount ? `${selectedAccount.code} · ${accountTypeLabel(selectedAccount.type)} · ` : "All accounts · "}
@@ -294,7 +293,7 @@ export default async function JournalReconciliationPage({
             </details>
           </fieldset>
           <div className="form-actions">
-            <button className="invest-button" type="submit">
+            <button className="primary" type="submit">
               Apply dates
             </button>
           </div>

@@ -6,6 +6,7 @@ import { redirect } from "next/navigation";
 
 import { Breadcrumbs } from "@/components/breadcrumbs";
 import { LiveSearchInput } from "@/components/live-search-input";
+import { StatusSelect } from "@/components/status-select";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { clientScopeWhere, getUserDataScope, groupScopeWhere } from "@/modules/identity/application/data-scope";
@@ -291,11 +292,8 @@ export default async function SavingsAccountsPage({
           </p>
         </div>
         <div className="header-actions">
-          <Link className="secondary-action" href="/">
-            Overview
-          </Link>
-          <Link className="secondary-action" href="/clients">
-            Client directory
+          <Link className="primary" href="/clients">
+            Open from a client
           </Link>
         </div>
       </header>
@@ -312,27 +310,18 @@ export default async function SavingsAccountsPage({
       </section>
       <div className="directory-toolbar">
         <LiveSearchInput placeholder="Search account, client, group, product, officer or office" />
-        <div className="directory-filter-chip">
-          <span className="muted-text">Status:</span>
-          {supportedStatusFilters.map((status) => {
-            const statusMeta = savingsStatusFilterMeta[status];
-            return (
-              <Link
-                aria-current={requestedStatus === status ? "page" : undefined}
-                className={`status ${requestedStatus === status ? statusMeta.tone : "review"}`}
-                href={statusFilterHref(status)}
-                key={status}
-              >
-                {statusMeta.heading}
-              </Link>
-            );
-          })}
-          {activeStatusMeta ? (
-            <Link className="green-link" href={clearStatusHref}>
-              Clear filter
-            </Link>
-          ) : null}
-        </div>
+        <StatusSelect
+          label="Status"
+          options={[
+            { value: "", label: "All statuses", href: clearStatusHref },
+            ...supportedStatusFilters.map((status) => ({
+              value: status,
+              label: savingsStatusFilterMeta[status].heading,
+              href: statusFilterHref(status),
+            })),
+          ]}
+          value={requestedStatus ?? ""}
+        />
       </div>
       <section className="panel">
         <div className="table-scroll">
@@ -395,7 +384,7 @@ export default async function SavingsAccountsPage({
                     <td>
                       <span className={`status ${statusTone(account.status)}`}>{statusLabel(account.status)}</span>
                     </td>
-                    <td className="mono">{formatMinor(balanceMinor, account.currencyCode)}</td>
+                    <td className="numeric">{formatMinor(balanceMinor, account.currencyCode)}</td>
                     <td>{owner?.officeName ?? "—"}</td>
                   </tr>
                 );
@@ -414,7 +403,7 @@ export default async function SavingsAccountsPage({
                   ? "Change the search and try again."
                   : "Savings, share and deposit accounts will appear here once they are opened for clients in your office scope."}
             </p>
-            <Link className="invest-button empty-action" href={query || activeStatusMeta ? "/savings-accounts" : "/clients"}>
+            <Link className="primary empty-action" href={query || activeStatusMeta ? "/savings-accounts" : "/clients"}>
               {query || activeStatusMeta ? "Show all accounts" : "Open from a client record"}
             </Link>
           </div>

@@ -101,7 +101,7 @@ export default async function CollectionByOfficerPage({
             />
           </fieldset>
           <div className="form-actions">
-            <button className="invest-button" type="submit">
+            <button className="primary" type="submit">
               Apply filters
             </button>
             <Link className="secondary-action" href="/reports/operations/collection-by-officer">

@@ -6,6 +6,7 @@ import { redirect } from "next/navigation";
 
 import { Breadcrumbs } from "@/components/breadcrumbs";
 import { LiveSearchInput } from "@/components/live-search-input";
+import { StatusSelect } from "@/components/status-select";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { getUserDataScope, officeWhere } from "@/modules/identity/application/data-scope";
@@ -182,44 +183,35 @@ export default async function LoanApplicationsPage({
           </p>
         </div>
         <div className="header-actions">
-          <Link className="secondary-action" href="/loans">
-            Overview
-          </Link>
-          <Link className="invest-button" href="/loans/new">
+          <Link className="primary" href="/loans/new">
             <Plus size={16} /> New application
           </Link>
         </div>
       </header>
       <div className="directory-toolbar">
         <LiveSearchInput placeholder="Search borrower, office, product, loan account or status" />
-        <div className="directory-filter-chip">
-          <span className="muted-text">Status:</span>
-          {supportedStatusFilters.map((status) => {
-            const statusMeta = applicationStatusFilterMeta[status];
-            return (
-              <Link
-                aria-current={requestedStatus === status ? "page" : undefined}
-                className={`status ${requestedStatus === status ? statusMeta.tone : "review"}`}
-                href={statusFilterHref(status)}
-                key={status}
-              >
-                {statusMeta.heading}
-              </Link>
-            );
-          })}
-          {activeStatusMeta ? (
-            <Link className="green-link" href={clearStatusHref}>
-              Clear filter
-            </Link>
-          ) : null}
-        </div>
+        <StatusSelect
+          label="Status"
+          options={[
+            { value: "", label: "All statuses", href: clearStatusHref },
+            ...supportedStatusFilters.map((status) => ({
+              value: status,
+              label: applicationStatusFilterMeta[status].heading,
+              href: statusFilterHref(status),
+            })),
+          ]}
+          value={requestedStatus ?? ""}
+        />
       </div>
       <section className="panel">
         {applications.length === 0 ? (
           <div className="empty-state">
             <CircleDollarSign size={28} />
-            <strong>{activeStatusMeta ? activeStatusMeta.emptyTitle : "No matching applications"}</strong>
-            <p>{activeStatusMeta ? activeStatusMeta.emptyDescription : "Change the search and try again."}</p>
+            <strong>{activeStatusMeta ? activeStatusMeta.emptyTitle : query ? "No matching applications" : "No applications yet"}</strong>
+            <p>{activeStatusMeta ? activeStatusMeta.emptyDescription : query ? "Change the search and try again." : "Start a loan application for a client in your office."}</p>
+            <Link className="primary empty-action" href={query || activeStatusMeta ? clearStatusHref : "/loans/new"}>
+              {query || activeStatusMeta ? "Show all applications" : "New application"}
+            </Link>
           </div>
         ) : (
           <div className="table-scroll">

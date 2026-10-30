@@ -534,7 +534,7 @@ export function CreateLoanApplicationForm({
       <div className="form-actions">
         <button className="secondary-action" disabled={step === 0} onClick={() => setStep((current) => current - 1)} type="button">Back</button>
         {step < steps.length - 1 ? (
-          <button className="invest-button" disabled={(step === 0 && !detailsValid()) || (step === 1 && !termsValid())} onClick={() => setStep((current) => current + 1)} type="button">Next</button>
+          <button className="primary" disabled={(step === 0 && !detailsValid()) || (step === 1 && !termsValid())} onClick={() => setStep((current) => current + 1)} type="button">Next</button>
         ) : (
           <BrandActionButton
             disabled={pending}

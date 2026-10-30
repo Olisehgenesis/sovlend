@@ -106,7 +106,7 @@ export default async function LoanServiceRequestPage({
           </Link>
           {request.resultTransaction ? (
             <Link
-              className="invest-button"
+              className="primary"
               href={`/loans/${loan.id}/transactions/${request.resultTransaction.id}`}
             >
               Open resulting transaction
