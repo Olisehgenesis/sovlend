@@ -15,7 +15,12 @@ describe("repayment SMS copy", () => {
     expect(repaymentSmsMessage({ type: "REPAYMENT_DUE_SOON", amount: "UGX 50,000", dueDate: "2026-10-31" })).toBe(
       "JUMPSTART: Please pay your loan of UGX 50,000 due on 2026-10-31.",
     );
-    expect(repaymentSmsMessage({ type: "REPAYMENT_DUE_TODAY", amount: "UGX 50,000", dueDate: "2026-10-29" })).toContain("JUMPSTART: Please pay your loan of UGX 50,000");
+    expect(repaymentSmsMessage({ type: "REPAYMENT_DUE_TODAY", amount: "UGX 50,000", dueDate: "2026-10-29" })).toBe(
+      "JUMPSTART: Please pay your loan of UGX 50,000 due TODAY (2026-10-29).",
+    );
+    expect(
+      repaymentSmsMessage({ type: "REPAYMENT_OVERDUE", amount: "UGX 50,000", dueDate: "2026-10-31", fees: "UGX 2,000" }),
+    ).toBe("JUMPSTART: Please pay your loan of UGX 50,000 which is OVERDUE (was due 2026-10-31) including UGX 2,000 in fees/penalties.");
     expect(standingOrderSmsMessage("UGX 10,000", "000000908L5")).toMatch(/^JUMPSTART:/);
   });
 });

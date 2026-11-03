@@ -641,7 +641,7 @@ strong.negative { color: #a44831; }
 .statement-search-row small { color: var(--muted); }
 @media print {
   .app-shell { display: block; }
-  .sidebar, .app-header, .breadcrumbs, .no-print { display: none !important; }
+  .sidebar, .app-header, .breadcrumbs, .no-print, .report-picker-tools, .header-actions, .form-panel { display: none !important; }
   .app-main, .content, main.statement-page { width: 100% !important; margin: 0 !important; padding: 0 !important; max-width: none !important; }
   .statement-sheet { border: 0; }
   body { background: white; }

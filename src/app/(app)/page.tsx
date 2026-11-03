@@ -146,7 +146,7 @@ export default async function Home() {
           <div className="panel-heading">
             <div>
               <h2>Loans needing attention</h2>
-              <p>Overdue or unpaid scheduled amounts</p>
+              <p>Installments past their due date — due today is listed separately</p>
             </div>
           </div>
           {dashboard.attentionLoans.length === 0 ? (

@@ -1,9 +1,17 @@
 import type { PrismaClient } from "@prisma/client";
 import type { Queue } from "bullmq";
 
-import { installmentDueMinor, installmentPaidMinor } from "@/modules/lending/domain/loan-outstanding";
+import { installmentOutstandingMinor } from "@/modules/lending/domain/loan-outstanding";
 
 import { reminderJobId, type ReminderJob } from "../domain/reminder";
+
+function startOfUtcDay(date: Date) {
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+}
+
+function calendarDaysUntilDue(dueOn: Date, now: Date) {
+  return Math.round((startOfUtcDay(dueOn).getTime() - startOfUtcDay(now).getTime()) / 86_400_000);
+}
 
 export async function enqueueRepaymentReminders(
   prisma: PrismaClient,
@@ -28,7 +36,7 @@ export async function enqueueRepaymentReminders(
     // Group-owned loans have no single client to notify by SMS; skip until group-level reminders are supported.
     if (!installment.loan.clientId) continue;
 
-    const outstanding = installmentDueMinor(installment) - installmentPaidMinor(installment);
+    const outstanding = installmentOutstandingMinor(installment);
 
     if (outstanding <= 0n) continue;
 
@@ -36,9 +44,9 @@ export async function enqueueRepaymentReminders(
     // amount, so monitoring fee is intentionally folded into it alongside generic fees/penalties.
     const feesOutstanding =
       outstanding -
-      (installment.principalDueMinor - installment.principalPaidMinor) -
-      (installment.interestDueMinor - installment.interestPaidMinor);
-    const days = Math.floor((installment.dueOn.getTime() - now.getTime()) / 86_400_000);
+      positive(installment.principalDueMinor - installment.principalPaidMinor - (installment.principalWaivedMinor ?? 0n)) -
+      positive(installment.interestDueMinor - installment.interestPaidMinor - (installment.interestWaivedMinor ?? 0n));
+    const days = calendarDaysUntilDue(installment.dueOn, now);
     const type = days < 0 ? "REPAYMENT_OVERDUE" : days === 0 ? "REPAYMENT_DUE_TODAY" : "REPAYMENT_DUE_SOON";
     const data: ReminderJob = {
       loanId: installment.loan.id,
@@ -64,4 +72,8 @@ export async function enqueueRepaymentReminders(
   }
 
   return queued;
+}
+
+function positive(value: bigint) {
+  return value > 0n ? value : 0n;
 }

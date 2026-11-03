@@ -25,6 +25,22 @@ describe("reportRowsToCsv", () => {
     expect(csv).toContain('"USD","123.45"');
   });
 
+  it("converts PAR bucket outstanding even when the column name contains Days", () => {
+    const csv = reportRowsToCsv(
+      [
+        {
+          Currency: "UGX",
+          "Total Outstanding": "5890218800",
+          "180+ Days Outstanding": "172000000",
+          "Days Overdue": "200",
+        },
+      ],
+      ["Currency", "Total Outstanding", "180+ Days Outstanding", "Days Overdue"],
+    );
+
+    expect(csv).toContain('"UGX","58902188","1720000","200"');
+  });
+
   it("does not convert non-money columns or non-numeric report cells", () => {
     const csv = reportRowsToCsv(
       [{ Currency: "UGX", "Loan Account No.": "001234", "Aging Bucket": "1-30 days", Balance: "" }],

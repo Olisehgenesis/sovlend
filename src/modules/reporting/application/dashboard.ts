@@ -3,8 +3,7 @@ import type { AccountType, OwnershipType, PriceStatus } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { transactionTypeVariants } from "@/lib/loan-transaction-type-variants";
 import {
-  installmentDueMinor,
-  installmentPaidMinor,
+  installmentOutstandingMinor,
   principalOutstandingMinor as principalOutstandingHelper,
 } from "@/modules/lending/domain/loan-outstanding";
 export { formatMinor } from "@/modules/money/domain/format-minor";
@@ -81,6 +80,11 @@ export async function loadDashboard(userId: string) {
           feesPaidMinor: true,
           penaltiesPaidMinor: true,
           monitoringFeePaidMinor: true,
+          principalWaivedMinor: true,
+          interestWaivedMinor: true,
+          feesWaivedMinor: true,
+          penaltiesWaivedMinor: true,
+          monitoringFeeWaivedMinor: true,
         },
       }),
       prisma.loanTransaction.aggregate({
@@ -111,7 +115,7 @@ export async function loadDashboard(userId: string) {
           group: { select: { name: true } },
           product: { select: { name: true } },
           installments: {
-            where: { dueOn: { lt: tomorrow } },
+            where: { dueOn: { lt: today } },
             orderBy: { dueOn: "asc" },
           },
         },
@@ -166,7 +170,7 @@ export async function loadDashboard(userId: string) {
   let principalOverdueMinor = 0n;
   for (const loan of principalLoans) {
     principalOutstandingMinor += principalOutstandingHelper(loan.installments, loan.principalWrittenOffMinor);
-    const overdueInstallments = loan.installments.filter((installment) => installment.dueOn < tomorrow);
+    const overdueInstallments = loan.installments.filter((installment) => installment.dueOn < today);
     principalOverdueMinor += principalOutstandingHelper(overdueInstallments, 0n);
   }
   const portfolioMinor = portfolio._sum.principalMinor ?? 0n;
@@ -251,9 +255,13 @@ function outstanding(installment: {
   feesPaidMinor: bigint;
   penaltiesPaidMinor: bigint;
   monitoringFeePaidMinor?: bigint;
+  principalWaivedMinor?: bigint;
+  interestWaivedMinor?: bigint;
+  feesWaivedMinor?: bigint;
+  penaltiesWaivedMinor?: bigint;
+  monitoringFeeWaivedMinor?: bigint;
 }) {
-  const amount = installmentDueMinor(installment) - installmentPaidMinor(installment);
-  return amount > 0n ? amount : 0n;
+  return installmentOutstandingMinor(installment);
 }
 
 function summarizeOwnership(

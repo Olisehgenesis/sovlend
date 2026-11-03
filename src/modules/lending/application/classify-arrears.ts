@@ -2,15 +2,21 @@ import { createHash, randomUUID } from "node:crypto";
 import type { PrismaClient } from "@prisma/client";
 
 import { determineServicingStatus } from "../domain/loan-status";
-import { installmentDueMinor, installmentPaidMinor } from "../domain/loan-outstanding";
+import { installmentOutstandingMinor } from "../domain/loan-outstanding";
+
+function startOfUtcDay(date: Date) {
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+}
 
 export async function classifyLoanArrears(prisma: PrismaClient, businessDate = new Date()) {
+  const today = startOfUtcDay(businessDate);
   const loans = await prisma.loan.findMany({ where: { status: { in: ["ACTIVE", "IN_ARREARS"] } }, include: { installments: true } });
   let changed = 0;
   for (const loan of loans) {
-    const outstanding = (item: typeof loan.installments[number]) => installmentDueMinor(item) - installmentPaidMinor(item);
-    const totalOutstandingMinor = loan.installments.reduce((sum, item) => sum + outstanding(item), 0n);
-    const overdueOutstandingMinor = loan.installments.filter((item) => item.dueOn < businessDate).reduce((sum, item) => sum + outstanding(item), 0n);
+    const totalOutstandingMinor = loan.installments.reduce((sum, item) => sum + installmentOutstandingMinor(item), 0n);
+    const overdueOutstandingMinor = loan.installments
+      .filter((item) => startOfUtcDay(item.dueOn) < today)
+      .reduce((sum, item) => sum + installmentOutstandingMinor(item), 0n);
     const nextStatus = determineServicingStatus({ currentStatus: loan.status, totalOutstandingMinor, overdueOutstandingMinor });
     if (nextStatus === loan.status) continue;
     const correlationId = randomUUID();
