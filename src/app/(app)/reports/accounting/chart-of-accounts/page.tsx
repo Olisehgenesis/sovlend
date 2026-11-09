@@ -10,6 +10,7 @@ import { prisma } from "@/lib/prisma";
 import { AuthorizationService } from "@/modules/identity/application/authorization-service";
 import { getUserDataScope } from "@/modules/identity/application/data-scope";
 import { permissions } from "@/modules/identity/domain/permissions";
+import { journalLineDescription } from "@/modules/ledger/domain/journal";
 import { formatMinor } from "@/modules/money/domain/format-minor";
 import { loadReportPickerOptions } from "@/modules/reports/report-catalog";
 import {
@@ -350,7 +351,7 @@ export default async function ChartOfAccountsPage({
                             <small>{entry.referenceId ?? entry.journalId}</small>
                           </td>
                           <td>{entry.officeName}</td>
-                          <td>{entry.memo ?? entry.narration}</td>
+                          <td>{journalLineDescription(entry.narration, entry.memo)}</td>
                           <td className="mono">
                             {entry.direction === "DEBIT" ? formatMinor(entry.amountMinor, report.generalLedger.account!.currencyCode) : "—"}
                           </td>

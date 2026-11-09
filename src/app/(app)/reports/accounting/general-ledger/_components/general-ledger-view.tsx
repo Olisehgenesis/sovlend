@@ -11,6 +11,7 @@ import { prisma } from "@/lib/prisma";
 import { AuthorizationService } from "@/modules/identity/application/authorization-service";
 import { getUserDataScope } from "@/modules/identity/application/data-scope";
 import { permissions } from "@/modules/identity/domain/permissions";
+import { journalLineDescription } from "@/modules/ledger/domain/journal";
 import { formatMinor } from "@/modules/money/domain/format-minor";
 import { loadReportPickerOptions } from "@/modules/reports/report-catalog";
 import {
@@ -360,7 +361,7 @@ function LedgerAccountSection({
                     <small>{entry.referenceType.replaceAll("_", " ")}</small>
                   </td>
                   <td>{entry.officeName}</td>
-                  <td>{entry.memo ?? entry.narration}</td>
+                  <td>{journalLineDescription(entry.narration, entry.memo)}</td>
                   <td className="numeric">{entry.direction === "DEBIT" ? formatMinor(entry.amountMinor, entry.account.currencyCode) : "—"}</td>
                   <td className="numeric">{entry.direction === "CREDIT" ? formatMinor(entry.amountMinor, entry.account.currencyCode) : "—"}</td>
                   <td className="numeric">

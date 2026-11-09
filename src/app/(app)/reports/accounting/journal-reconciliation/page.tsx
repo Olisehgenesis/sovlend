@@ -13,6 +13,7 @@ import { prisma } from "@/lib/prisma";
 import { AuthorizationService } from "@/modules/identity/application/authorization-service";
 import { getUserDataScope } from "@/modules/identity/application/data-scope";
 import { permissions } from "@/modules/identity/domain/permissions";
+import { journalLineDescription } from "@/modules/ledger/domain/journal";
 import { formatMinor } from "@/modules/money/domain/format-minor";
 import { loadReportPickerOptions } from "@/modules/reports/report-catalog";
 import {
@@ -415,7 +416,7 @@ export default async function JournalReconciliationPage({
                         <small>{line.code}</small>
                       </td>
                       <td>
-                        {line.memo ?? journal.narration}
+                        {journalLineDescription(journal.narration, line.memo)}
                         {journal.payeeName ? <small>{journal.payeeName}</small> : null}
                         <small>{isManualJournalReferenceType(journal.referenceType) ? "Manual" : journal.referenceType.replaceAll("_", " ")}</small>
                       </td>

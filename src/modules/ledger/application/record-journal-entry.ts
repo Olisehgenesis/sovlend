@@ -86,18 +86,19 @@ export async function recordJournalEntry(prisma: PrismaClient, command: RecordJo
   });
   await assertPeriodOpen(prisma, { officeId: command.officeId, businessDate: command.businessDate });
 
+  const narration = command.narration.trim() || "Manual journal entry";
   const journalLines = [
     ...command.debits.map((line) => ({
       accountId: line.ledgerAccountId,
       direction: "DEBIT" as const,
       amountMinor: line.amountMinor,
-      memo: accountsById.get(line.ledgerAccountId)!.name,
+      memo: narration,
     })),
     ...command.credits.map((line) => ({
       accountId: line.ledgerAccountId,
       direction: "CREDIT" as const,
       amountMinor: line.amountMinor,
-      memo: accountsById.get(line.ledgerAccountId)!.name,
+      memo: narration,
     })),
   ];
   assertBalancedJournal(journalLines.map((line) => ({ ...line, currencyCode: command.currencyCode })));
@@ -109,7 +110,7 @@ export async function recordJournalEntry(prisma: PrismaClient, command: RecordJo
         businessDate: command.businessDate,
         referenceType: "MANUAL_JOURNAL_ENTRY",
         referenceId: command.referenceNumber,
-        narration: command.narration.trim() || "Manual journal entry",
+        narration,
         payeeName: command.payeeName?.trim() || null,
         idempotencyKey,
       },
@@ -128,7 +129,7 @@ export async function recordJournalEntry(prisma: PrismaClient, command: RecordJo
       debits: command.debits.map((line) => ({ ledgerAccountId: line.ledgerAccountId, amountMinor: line.amountMinor.toString() })),
       credits: command.credits.map((line) => ({ ledgerAccountId: line.ledgerAccountId, amountMinor: line.amountMinor.toString() })),
       paymentDetails: command.paymentDetails,
-      narration: command.narration.trim(),
+      narration,
       payeeName: command.payeeName?.trim() || null,
     };
     const eventHash = createHash("sha256")

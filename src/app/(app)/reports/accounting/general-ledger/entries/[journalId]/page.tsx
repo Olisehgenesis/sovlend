@@ -10,6 +10,7 @@ import { prisma } from "@/lib/prisma";
 import { AuthorizationService } from "@/modules/identity/application/authorization-service";
 import { getUserDataScope } from "@/modules/identity/application/data-scope";
 import { permissions } from "@/modules/identity/domain/permissions";
+import { journalLineDescription } from "@/modules/ledger/domain/journal";
 import { formatMinor } from "@/modules/money/domain/format-minor";
 import { buildReportQueryString, formatDateInputValue, formatReportDate, getGeneralLedgerJournal } from "@/modules/reports/domain/accounting-report";
 
@@ -138,7 +139,7 @@ export default async function LedgerEntryPage({
                 <tr key={line.id}>
                   <td><Link className="green-link" href={accountHref(line.accountId)}>{line.account.code} · {line.account.name}</Link></td>
                   <td>{line.account.type}</td>
-                  <td>{line.memo ?? journal.narration}</td>
+                  <td>{journalLineDescription(journal.narration, line.memo)}</td>
                   <td className="numeric">{line.direction === "DEBIT" ? formatMinor(line.amountMinor, line.account.currencyCode) : "—"}</td>
                   <td className="numeric">{line.direction === "CREDIT" ? formatMinor(line.amountMinor, line.account.currencyCode) : "—"}</td>
                 </tr>

@@ -75,8 +75,8 @@ describe("postAccountingRuleTransaction", () => {
 
     expect(journalLineCreateMany).toHaveBeenCalledWith({
       data: [
-        { journalId: "journal-1", accountId: "expense-1", direction: "DEBIT", amountMinor: 25_000n, memo: "Office Supplies Expense" },
-        { journalId: "journal-1", accountId: "cash-1", direction: "CREDIT", amountMinor: 25_000n, memo: "Cash" },
+        { journalId: "journal-1", accountId: "expense-1", direction: "DEBIT", amountMinor: 25_000n, memo: "Petty cash top-up" },
+        { journalId: "journal-1", accountId: "cash-1", direction: "CREDIT", amountMinor: 25_000n, memo: "Petty cash top-up" },
       ],
     });
     expect(journalUpdate).toHaveBeenCalledWith({ where: { id: "journal-1" }, data: { status: "POSTED", postedAt: expect.any(Date) } });
@@ -107,8 +107,8 @@ describe("postAccountingRuleTransaction", () => {
 
     expect(journalLineCreateMany).toHaveBeenCalledWith({
       data: [
-        { journalId: "journal-1", accountId: "expense-2", direction: "DEBIT", amountMinor: 25_000n, memo: "Travel Expense" },
-        { journalId: "journal-1", accountId: "cash-1", direction: "CREDIT", amountMinor: 25_000n, memo: "Cash" },
+        { journalId: "journal-1", accountId: "expense-2", direction: "DEBIT", amountMinor: 25_000n, memo: "Petty cash top-up" },
+        { journalId: "journal-1", accountId: "cash-1", direction: "CREDIT", amountMinor: 25_000n, memo: "Petty cash top-up" },
       ],
     });
   });

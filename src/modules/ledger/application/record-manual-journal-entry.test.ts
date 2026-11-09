@@ -84,8 +84,8 @@ describe("recordManualJournalEntry", () => {
 
     expect(journalLineCreateMany).toHaveBeenCalledWith({
       data: [
-        { journalId: "journal-1", accountId: "cash-account-1", direction: "DEBIT", amountMinor: 50_000n, memo: "Cash" },
-        { journalId: "journal-1", accountId: "revenue-account-1", direction: "CREDIT", amountMinor: 50_000n, memo: "Donations" },
+        { journalId: "journal-1", accountId: "cash-account-1", direction: "DEBIT", amountMinor: 50_000n, memo: "Donation received" },
+        { journalId: "journal-1", accountId: "revenue-account-1", direction: "CREDIT", amountMinor: 50_000n, memo: "Donation received" },
       ],
     });
     expect(journalUpdate).toHaveBeenCalledWith({ where: { id: "journal-1" }, data: { status: "POSTED", postedAt: expect.any(Date) } });
@@ -99,8 +99,8 @@ describe("recordManualJournalEntry", () => {
 
     expect(journalLineCreateMany).toHaveBeenCalledWith({
       data: [
-        { journalId: "journal-1", accountId: "expense-account-1", direction: "DEBIT", amountMinor: 50_000n, memo: "Office Rent" },
-        { journalId: "journal-1", accountId: "cash-account-1", direction: "CREDIT", amountMinor: 50_000n, memo: "Cash" },
+        { journalId: "journal-1", accountId: "expense-account-1", direction: "DEBIT", amountMinor: 50_000n, memo: "Donation received" },
+        { journalId: "journal-1", accountId: "cash-account-1", direction: "CREDIT", amountMinor: 50_000n, memo: "Donation received" },
       ],
     });
   });

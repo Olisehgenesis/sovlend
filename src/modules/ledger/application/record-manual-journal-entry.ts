@@ -92,15 +92,16 @@ export async function recordManualJournalEntry(prisma: PrismaClient, command: Ma
       },
     });
 
+    const memo = command.narration.trim();
     const journalLines =
       command.entryType === "INCOME"
         ? [
-            { accountId: settlementAccount.ledgerAccountId, direction: "DEBIT" as const, amountMinor: command.amountMinor, memo: settlementAccount.name },
-            { accountId: ledgerAccount.id, direction: "CREDIT" as const, amountMinor: command.amountMinor, memo: ledgerAccount.name },
+            { accountId: settlementAccount.ledgerAccountId, direction: "DEBIT" as const, amountMinor: command.amountMinor, memo },
+            { accountId: ledgerAccount.id, direction: "CREDIT" as const, amountMinor: command.amountMinor, memo },
           ]
         : [
-            { accountId: ledgerAccount.id, direction: "DEBIT" as const, amountMinor: command.amountMinor, memo: ledgerAccount.name },
-            { accountId: settlementAccount.ledgerAccountId, direction: "CREDIT" as const, amountMinor: command.amountMinor, memo: settlementAccount.name },
+            { accountId: ledgerAccount.id, direction: "DEBIT" as const, amountMinor: command.amountMinor, memo },
+            { accountId: settlementAccount.ledgerAccountId, direction: "CREDIT" as const, amountMinor: command.amountMinor, memo },
           ];
     assertBalancedJournal(journalLines.map((line) => ({ ...line, currencyCode: settlementAccount.currencyCode })));
     await transaction.journalLine.createMany({ data: journalLines.map((line) => ({ journalId: journal.id, ...line })) });

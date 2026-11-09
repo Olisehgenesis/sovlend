@@ -1,6 +1,17 @@
 import { describe, expect, it } from "vitest";
 
-import { assertBalancedJournal } from "./journal";
+import { assertBalancedJournal, journalLineDescription } from "./journal";
+
+describe("journalLineDescription", () => {
+  it("prefers narration over memo so account-name memos do not hide the user text", () => {
+    expect(journalLineDescription("Office rent for September", "Cash")).toBe("Office rent for September");
+  });
+
+  it("falls back to memo when narration is empty", () => {
+    expect(journalLineDescription("  ", "Waive monitoring fee")).toBe("Waive monitoring fee");
+    expect(journalLineDescription(null, "Deposit")).toBe("Deposit");
+  });
+});
 
 describe("assertBalancedJournal", () => {
   it("accepts balanced lines per currency", () => {

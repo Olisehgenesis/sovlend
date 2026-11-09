@@ -46,6 +46,17 @@ export function payeeReferencePlaceholder(payeeType: PayeeType | ""): string {
   }
 }
 
+/**
+ * Prefer the journal-level narration (what the user typed) over a line memo.
+ * Manual posts historically wrote the GL account name into memo, which hid narration
+ * in Description columns that used `memo ?? narration`.
+ */
+export function journalLineDescription(narration: string | null | undefined, memo: string | null | undefined): string {
+  const trimmedNarration = narration?.trim() ?? "";
+  if (trimmedNarration) return trimmedNarration;
+  return memo?.trim() || "";
+}
+
 export function assertBalancedJournal(lines: readonly JournalDraftLine[]): void {
   if (lines.length < 2) {
     throw new Error("A journal requires at least two lines");

@@ -91,9 +91,10 @@ export async function postAccountingRuleTransaction(prisma: PrismaClient, comman
       },
     });
 
+    const memo = command.narration.trim();
     const journalLines = [
-      { accountId: debitAccount.id, direction: "DEBIT" as const, amountMinor: command.amountMinor, memo: debitAccount.name },
-      { accountId: creditAccount.id, direction: "CREDIT" as const, amountMinor: command.amountMinor, memo: creditAccount.name },
+      { accountId: debitAccount.id, direction: "DEBIT" as const, amountMinor: command.amountMinor, memo },
+      { accountId: creditAccount.id, direction: "CREDIT" as const, amountMinor: command.amountMinor, memo },
     ];
     assertBalancedJournal(journalLines.map((line) => ({ ...line, currencyCode: debitAccount.currencyCode })));
     await transaction.journalLine.createMany({ data: journalLines.map((line) => ({ journalId: journal.id, ...line })) });

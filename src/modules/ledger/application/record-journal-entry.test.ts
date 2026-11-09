@@ -66,8 +66,8 @@ describe("recordJournalEntry", () => {
 
     expect(journalLineCreateMany).toHaveBeenCalledWith({
       data: [
-        { journalId: "journal-1", accountId: "cash-1", direction: "DEBIT", amountMinor: 10_000n, memo: "Cash" },
-        { journalId: "journal-1", accountId: "suspense-1", direction: "CREDIT", amountMinor: 10_000n, memo: "Suspense" },
+        { journalId: "journal-1", accountId: "cash-1", direction: "DEBIT", amountMinor: 10_000n, memo: "Correcting entry" },
+        { journalId: "journal-1", accountId: "suspense-1", direction: "CREDIT", amountMinor: 10_000n, memo: "Correcting entry" },
       ],
     });
     expect(journalUpdate).toHaveBeenCalledWith({ where: { id: "journal-1" }, data: { status: "POSTED", postedAt: expect.any(Date) } });
@@ -86,9 +86,9 @@ describe("recordJournalEntry", () => {
 
     expect(journalLineCreateMany).toHaveBeenCalledWith({
       data: [
-        { journalId: "journal-1", accountId: "cash-1", direction: "DEBIT", amountMinor: 6_000n, memo: "Cash" },
-        { journalId: "journal-1", accountId: "bank-1", direction: "DEBIT", amountMinor: 4_000n, memo: "Bank" },
-        { journalId: "journal-1", accountId: "suspense-1", direction: "CREDIT", amountMinor: 10_000n, memo: "Suspense" },
+        { journalId: "journal-1", accountId: "cash-1", direction: "DEBIT", amountMinor: 6_000n, memo: "Correcting entry" },
+        { journalId: "journal-1", accountId: "bank-1", direction: "DEBIT", amountMinor: 4_000n, memo: "Correcting entry" },
+        { journalId: "journal-1", accountId: "suspense-1", direction: "CREDIT", amountMinor: 10_000n, memo: "Correcting entry" },
       ],
     });
   });
