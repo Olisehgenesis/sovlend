@@ -1167,6 +1167,9 @@ export async function loadCollectionsReport(
   const transactions = await prisma.loanTransaction.findMany({
     where: {
       transactionType: { in: transactionTypeVariants("REPAYMENT") },
+      // Reversed originals stay in the table; excluding them avoids counting
+      // cancelled receipts (legacy imports had some huge reversed amounts).
+      reversedById: null,
       loan: {
         office: { organizationId: scope.organizationId },
         ...loanScopeWhere(scope),

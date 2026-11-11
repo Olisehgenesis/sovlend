@@ -91,6 +91,7 @@ export async function loadDashboard(userId: string) {
         where: {
           businessDate: { gte: today, lt: tomorrow },
           transactionType: { in: transactionTypeVariants("REPAYMENT") },
+          reversedById: null,
           loan: loanScope,
         },
         _sum: { denominationAmountMinor: true },
@@ -100,6 +101,7 @@ export async function loadDashboard(userId: string) {
         where: {
           businessDate: { gte: today, lt: tomorrow },
           transactionType: { in: transactionTypeVariants("DISBURSEMENT") },
+          reversedById: null,
           loan: loanScope,
         },
         select: { loanId: true, denominationAmountMinor: true },
