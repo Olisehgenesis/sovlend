@@ -49,4 +49,15 @@ describe("reportRowsToCsv", () => {
 
     expect(csv).toContain('"UGX","001234","1-30 days",""');
   });
+
+  it("converts Collections Others from minor units so CSV matches the on-screen figure", () => {
+    // Audit #1: screen showed 1,137,703,069 while CSV left Others as 113,770,306,949 (100×).
+    const csv = reportRowsToCsv(
+      [{ Currency: "UGX", Others: "113770306949", "Total Receipt Amount": "115498135700" }],
+      ["Currency", "Others", "Total Receipt Amount"],
+    );
+
+    expect(csv).toContain('"UGX","1137703069","1154981357"');
+  });
 });
+

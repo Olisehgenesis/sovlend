@@ -11,15 +11,38 @@ import { permissions } from "@/modules/identity/domain/permissions";
 import { formatMinor } from "@/modules/money/domain/format-minor";
 import { loadReportPickerOptions } from "@/modules/reports/report-catalog";
 import {
+  buildReportQueryString,
+  formatDateInputValue,
+  resolveDatePreset,
+  type ReportDatePreset,
+} from "@/modules/reports/domain/accounting-report";
+import {
   formatReportDate,
   loadCollectionsReport,
   loadOperationsReportContext,
 } from "@/modules/reports/domain/operations-report";
 
+type CollectionsDatePreset = ReportDatePreset | "all_time";
+
+const DATE_PRESETS: { value: CollectionsDatePreset; label: string }[] = [
+  { value: "today", label: "Today" },
+  { value: "week", label: "This week" },
+  { value: "month", label: "This month" },
+  { value: "year", label: "This year" },
+  { value: "all_time", label: "All time" },
+];
+
+function parseCollectionsPreset(value?: string | null): CollectionsDatePreset | null {
+  if (value === "today" || value === "week" || value === "month" || value === "year" || value === "all_time") {
+    return value;
+  }
+  return null;
+}
+
 export default async function CollectionsReportPage({
   searchParams,
 }: {
-  searchParams: Promise<{ officeId?: string; startDate?: string; endDate?: string }>;
+  searchParams: Promise<{ officeId?: string; startDate?: string; endDate?: string; preset?: string }>;
 }) {
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session) redirect("/sign-in");
@@ -34,17 +57,43 @@ export default async function CollectionsReportPage({
   if (!context.allowed) redirect("/reports");
 
   const params = await searchParams;
-  const query = querySuffix(params);
+  const preset = parseCollectionsPreset(params.preset);
+  const resolvedRange =
+    preset === "all_time"
+      ? { startDate: null as Date | null, endDate: null as Date | null }
+      : preset
+        ? resolveDatePreset(new Date(), preset)
+        : { startDate: null as Date | null, endDate: null as Date | null };
+  const startDateValue =
+    preset && preset !== "all_time"
+      ? formatDateInputValue(resolvedRange.startDate as Date)
+      : params.startDate ?? "";
+  const endDateValue =
+    preset && preset !== "all_time"
+      ? formatDateInputValue(resolvedRange.endDate as Date)
+      : params.endDate ?? "";
+  const activePreset =
+    preset ??
+    (!params.startDate && !params.endDate ? ("all_time" as const) : null);
+  const query = querySuffix({
+    officeId: params.officeId,
+    startDate: startDateValue || undefined,
+    endDate: endDateValue || undefined,
+  });
   const [report, pickerOptions] = await Promise.all([
     loadCollectionsReport(prisma, context.scope, {
       officeId: params.officeId,
-      startDate: params.startDate,
-      endDate: params.endDate,
+      startDate: startDateValue || null,
+      endDate: endDateValue || null,
     }),
     loadReportPickerOptions(prisma, session.user.id, context.scope.organizationId),
   ]);
   const apiHref = `/api/reports/operations/collections${query}`;
   const exportHref = `${apiHref}${query ? "&" : "?"}format=csv`;
+  const rangeLabel =
+    report.startDate && report.endDate
+      ? `${formatReportDate(report.startDate)} – ${formatReportDate(report.endDate)}`
+      : "All time";
 
   return (
     <main className="directory-page">
@@ -59,7 +108,7 @@ export default async function CollectionsReportPage({
         <div>
           <p className="eyebrow">Operations report</p>
           <h1>Collections</h1>
-          <p>Actual receipts ledger of every repayment posted, newest first, with a full principal/interest/fees/penalty breakdown.</p>
+          <p>Actual receipts ledger of every repayment posted, newest first, with a full principal/interest/fees/penalty breakdown · {rangeLabel}</p>
         </div>
         <ReportPicker current="/reports/operations/collections" options={pickerOptions} />
         <div className="header-actions">
@@ -75,11 +124,22 @@ export default async function CollectionsReportPage({
         </div>
       </header>
 
-      <section className="panel">
-        <div className="panel-heading">
-          <div>
-            <h2>Filters</h2>
-            <p>Narrow the collections ledger by date range or office.</p>
+      <section className="panel form-panel">
+        <div className="quick-filters">
+          <span className="quick-filters-label">Quick range</span>
+          <div className="quick-filters-pills">
+            {DATE_PRESETS.map((item) => (
+              <Link
+                className={`pill-link ${activePreset === item.value ? "active" : ""}`}
+                href={`/reports/operations/collections?${buildReportQueryString({
+                  preset: item.value,
+                  officeId: params.officeId,
+                })}`}
+                key={item.value}
+              >
+                {item.label}
+              </Link>
+            ))}
           </div>
         </div>
         <form className="entity-form compact-mapping" method="GET">
@@ -88,11 +148,11 @@ export default async function CollectionsReportPage({
             <div className="form-row">
               <label>
                 Start date
-                <input defaultValue={params.startDate ?? ""} name="startDate" type="date" />
+                <input defaultValue={startDateValue} name="startDate" type="date" />
               </label>
               <label>
                 End date
-                <input defaultValue={params.endDate ?? ""} name="endDate" type="date" />
+                <input defaultValue={endDateValue} name="endDate" type="date" />
               </label>
             </div>
             <div className="form-row">

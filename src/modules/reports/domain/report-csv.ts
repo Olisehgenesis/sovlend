@@ -1,6 +1,6 @@
 import { rowsToCsv, type CsvRow } from "@/modules/lending/domain/loan-export";
 
-const MONEY_COLUMN = /(amount|principal|interest|balance|fees?|penalt|debit|credit|outstanding|arrears|overdue|repaid|recovery|recover|provision|savings|receipt|expected|exposure|written.?off|current|opening|closing|collected|waived|paid|disbursed|due|liabilit|assets|equity|income|revenue|expenses|value|difference|portfolio|net worth)/i;
+const MONEY_COLUMN = /(amount|principal|interest|balance|fees?|penalt|others|debit|credit|outstanding|arrears|overdue|repaid|recovery|recover|provision|savings|receipt|expected|exposure|written.?off|current|opening|closing|collected|waived|paid|disbursed|due|liabilit|assets|equity|income|revenue|expenses|value|difference|portfolio|net worth)/i;
 // "days" must not be a bare substring — "180+ Days Outstanding" is money (minor units),
 // while "Days Overdue" is a day count. Matching /days/ left PAR bucket columns in cents,
 // so Excel showed ~100× the on-screen shilling total.

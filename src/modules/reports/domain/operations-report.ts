@@ -1175,8 +1175,14 @@ export async function loadCollectionsReport(
         ...loanScopeWhere(scope),
         ...(officeId ? { officeId } : {}),
       },
-      ...(range.startDate ? { businessDate: { gte: range.startDate } } : {}),
-      ...(range.endDate ? { businessDate: { lte: range.endDate } } : {}),
+      ...(range.startDate || range.endDate
+        ? {
+            businessDate: {
+              ...(range.startDate ? { gte: range.startDate } : {}),
+              ...(range.endDate ? { lte: range.endDate } : {}),
+            },
+          }
+        : {}),
     },
     select: {
       id: true,
