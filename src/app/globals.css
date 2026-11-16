@@ -741,6 +741,10 @@ a.statement-row-link:hover { background: var(--mint, #edf7f0); padding-left: 8px
 
 /* Chart of Accounts / compact report toolbars */
 .coa-summary-metrics { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+.coa-summary-metrics article { min-height: 48px; padding: 8px 12px; gap: 2px; }
+.coa-summary-metrics span { font-size: 11px; }
+.coa-summary-metrics strong { font-size: 13px; line-height: 1.25; }
+.coa-summary-metrics small { font-size: 10px; }
 .report-toolbar { margin-top: 0; overflow: hidden; }
 .report-toolbar-presets { border-bottom: 1px solid var(--line); }
 .report-toolbar-form {

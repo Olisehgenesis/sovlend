@@ -171,7 +171,6 @@ export default async function ChartOfAccountsPage({
           <article key={card.label}>
             <span>{card.label}</span>
             <strong>{formatBalance(card.type, card.amountMinor, "UGX")}</strong>
-            <small>As of {formatReportDate(report.balanceDate)}</small>
           </article>
         ))}
       </section>
