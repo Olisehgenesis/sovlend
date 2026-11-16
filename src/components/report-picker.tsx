@@ -1,7 +1,10 @@
 "use client";
 
-import { FileSpreadsheet, FileText } from "lucide-react";
+import { FileSpreadsheet, FileText, LoaderCircle } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
+
+import { signalNavigation } from "@/components/navigation-progress";
 
 export type ReportPickerOption = Readonly<{
   href: string;
@@ -16,9 +19,15 @@ export type ReportPickerOption = Readonly<{
  */
 export function ReportPicker({ options, current }: { options: readonly ReportPickerOption[]; current: string }) {
   const router = useRouter();
+  const [pendingHref, setPendingHref] = useState<string | null>(null);
   const sections = groupBySection(options);
   const currentReport = options.find((option) => option.href === current);
+  const pendingReport = options.find((option) => option.href === pendingHref);
   const canExport = Boolean(currentReport && current !== "/reports/client-statement");
+
+  useEffect(() => {
+    setPendingHref(null);
+  }, [current]);
 
   function csvHref() {
     const params = new URLSearchParams(window.location.search);
@@ -41,10 +50,16 @@ export function ReportPicker({ options, current }: { options: readonly ReportPic
       <label className="report-picker">
         <span>Jump to report</span>
         <select
-          value={current}
+          aria-busy={pendingHref !== null}
+          disabled={pendingHref !== null}
+          value={pendingHref ?? current}
           onChange={(event) => {
             const href = event.target.value;
-            if (href) router.push(href);
+            if (!href || href === current) return;
+            const title = options.find((option) => option.href === href)?.title ?? "report";
+            setPendingHref(href);
+            signalNavigation(title);
+            router.push(href);
           }}
         >
           <option value="">Choose a report…</option>
@@ -58,6 +73,12 @@ export function ReportPicker({ options, current }: { options: readonly ReportPic
             </optgroup>
           ))}
         </select>
+        {pendingReport ? (
+          <span className="report-picker-status" role="status">
+            <LoaderCircle aria-hidden className="spin" size={14} />
+            Loading {pendingReport.title}…
+          </span>
+        ) : null}
       </label>
       {canExport ? (
         <div className="report-export-actions">

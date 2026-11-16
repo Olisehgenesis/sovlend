@@ -1,4 +1,4 @@
-import type { ClientStatus, KycStatus, LoanStatus, PrismaClient } from "@prisma/client";
+import { Prisma, type ClientStatus, type KycStatus, type LoanStatus, type PrismaClient } from "@prisma/client";
 
 import { AuthorizationService } from "@/modules/identity/application/authorization-service";
 import {
@@ -10,9 +10,16 @@ import {
 } from "@/modules/identity/application/data-scope";
 import type { PermissionCode } from "@/modules/identity/domain/permissions";
 import { transactionTypeVariants } from "@/lib/loan-transaction-type-variants";
+import { loadFoldedLoanCharges } from "@/modules/reports/domain/portfolio-charges";
 import { reportRowsToCsv as rowsToCsv } from "@/modules/reports/domain/report-csv";
+import {
+  reportPageSkip,
+  reportTotalPages,
+  type ReportPagination,
+} from "@/modules/reports/domain/report-pagination";
 import { installmentOutstandingMinor as totalInstallmentOutstandingMinor, installmentsWithCharges } from "@/modules/lending/domain/loan-outstanding";
 import { loadPortfolioLoans, type AgingBucketKey, type BranchPortfolioBucketKey, branchPortfolioBucket, branchPortfolioBucketLabels, branchPortfolioBucketOrder } from "@/modules/reports/domain/risk-report";
+import { sumSavingsByAccount } from "@/modules/savings/domain/account-balance";
 
 const reportableLoanStatuses: LoanStatus[] = ["ACTIVE", "IN_ARREARS"];
 const ugDateFormatter = new Intl.DateTimeFormat("en-UG", {
@@ -303,6 +310,12 @@ export type CollectionsReport = {
   endDate: Date | null;
   rows: CollectionsReportRow[];
   totals: CollectionsReportTotal[];
+  pagination: {
+    page: number;
+    pageSize: number;
+    totalRows: number;
+    totalPages: number;
+  };
 };
 
 export type OutstandingBalanceRow = {
@@ -655,13 +668,14 @@ export async function loadBranchPortfolioReport(
         ],
       },
       select: {
+        id: true,
         fieldOfficerId: true,
         currencyCode: true,
         fieldOfficer: { select: { name: true } },
-        transactions: { select: { amountMinor: true } },
       },
     }),
   ]);
+  const savingsBalances = await sumSavingsByAccount(prisma, savingsAccounts.map((account) => account.id));
 
   const emptyBuckets = (): Record<BranchPortfolioBucketKey, bigint> =>
     Object.fromEntries(branchPortfolioBucketOrder.map((bucket) => [bucket, 0n])) as Record<
@@ -731,7 +745,7 @@ export async function loadBranchPortfolioReport(
   }
 
   for (const account of savingsAccounts) {
-    const balanceMinor = account.transactions.reduce((sum, transaction) => sum + transaction.amountMinor, 0n);
+    const balanceMinor = savingsBalances.get(account.id) ?? 0n;
     const row = ensureRow(account.fieldOfficerId, account.fieldOfficer?.name ?? "Unassigned", account.currencyCode);
     row.savingsBalanceMinor += balanceMinor;
   }
@@ -1156,64 +1170,90 @@ export async function loadDisbursalReport(
 export async function loadCollectionsReport(
   prisma: PrismaClient,
   scope: UserDataScope,
-  params: { officeId?: string | null; startDate?: string | null; endDate?: string | null },
+  params: {
+    officeId?: string | null;
+    startDate?: string | null;
+    endDate?: string | null;
+    /** Omit / pass null for full export (CSV). Pass parsed page+pageSize for the UI. */
+    pagination?: ReportPagination | null;
+  },
 ): Promise<CollectionsReport> {
   const officeId = normalizeString(params.officeId);
   const range = normalizeDateRange(
     parseOptionalDateInput(params.startDate),
     parseOptionalDateInput(params.endDate),
   );
+  const pagination = params.pagination ?? null;
 
-  const transactions = await prisma.loanTransaction.findMany({
-    where: {
-      transactionType: { in: transactionTypeVariants("REPAYMENT") },
-      // Reversed originals stay in the table; excluding them avoids counting
-      // cancelled receipts (legacy imports had some huge reversed amounts).
-      reversedById: null,
-      loan: {
-        office: { organizationId: scope.organizationId },
-        ...loanScopeWhere(scope),
-        ...(officeId ? { officeId } : {}),
-      },
-      ...(range.startDate || range.endDate
-        ? {
-            businessDate: {
-              ...(range.startDate ? { gte: range.startDate } : {}),
-              ...(range.endDate ? { lte: range.endDate } : {}),
-            },
-          }
-        : {}),
+  const where = {
+    transactionType: { in: transactionTypeVariants("REPAYMENT") },
+    // Reversed originals stay in the table; excluding them avoids counting
+    // cancelled receipts (legacy imports had some huge reversed amounts).
+    reversedById: null,
+    loan: {
+      office: { organizationId: scope.organizationId },
+      ...loanScopeWhere(scope),
+      ...(officeId ? { officeId } : {}),
     },
-    select: {
-      id: true,
-      businessDate: true,
-      createdAt: true,
-      externalReference: true,
-      denominationAmountMinor: true,
-      allocations: { select: { principalMinor: true, interestMinor: true, feesMinor: true, penaltiesMinor: true } },
-      loan: {
-        select: {
-          id: true,
-          accountNumber: true,
-          officeId: true,
-          denominationCurrency: true,
-          office: { select: { name: true } },
-          product: { select: { name: true } },
-          client: { select: { firstName: true, middleName: true, lastName: true } },
-          group: { select: { name: true } },
-        },
-      },
-    },
-    orderBy: [{ businessDate: "desc" }, { createdAt: "desc" }],
-  });
+    ...(range.startDate || range.endDate
+      ? {
+          businessDate: {
+            ...(range.startDate ? { gte: range.startDate } : {}),
+            ...(range.endDate ? { lte: range.endDate } : {}),
+          },
+        }
+      : {}),
+  } as const;
 
-  const rows: CollectionsReportRow[] = transactions.map((transaction) => {
+  const orderBy = [{ businessDate: "desc" as const }, { createdAt: "desc" as const }];
+  const rowSelect = {
+    id: true,
+    businessDate: true,
+    createdAt: true,
+    externalReference: true,
+    denominationAmountMinor: true,
+    allocations: { select: { principalMinor: true, interestMinor: true, feesMinor: true, penaltiesMinor: true } },
+    loan: {
+      select: {
+        id: true,
+        accountNumber: true,
+        officeId: true,
+        denominationCurrency: true,
+        office: { select: { name: true } },
+        product: { select: { name: true } },
+        client: { select: { firstName: true, middleName: true, lastName: true } },
+        group: { select: { name: true } },
+      },
+    },
+  } as const;
+
+  const mapRow = (transaction: {
+    id: string;
+    businessDate: Date;
+    createdAt: Date;
+    externalReference: string | null;
+    denominationAmountMinor: bigint;
+    allocations: Array<{ principalMinor: bigint; interestMinor: bigint; feesMinor: bigint; penaltiesMinor: bigint }>;
+    loan: {
+      id: string;
+      accountNumber: string;
+      officeId: string;
+      denominationCurrency: string;
+      office: { name: string };
+      product: { name: string };
+      client: { firstName: string; middleName: string | null; lastName: string } | null;
+      group: { name: string } | null;
+    };
+  }): CollectionsReportRow => {
     const principalMinor = sumBigIntField(transaction.allocations, "principalMinor");
     const interestMinor = sumBigIntField(transaction.allocations, "interestMinor");
     const feesMinor = sumBigIntField(transaction.allocations, "feesMinor");
     const penaltiesMinor = sumBigIntField(transaction.allocations, "penaltiesMinor");
     const allocatedMinor = principalMinor + interestMinor + feesMinor + penaltiesMinor;
-    const othersMinor = transaction.denominationAmountMinor > allocatedMinor ? transaction.denominationAmountMinor - allocatedMinor : 0n;
+    const othersMinor =
+      transaction.denominationAmountMinor > allocatedMinor
+        ? transaction.denominationAmountMinor - allocatedMinor
+        : 0n;
     return {
       transactionId: transaction.id,
       loanId: transaction.loan.id,
@@ -1237,8 +1277,139 @@ export async function loadCollectionsReport(
       businessDate: transaction.businessDate,
       createdAt: transaction.createdAt,
     };
-  });
+  };
 
+  // Full export path: load everything once (CSV / API).
+  if (!pagination) {
+    const transactions = await prisma.loanTransaction.findMany({
+      where,
+      select: rowSelect,
+      orderBy,
+    });
+    const rows = transactions.map(mapRow);
+    return {
+      officeId,
+      startDate: range.startDate,
+      endDate: range.endDate,
+      rows,
+      totals: collectionsTotalsFromRows(rows),
+      pagination: {
+        page: 1,
+        pageSize: Math.max(rows.length, 1),
+        totalRows: rows.length,
+        totalPages: 1,
+      },
+    };
+  }
+
+  // UI path: one page of receipts. Totals are summed in SQL across the whole range.
+  const [totalRows, transactions, totals] = await Promise.all([
+    prisma.loanTransaction.count({ where }),
+    prisma.loanTransaction.findMany({
+      where,
+      select: rowSelect,
+      orderBy,
+      skip: reportPageSkip(pagination),
+      take: pagination.pageSize,
+    }),
+    loadCollectionsTotals(prisma, scope, { officeId, startDate: range.startDate, endDate: range.endDate }),
+  ]);
+
+  const rows = transactions.map(mapRow);
+  const totalPages = reportTotalPages(totalRows, pagination.pageSize);
+  const page = Math.min(pagination.page, totalPages);
+
+  return {
+    officeId,
+    startDate: range.startDate,
+    endDate: range.endDate,
+    rows,
+    totals,
+    pagination: {
+      page,
+      pageSize: pagination.pageSize,
+      totalRows,
+      totalPages,
+    },
+  };
+}
+
+async function loadCollectionsTotals(
+  prisma: PrismaClient,
+  scope: UserDataScope,
+  range: { officeId: string | null; startDate: Date | null; endDate: Date | null },
+): Promise<CollectionsReportTotal[]> {
+  const conditions: Prisma.Sql[] = [
+    Prisma.sql`t."transactionType" IN (${Prisma.join(transactionTypeVariants("REPAYMENT"))})`,
+    Prisma.sql`t."reversedById" IS NULL`,
+    Prisma.sql`o."organizationId" = ${scope.organizationId}::uuid`,
+  ];
+  if (scope.officerUserId) {
+    conditions.push(Prisma.sql`l."loanOfficerId" = ${scope.officerUserId}`);
+  } else if (scope.officeIds) {
+    conditions.push(
+      scope.officeIds.length === 0
+        ? Prisma.sql`FALSE`
+        : Prisma.sql`l."officeId" IN (${Prisma.join(scope.officeIds.map((id) => Prisma.sql`${id}::uuid`))})`,
+    );
+  }
+  if (range.officeId) conditions.push(Prisma.sql`l."officeId" = ${range.officeId}::uuid`);
+  if (range.startDate) conditions.push(Prisma.sql`t."businessDate" >= ${range.startDate}`);
+  if (range.endDate) conditions.push(Prisma.sql`t."businessDate" <= ${range.endDate}`);
+
+  const rows = await prisma.$queryRaw<Array<{
+    currencyCode: string;
+    transactionCount: number;
+    principalMinor: bigint | string | number;
+    interestMinor: bigint | string | number;
+    feesMinor: bigint | string | number;
+    penaltiesMinor: bigint | string | number;
+    othersMinor: bigint | string | number;
+    totalMinor: bigint | string | number;
+  }>>(Prisma.sql`
+    SELECT l."denominationCurrency" AS "currencyCode",
+           COUNT(*)::int AS "transactionCount",
+           COALESCE(SUM(COALESCE(a.principal, 0)), 0)::bigint AS "principalMinor",
+           COALESCE(SUM(COALESCE(a.interest, 0)), 0)::bigint AS "interestMinor",
+           COALESCE(SUM(COALESCE(a.fees, 0)), 0)::bigint AS "feesMinor",
+           COALESCE(SUM(COALESCE(a.penalties, 0)), 0)::bigint AS "penaltiesMinor",
+           COALESCE(SUM(GREATEST(t."denominationAmountMinor" - COALESCE(a.allocated, 0), 0)), 0)::bigint AS "othersMinor",
+           COALESCE(SUM(t."denominationAmountMinor"), 0)::bigint AS "totalMinor"
+    FROM "LoanTransaction" t
+    JOIN "Loan" l ON l.id = t."loanId"
+    JOIN "Office" o ON o.id = l."officeId"
+    LEFT JOIN (
+      SELECT "transactionId",
+             SUM("principalMinor") AS principal,
+             SUM("interestMinor") AS interest,
+             SUM("feesMinor") AS fees,
+             SUM("penaltiesMinor") AS penalties,
+             SUM("principalMinor") + SUM("interestMinor") + SUM("feesMinor") + SUM("penaltiesMinor") AS allocated
+      FROM "LoanTransactionAllocation"
+      GROUP BY "transactionId"
+    ) a ON a."transactionId" = t.id
+    WHERE ${Prisma.join(conditions, " AND ")}
+    GROUP BY l."denominationCurrency"
+    ORDER BY l."denominationCurrency"
+  `);
+
+  return rows.map((row) => ({
+    currencyCode: row.currencyCode,
+    transactionCount: row.transactionCount,
+    principalMinor: asBigInt(row.principalMinor),
+    interestMinor: asBigInt(row.interestMinor),
+    feesMinor: asBigInt(row.feesMinor),
+    penaltiesMinor: asBigInt(row.penaltiesMinor),
+    othersMinor: asBigInt(row.othersMinor),
+    totalMinor: asBigInt(row.totalMinor),
+  }));
+}
+
+function asBigInt(value: bigint | string | number): bigint {
+  return typeof value === "bigint" ? value : BigInt(value);
+}
+
+function collectionsTotalsFromRows(rows: CollectionsReportRow[]): CollectionsReportTotal[] {
   const totalsMap = new Map<string, CollectionsReportTotal>();
   for (const row of rows) {
     const total =
@@ -1261,14 +1432,7 @@ export async function loadCollectionsReport(
     total.totalMinor += row.totalMinor;
     totalsMap.set(row.currencyCode, total);
   }
-
-  return {
-    officeId,
-    startDate: range.startDate,
-    endDate: range.endDate,
-    rows,
-    totals: [...totalsMap.values()].sort((left, right) => left.currencyCode.localeCompare(right.currencyCode)),
-  };
+  return [...totalsMap.values()].sort((left, right) => left.currencyCode.localeCompare(right.currencyCode));
 }
 
 function sumBigIntField<K extends string>(items: Array<Record<K, bigint>>, key: K): bigint {
@@ -1369,13 +1533,13 @@ export async function loadOutstandingBalancesReport(
           monitoringFeeWaivedMinor: true,
         },
       },
-      charges: { select: { name: true, amountMinor: true, status: true, dueOn: true } },
     },
   });
+  const chargesByLoan = await loadFoldedLoanCharges(prisma, loans);
 
   const rows = loans
     .map<OutstandingBalanceRow>((loan) => {
-      const installments = installmentsWithCharges(loan.installments, loan.charges);
+      const installments = installmentsWithCharges(loan.installments, chargesByLoan.get(loan.id) ?? []);
       const principalOutstanding = installments.reduce(
         (sum, installment) => sum + principalOutstandingMinor(installment),
         0n,

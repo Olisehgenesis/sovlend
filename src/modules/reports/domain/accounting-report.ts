@@ -412,43 +412,81 @@ export function dateToString(value: Date) {
   return value.toISOString().slice(0, 10);
 }
 
+type JournalActivity = {
+  byAccount: Map<string, { type: AccountType; debits: bigint; credits: bigint; balance: bigint }>;
+  journalCount: number;
+  lineCount: number;
+};
+
+/** Sum posted lines in the database. Sign depends only on account type and direction, so a
+ * grouped sum matches adding each line in memory. */
+async function loadJournalActivity(
+  db: ReportPrisma,
+  lineWhere: Prisma.JournalLineWhereInput,
+  journalWhere: Prisma.JournalWhereInput,
+): Promise<JournalActivity> {
+  const [grouped, lineCount, journalCount] = await Promise.all([
+    db.journalLine.groupBy({
+      by: ["accountId", "direction"],
+      where: lineWhere,
+      _sum: { amountMinor: true },
+    }),
+    db.journalLine.count({ where: lineWhere }),
+    db.journal.count({ where: journalWhere }),
+  ]);
+
+  const accountIds = [...new Set(grouped.map((row) => row.accountId))];
+  const accounts = accountIds.length === 0
+    ? []
+    : await db.ledgerAccount.findMany({
+        where: { id: { in: accountIds } },
+        select: { id: true, type: true },
+      });
+  const types = new Map(accounts.map((account) => [account.id, account.type]));
+  const byAccount = new Map<string, { type: AccountType; debits: bigint; credits: bigint; balance: bigint }>();
+
+  for (const row of grouped) {
+    const type = types.get(row.accountId);
+    if (!type) continue;
+    const amount = row._sum.amountMinor ?? 0n;
+    const current = byAccount.get(row.accountId) ?? { type, debits: 0n, credits: 0n, balance: 0n };
+    if (row.direction === "DEBIT") current.debits += amount;
+    else current.credits += amount;
+    current.balance += signedAmountForAccount(type, row.direction, amount);
+    byAccount.set(row.accountId, current);
+  }
+
+  return { byAccount, journalCount, lineCount };
+}
+
 export async function getBalanceSheetReport(
   db: ReportPrisma,
   scope: UserDataScope,
   filters: { endDate: Date; officeId: string | null },
 ): Promise<BalanceSheetReport> {
   const accounts = await listAccountingReportAccounts(db, ["ASSET", "LIABILITY", "EQUITY"]);
-  const lines = await db.journalLine.findMany({
-    where: {
-      journal: {
-        status: "POSTED",
-        businessDate: { lte: filters.endDate },
-        office: { organizationId: scope.organizationId },
-        ...(filters.officeId ? { officeId: filters.officeId } : officeWhere(scope)),
-      },
-      // Revenue/Expense lines are included too (not just Asset/Liability/Equity) so their
-      // cumulative net effect can be folded into equity below -- see netIncomeToDateMinor.
-      account: { ...DETAIL_ACCOUNT_WHERE, type: { in: ["ASSET", "LIABILITY", "EQUITY", "REVENUE", "EXPENSE"] } },
-    },
-    select: {
-      journalId: true,
-      accountId: true,
-      direction: true,
-      amountMinor: true,
-      account: { select: { type: true } },
-    },
-  });
+  const accountFilter = { ...DETAIL_ACCOUNT_WHERE, type: { in: ["ASSET", "LIABILITY", "EQUITY", "REVENUE", "EXPENSE"] as AccountType[] } };
+  const journalScope = {
+    status: "POSTED" as const,
+    businessDate: { lte: filters.endDate },
+    office: { organizationId: scope.organizationId },
+    ...(filters.officeId ? { officeId: filters.officeId } : officeWhere(scope)),
+  };
+  // Revenue/Expense lines are included too (not just Asset/Liability/Equity) so their
+  // cumulative net effect can be folded into equity below -- see netIncomeToDateMinor.
+  const activity = await loadJournalActivity(
+    db,
+    { journal: journalScope, account: accountFilter },
+    { ...journalScope, lines: { some: { account: accountFilter } } },
+  );
 
   const balances = new Map<string, bigint>();
-  const journalIds = new Set<string>();
   let revenueToDateMinor = 0n;
   let expensesToDateMinor = 0n;
-  for (const line of lines) {
-    journalIds.add(line.journalId);
-    const signedMinor = signedAmountForAccount(line.account.type, line.direction, line.amountMinor);
-    if (line.account.type === "REVENUE") revenueToDateMinor += signedMinor;
-    else if (line.account.type === "EXPENSE") expensesToDateMinor += signedMinor;
-    else balances.set(line.accountId, (balances.get(line.accountId) ?? 0n) + signedMinor);
+  for (const [accountId, row] of activity.byAccount) {
+    if (row.type === "REVENUE") revenueToDateMinor += row.balance;
+    else if (row.type === "EXPENSE") expensesToDateMinor += row.balance;
+    else balances.set(accountId, row.balance);
   }
   const netIncomeToDateMinor = revenueToDateMinor - expensesToDateMinor;
 
@@ -466,9 +504,9 @@ export async function getBalanceSheetReport(
   return {
     asOfDate: filters.endDate,
     officeId: filters.officeId,
-    journalCount: journalIds.size,
-    lineCount: lines.length,
-    hasActivity: lines.length > 0,
+    journalCount: activity.journalCount,
+    lineCount: activity.lineCount,
+    hasActivity: activity.lineCount > 0,
     sections,
     assetsTotalMinor,
     liabilitiesTotalMinor,
@@ -485,31 +523,19 @@ export async function getIncomeStatementReport(
   filters: { startDate: Date; endDate: Date; officeId: string | null },
 ): Promise<IncomeStatementReport> {
   const accounts = await listAccountingReportAccounts(db, ["REVENUE", "EXPENSE"]);
-  const lines = await db.journalLine.findMany({
-    where: {
-      journal: {
-        status: "POSTED",
-        businessDate: { gte: filters.startDate, lte: filters.endDate },
-        office: { organizationId: scope.organizationId },
-        ...(filters.officeId ? { officeId: filters.officeId } : officeWhere(scope)),
-      },
-      account: { ...DETAIL_ACCOUNT_WHERE, type: { in: ["REVENUE", "EXPENSE"] } },
-    },
-    select: {
-      journalId: true,
-      accountId: true,
-      direction: true,
-      amountMinor: true,
-      account: { select: { type: true } },
-    },
-  });
-
-  const balances = new Map<string, bigint>();
-  const journalIds = new Set<string>();
-  for (const line of lines) {
-    journalIds.add(line.journalId);
-    balances.set(line.accountId, (balances.get(line.accountId) ?? 0n) + signedAmountForAccount(line.account.type, line.direction, line.amountMinor));
-  }
+  const accountFilter = { ...DETAIL_ACCOUNT_WHERE, type: { in: ["REVENUE", "EXPENSE"] as AccountType[] } };
+  const journalScope = {
+    status: "POSTED" as const,
+    businessDate: { gte: filters.startDate, lte: filters.endDate },
+    office: { organizationId: scope.organizationId },
+    ...(filters.officeId ? { officeId: filters.officeId } : officeWhere(scope)),
+  };
+  const activity = await loadJournalActivity(
+    db,
+    { journal: journalScope, account: accountFilter },
+    { ...journalScope, lines: { some: { account: accountFilter } } },
+  );
+  const balances = new Map([...activity.byAccount].map(([accountId, row]) => [accountId, row.balance]));
 
   const revenue = buildSection(accounts, balances, "REVENUE", "Revenue");
   const expenses = buildSection(accounts, balances, "EXPENSE", "Expenses");
@@ -518,9 +544,9 @@ export async function getIncomeStatementReport(
     startDate: filters.startDate,
     endDate: filters.endDate,
     officeId: filters.officeId,
-    journalCount: journalIds.size,
-    lineCount: lines.length,
-    hasActivity: lines.length > 0,
+    journalCount: activity.journalCount,
+    lineCount: activity.lineCount,
+    hasActivity: activity.lineCount > 0,
     revenue,
     expenses,
     netIncomeMinor: revenue.totalMinor - expenses.totalMinor,
@@ -533,48 +559,28 @@ export async function getTrialBalanceReport(
   filters: { startDate: Date; endDate: Date; officeId: string | null },
 ): Promise<TrialBalanceReport> {
   const accounts = await listAccountingReportAccounts(db);
-  const lines = await db.journalLine.findMany({
-    where: {
-      journal: {
-        status: "POSTED",
-        businessDate: { gte: filters.startDate, lte: filters.endDate },
-        office: { organizationId: scope.organizationId },
-        ...(filters.officeId ? { officeId: filters.officeId } : officeWhere(scope)),
-      },
-      account: DETAIL_ACCOUNT_WHERE,
-    },
-    select: {
-      journalId: true,
-      accountId: true,
-      direction: true,
-      amountMinor: true,
-      account: { select: { type: true } },
-    },
-  });
-
-  const totals = new Map<string, { debits: bigint; credits: bigint; balance: bigint }>();
-  const journalIds = new Set<string>();
+  const journalScope = {
+    status: "POSTED" as const,
+    businessDate: { gte: filters.startDate, lte: filters.endDate },
+    office: { organizationId: scope.organizationId },
+    ...(filters.officeId ? { officeId: filters.officeId } : officeWhere(scope)),
+  };
+  const activity = await loadJournalActivity(
+    db,
+    { journal: journalScope, account: DETAIL_ACCOUNT_WHERE },
+    { ...journalScope, lines: { some: { account: DETAIL_ACCOUNT_WHERE } } },
+  );
   let totalDebitsMinor = 0n;
   let totalCreditsMinor = 0n;
-
-  for (const line of lines) {
-    journalIds.add(line.journalId);
-    const current = totals.get(line.accountId) ?? { debits: 0n, credits: 0n, balance: 0n };
-    if (line.direction === "DEBIT") {
-      current.debits += line.amountMinor;
-      totalDebitsMinor += line.amountMinor;
-    } else {
-      current.credits += line.amountMinor;
-      totalCreditsMinor += line.amountMinor;
-    }
-    current.balance += signedAmountForAccount(line.account.type, line.direction, line.amountMinor);
-    totals.set(line.accountId, current);
+  for (const row of activity.byAccount.values()) {
+    totalDebitsMinor += row.debits;
+    totalCreditsMinor += row.credits;
   }
 
-  const rows = lines.length === 0
+  const rows = activity.lineCount === 0
     ? []
     : accounts.map((account) => {
-        const current = totals.get(account.id) ?? { debits: 0n, credits: 0n, balance: 0n };
+        const current = activity.byAccount.get(account.id) ?? { debits: 0n, credits: 0n, balance: 0n };
         return {
           ...account,
           debitTotalMinor: current.debits,
@@ -588,9 +594,9 @@ export async function getTrialBalanceReport(
     startDate: filters.startDate,
     endDate: filters.endDate,
     officeId: filters.officeId,
-    journalCount: journalIds.size,
-    lineCount: lines.length,
-    hasActivity: lines.length > 0,
+    journalCount: activity.journalCount,
+    lineCount: activity.lineCount,
+    hasActivity: activity.lineCount > 0,
     rows,
     totalDebitsMinor,
     totalCreditsMinor,
@@ -622,6 +628,8 @@ export async function getGeneralLedgerReport(
     toCode?: string | null;
     accountType?: AccountType | null;
     include?: LedgerAccountInclude;
+    /** "balances" skips individual lines. A page loads one screen of lines for the selected account. */
+    entries?: "all" | "balances" | { page: number; pageSize: number };
   },
 ): Promise<GeneralLedgerReport> {
   const accounts = await listAccountingReportAccounts(db);
@@ -660,17 +668,60 @@ export async function getGeneralLedgerReport(
     : scopedAccountIds
       ? { accountId: { in: scopedAccountIds } }
       : {};
-  const lines = await db.journalLine.findMany({
-    where: {
-      ...accountIdFilter,
-      account: DETAIL_ACCOUNT_WHERE,
-      journal: {
-        status: "POSTED",
-        businessDate: { gte: filters.startDate, lte: filters.endDate },
-        office: { organizationId: scope.organizationId },
-        ...(filters.officeId ? { officeId: filters.officeId } : officeWhere(scope)),
-      },
+  const periodWhere = {
+    ...accountIdFilter,
+    account: DETAIL_ACCOUNT_WHERE,
+    journal: {
+      status: "POSTED" as const,
+      businessDate: { gte: filters.startDate, lte: filters.endDate },
+      office: { organizationId: scope.organizationId },
+      ...(filters.officeId ? { officeId: filters.officeId } : officeWhere(scope)),
     },
+  };
+  const lineOrder = [
+    { journal: { businessDate: "asc" as const } },
+    { journal: { createdAt: "asc" as const } },
+    { createdAt: "asc" as const },
+    { id: "asc" as const },
+  ];
+  const entryPage = typeof filters.entries === "object" ? filters.entries : null;
+  const balancesOnly = filters.entries === "balances" || entryPage !== null;
+
+  const lines = balancesOnly
+    ? entryPage
+      ? await db.journalLine.findMany({
+          where: periodWhere,
+          select: {
+            id: true,
+            journalId: true,
+            direction: true,
+            amountMinor: true,
+            memo: true,
+            createdAt: true,
+            account: {
+              select: { id: true, code: true, name: true, type: true, currencyCode: true },
+            },
+            journal: {
+              select: {
+                businessDate: true,
+                createdAt: true,
+                office: { select: { name: true } },
+                payeeType: true,
+                payeeName: true,
+                payeeReference: true,
+                referenceType: true,
+                referenceId: true,
+                narration: true,
+              },
+            },
+          },
+          orderBy: lineOrder,
+          skip: Math.max(0, entryPage.page - 1) * entryPage.pageSize,
+          take: entryPage.pageSize,
+        })
+      : []
+    : await db.journalLine.findMany({
+    where: periodWhere,
     select: {
       id: true,
       journalId: true,
@@ -742,6 +793,54 @@ export async function getGeneralLedgerReport(
     runningBalances.set(account.id, openingBalance);
   }
 
+  let countedLineCount: number | null = null;
+  let countedJournalCount: number | null = null;
+  const closingFromGroups = new Map<string, bigint>();
+  if (balancesOnly) {
+    const [periodGroups, countedLines, journals] = await Promise.all([
+      db.journalLine.groupBy({
+        by: ["accountId", "direction"],
+        where: periodWhere,
+        _sum: { amountMinor: true },
+      }),
+      db.journalLine.count({ where: periodWhere }),
+      db.journalLine.groupBy({ by: ["journalId"], where: periodWhere }),
+    ]);
+    countedLineCount = countedLines;
+    countedJournalCount = journals.length;
+    for (const group of periodGroups) {
+      const account = accountById.get(group.accountId);
+      const amountMinor = group._sum.amountMinor ?? 0n;
+      if (!account || amountMinor === 0n) continue;
+      if (group.direction === "DEBIT") {
+        debitTotalMinor += amountMinor;
+        periodDebitTotals.set(account.id, (periodDebitTotals.get(account.id) ?? 0n) + amountMinor);
+      } else {
+        creditTotalMinor += amountMinor;
+        periodCreditTotals.set(account.id, (periodCreditTotals.get(account.id) ?? 0n) + amountMinor);
+      }
+      closingFromGroups.set(
+        account.id,
+        (closingFromGroups.get(account.id) ?? openingBalances.get(account.id) ?? 0n) +
+          signedAmountForAccount(account.type, group.direction, amountMinor),
+      );
+    }
+    if (entryPage && entryPage.page > 1) {
+      const priorLines = await db.journalLine.findMany({
+        where: periodWhere,
+        select: { direction: true, amountMinor: true, account: { select: { id: true, type: true } } },
+        orderBy: lineOrder,
+        take: Math.max(0, entryPage.page - 1) * entryPage.pageSize,
+      });
+      for (const line of priorLines) {
+        const account = accountById.get(line.account.id);
+        if (!account) continue;
+        const base = runningBalances.get(account.id) ?? openingBalances.get(account.id) ?? 0n;
+        runningBalances.set(account.id, base + signedAmountForAccount(account.type, line.direction, line.amountMinor));
+      }
+    }
+  }
+
   const entries: GeneralLedgerEntry[] = [];
 
   for (const line of lines) {
@@ -753,12 +852,14 @@ export async function getGeneralLedgerReport(
     runningBalances.set(account.id, runningBalanceMinor);
 
     journalIds.add(line.journalId);
-    if (line.direction === "DEBIT") {
-      debitTotalMinor += line.amountMinor;
-      periodDebitTotals.set(account.id, (periodDebitTotals.get(account.id) ?? 0n) + line.amountMinor);
-    } else {
-      creditTotalMinor += line.amountMinor;
-      periodCreditTotals.set(account.id, (periodCreditTotals.get(account.id) ?? 0n) + line.amountMinor);
+    if (!balancesOnly) {
+      if (line.direction === "DEBIT") {
+        debitTotalMinor += line.amountMinor;
+        periodDebitTotals.set(account.id, (periodDebitTotals.get(account.id) ?? 0n) + line.amountMinor);
+      } else {
+        creditTotalMinor += line.amountMinor;
+        periodCreditTotals.set(account.id, (periodCreditTotals.get(account.id) ?? 0n) + line.amountMinor);
+      }
     }
     entries.push({
       id: line.id,
@@ -782,8 +883,12 @@ export async function getGeneralLedgerReport(
 
   const accountsWithMovement = new Set(entries.map((entry) => entry.account.id));
   const accountBalances = reportAccounts.flatMap((account) => {
-    const closingBalanceMinor = runningBalances.get(account.id) ?? openingBalances.get(account.id) ?? 0n;
-    const moved = accountsWithMovement.has(account.id);
+    const closingBalanceMinor = balancesOnly
+      ? closingFromGroups.get(account.id) ?? openingBalances.get(account.id) ?? 0n
+      : runningBalances.get(account.id) ?? openingBalances.get(account.id) ?? 0n;
+    const moved = balancesOnly
+      ? (periodDebitTotals.get(account.id) ?? 0n) > 0n || (periodCreditTotals.get(account.id) ?? 0n) > 0n
+      : accountsWithMovement.has(account.id);
     if (account.id !== selectedAccount?.id) {
       if (include === "movement" && !moved) return [];
       if (include === "balance" && !moved && closingBalanceMinor === 0n) return [];
@@ -807,9 +912,9 @@ export async function getGeneralLedgerReport(
     officeId: filters.officeId,
     account: selectedAccount,
     accountBalances,
-    journalCount: journalIds.size,
-    lineCount: entries.length,
-    hasActivity: entries.length > 0,
+    journalCount: countedJournalCount ?? journalIds.size,
+    lineCount: countedLineCount ?? entries.length,
+    hasActivity: (countedLineCount ?? entries.length) > 0,
     entries,
     debitTotalMinor,
     creditTotalMinor,

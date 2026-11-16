@@ -24,6 +24,7 @@ import { permissions } from "@/modules/identity/domain/permissions";
 import { canBypassOriginationMakerChecker } from "@/modules/lending/application/loan-application-access";
 import { assignableStaffWhere } from "@/modules/identity/domain/staff-roles";
 import { getClientWalletSummary, OPEN_LOAN_STATUSES } from "@/modules/lending/application/client-wallet";
+import { sumSavingsByAccount } from "@/modules/savings/domain/account-balance";
 import { installmentDueMinor, installmentPaidMinor } from "@/modules/lending/domain/loan-outstanding";
 import { formatMinor } from "@/modules/money/domain/format-minor";
 import { displaySavingsProductName } from "@/modules/savings/domain/savings-product-label";
@@ -62,16 +63,27 @@ export default async function ClientDetailPage({ params, searchParams }: { param
       assignedOfficer: { select: { name: true } },
       photoDocument: { select: { id: true, mediaType: true } },
       signatureDocument: { select: { id: true, mediaType: true } },
-      familyMembers: { orderBy: { createdAt: "desc" }, include: { documents: { orderBy: { createdAt: "desc" } } } },
-      identifiers: { orderBy: { createdAt: "desc" }, include: { documents: { orderBy: { createdAt: "desc" } } } },
-      documents: { orderBy: { createdAt: "desc" } },
+      familyMembers: activeTab === "family"
+        ? { orderBy: { createdAt: "desc" as const }, include: { documents: { orderBy: { createdAt: "desc" as const } } } }
+        : { where: { id: { in: [] as string[] } }, orderBy: { createdAt: "desc" as const }, include: { documents: { where: { id: { in: [] as string[] } } } } },
+      identifiers: activeTab === "identities" || activeTab === "general"
+        ? { orderBy: { createdAt: "desc" as const }, include: { documents: { orderBy: { createdAt: "desc" as const } } } }
+        : { where: { id: { in: [] as string[] } }, orderBy: { createdAt: "desc" as const }, include: { documents: { where: { id: { in: [] as string[] } } } } },
+      documents: activeTab === "documents"
+        ? { orderBy: { createdAt: "desc" as const } }
+        : { where: { isProfilePhoto: true }, orderBy: { createdAt: "desc" as const } },
       loans: { orderBy: { createdAt: "desc" }, include: { product: { select: { name: true } }, installments: { select: { dueOn: true, principalDueMinor: true, principalPaidMinor: true, interestDueMinor: true, interestPaidMinor: true, feesDueMinor: true, feesPaidMinor: true, penaltiesDueMinor: true, penaltiesPaidMinor: true, monitoringFeeDueMinor: true, monitoringFeePaidMinor: true } } } },
-      savingsAccounts: { orderBy: { createdAt: "desc" }, include: { product: { select: { name: true } }, transactions: { select: { amountMinor: true } } } },
-      charges: { where: { loanId: null }, orderBy: { createdAt: "desc" } },
-      notes: { orderBy: { createdAt: "desc" }, include: { author: { select: { name: true } } } },
+      savingsAccounts: { orderBy: { createdAt: "desc" }, include: { product: { select: { name: true } } } },
+      charges: activeTab === "charges"
+        ? { where: { loanId: null }, orderBy: { createdAt: "desc" as const } }
+        : { where: { id: { in: [] as string[] } }, orderBy: { createdAt: "desc" as const } },
+      notes: activeTab === "notes"
+        ? { orderBy: { createdAt: "desc" as const }, include: { author: { select: { name: true } } } }
+        : { where: { id: { in: [] as string[] } }, orderBy: { createdAt: "desc" as const }, include: { author: { select: { name: true } } } },
     },
   });
   if (!client) notFound();
+  const savingsBalances = await sumSavingsByAccount(prisma, client.savingsAccounts.map((account) => account.id));
 
   const authorization = new AuthorizationService(prisma);
   const [canManage, canApplyLoan, canTransact, canRecordRepayment, canApproveSavings, canManageBtc, canPostLedger, canViewStatement, wallet, savingsProducts, officers, savingsCharges, settlementAccounts, ledgerAccounts, actor] = await Promise.all([
@@ -84,11 +96,17 @@ export default async function ClientDetailPage({ params, searchParams }: { param
     authorization.isAllowed({ actorUserId: session.user.id, permission: permissions.ledgerPost, organizationId: scope.organizationId, officeId: client.officeId }),
     authorization.isAllowed({ actorUserId: session.user.id, permission: permissions.reportClientStatement, organizationId: scope.organizationId }),
     getClientWalletSummary(prisma, client.id),
-    prisma.savingsProduct.findMany({ where: { organizationId: scope.organizationId, active: true }, orderBy: { name: "asc" } }),
+    activeTab === "savings"
+      ? prisma.savingsProduct.findMany({ where: { organizationId: scope.organizationId, active: true }, orderBy: { name: "asc" } })
+      : Promise.resolve([]),
     prisma.user.findMany({ where: { organizationId: scope.organizationId, ...assignableStaffWhere({ includeUserId: client.assignedOfficerId, officeId: client.officeId }) }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
-    prisma.chargeDefinition.findMany({ where: { organizationId: scope.organizationId, appliesTo: "SAVINGS", active: true }, orderBy: { name: "asc" } }),
+    activeTab === "savings"
+      ? prisma.chargeDefinition.findMany({ where: { organizationId: scope.organizationId, appliesTo: "SAVINGS", active: true }, orderBy: { name: "asc" } })
+      : Promise.resolve([]),
     prisma.settlementAccount.findMany({ where: { organizationId: scope.organizationId, active: true }, select: { id: true, name: true, type: true, provider: true, accountReference: true, currencyCode: true }, orderBy: [{ type: "asc" }, { name: "asc" }] }),
-    prisma.ledgerAccount.findMany({ where: postableLedgerAccountWhere, select: { id: true, code: true, name: true, type: true }, orderBy: [{ code: "asc" }] }),
+    activeTab === "savings"
+      ? prisma.ledgerAccount.findMany({ where: postableLedgerAccountWhere, select: { id: true, code: true, name: true, type: true }, orderBy: [{ code: "asc" }] })
+      : Promise.resolve([]),
     prisma.user.findUnique({ where: { id: session.user.id }, select: { systemRole: true } }),
   ]);
   const canApproveOwnSavings = canBypassOriginationMakerChecker(actor?.systemRole);
@@ -135,7 +153,7 @@ export default async function ClientDetailPage({ params, searchParams }: { param
 
   const savingsRows = client.savingsAccounts.map((account) => ({
     account,
-    balanceMinor: account.transactions.reduce((sum, transaction) => sum + transaction.amountMinor, 0n),
+    balanceMinor: savingsBalances.get(account.id) ?? 0n,
   }));
   // Same active savings accounts offered to Top up/Withdraw, but shaped for the Transfer form,
   // which needs each account's current balance to validate against and offer as "from".

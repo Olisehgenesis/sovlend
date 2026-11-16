@@ -1,6 +1,7 @@
 import type { LoanStatus, PrismaClient } from "@prisma/client";
 
 import { loanScopeWhere, type UserDataScope } from "@/modules/identity/application/data-scope";
+import { loadFoldedLoanCharges } from "@/modules/reports/domain/portfolio-charges";
 import { reportRowsToCsv as rowsToCsv } from "@/modules/reports/domain/report-csv";
 import { installmentOutstandingMinor as totalInstallmentOutstandingMinor, installmentsWithCharges } from "@/modules/lending/domain/loan-outstanding";
 
@@ -936,13 +937,13 @@ export async function loadPortfolioLoans(
         },
         orderBy: { dueOn: "asc" },
       },
-      charges: { select: { name: true, amountMinor: true, status: true, dueOn: true } },
     },
     orderBy: [{ disbursedOn: "desc" }, { createdAt: "desc" }],
   });
+  const chargesByLoan = await loadFoldedLoanCharges(prisma, loans);
 
   return loans.map((loan) => {
-    const installments = installmentsWithCharges(loan.installments, loan.charges);
+    const installments = installmentsWithCharges(loan.installments, chargesByLoan.get(loan.id) ?? []);
     const overdueInstallments = installments.filter(
       (installment) => startOfUtcDay(installment.dueOn) < today && outstandingTotalMinor(installment) > 0n,
     );

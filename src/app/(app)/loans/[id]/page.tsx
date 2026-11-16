@@ -28,6 +28,7 @@ import { CancelRepaymentButton } from "@/components/cancel-repayment-button";
 import { Breadcrumbs } from "@/components/breadcrumbs";
 import { formatUgDate, transactionTypeLabel } from "./_lib/loan-records";
 import { isLoanPaymentTransaction, transactionTypeVariants } from "@/lib/loan-transaction-type-variants";
+import { loadFoldedLoanCharges } from "@/modules/reports/domain/portfolio-charges";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { AuthorizationService } from "@/modules/identity/application/authorization-service";
@@ -127,14 +128,16 @@ export default async function LoanPage({
       loanOfficer: { select: { name: true } },
       fund: { select: { name: true } },
       product: true,
-      charges: { orderBy: { createdAt: "desc" } },
       collateralItems: { orderBy: { createdAt: "desc" } },
-      guarantors: { orderBy: [{ createdAt: "asc" }, { id: "asc" }] },
-      documents: { orderBy: { createdAt: "desc" } },
-      notes: {
-        include: { author: { select: { name: true } } },
-        orderBy: { createdAt: "desc" },
-      },
+      guarantors: activeTab === "guarantors"
+        ? { orderBy: [{ createdAt: "asc" as const }, { id: "asc" as const }] }
+        : { where: { id: { in: [] as string[] } }, orderBy: [{ createdAt: "asc" as const }, { id: "asc" as const }] },
+      documents: activeTab === "documents"
+        ? { orderBy: { createdAt: "desc" as const } }
+        : { where: { id: { in: [] as string[] } }, orderBy: { createdAt: "desc" as const } },
+      notes: activeTab === "notes"
+        ? { include: { author: { select: { name: true } } }, orderBy: { createdAt: "desc" as const } }
+        : { where: { id: { in: [] as string[] } }, include: { author: { select: { name: true } } }, orderBy: { createdAt: "desc" as const } },
       installments: { orderBy: { installmentNumber: "asc" } },
       transactions: {
         include: {
@@ -159,61 +162,70 @@ export default async function LoanPage({
     actorUserId: session.user.id, officeId: loan.officeId,
     principalMinor: loan.principalMinor, currencyCode: loan.denominationCurrency,
   };
-  const canReturnToDraft = loan.status === "APPROVED" && !loan.disbursedOn && await canReturnLoanToDraft(prisma, scope, returnContext);
-  const canReturnToReview = loan.status === "APPROVED" && !loan.disbursedOn && await canReturnLoanToReview(prisma, scope, returnContext);
-  const loanDecision = await loanDecisionAvailability(prisma, scope, { applicationId: loan.applicationId, actorUserId: session.user.id });
-  const canEditFees = loan.status === "APPROVED" && !loan.disbursedOn && await authorization.isAllowed({
-    actorUserId: session.user.id, permission: permissions.loanDisburse,
-    organizationId: scope.organizationId, officeId: loan.officeId,
-    amountMinor: loan.principalMinor, currencyCode: loan.denominationCurrency,
-  });
-  const canManageCharges = await authorization.isAllowed({
+  const undisbursedApproval = loan.status === "APPROVED" && !loan.disbursedOn;
+  const rescheduleCandidate = (loan.status === "ACTIVE" || loan.status === "IN_ARREARS") && Boolean(loan.disbursedOn);
+  const permissionContext = {
     actorUserId: session.user.id,
-    permission: permissions.clientManage,
     organizationId: scope.organizationId,
     officeId: loan.officeId,
-  });
-  const canRequestServiceActions = await authorization.isAllowed({
-    actorUserId: session.user.id,
-    permission: permissions.loanReverse,
-    organizationId: scope.organizationId,
-    officeId: loan.officeId,
-  });
-  const canRequestRepaymentReversal = await authorization.isAllowed({
-    actorUserId: session.user.id,
-    permission: permissions.loanRepaymentReverseRequest,
-    organizationId: scope.organizationId,
-    officeId: loan.officeId,
-  });
-  const canCancelRepaymentsDirectly = await authorization.isAllowed({
-    actorUserId: session.user.id,
-    permission: permissions.loanRepaymentReverse,
-    organizationId: scope.organizationId,
-    officeId: loan.officeId,
-  });
-  const canTransact = await authorization.isAllowed({
-    actorUserId: session.user.id,
-    permission: permissions.savingsTransact,
-    organizationId: scope.organizationId,
-    officeId: loan.officeId,
-  });
-  const canReschedule = (loan.status === "ACTIVE" || loan.status === "IN_ARREARS") && Boolean(loan.disbursedOn) && await authorization.isAllowed({
-    actorUserId: session.user.id,
-    permission: permissions.loanReschedule,
-    organizationId: scope.organizationId,
-    officeId: loan.officeId,
-  });
+  };
+  const [
+    canReturnToDraft,
+    canReturnToReview,
+    loanDecision,
+    canEditFees,
+    canManageCharges,
+    canRequestServiceActions,
+    canRequestRepaymentReversal,
+    canCancelRepaymentsDirectly,
+    canTransact,
+    canReschedule,
+  ] = await Promise.all([
+    undisbursedApproval ? canReturnLoanToDraft(prisma, scope, returnContext) : Promise.resolve(false),
+    undisbursedApproval ? canReturnLoanToReview(prisma, scope, returnContext) : Promise.resolve(false),
+    loanDecisionAvailability(prisma, scope, { applicationId: loan.applicationId, actorUserId: session.user.id }),
+    undisbursedApproval
+      ? authorization.isAllowed({ ...permissionContext, permission: permissions.loanDisburse, amountMinor: loan.principalMinor, currencyCode: loan.denominationCurrency })
+      : Promise.resolve(false),
+    authorization.isAllowed({ ...permissionContext, permission: permissions.clientManage }),
+    authorization.isAllowed({ ...permissionContext, permission: permissions.loanReverse }),
+    authorization.isAllowed({ ...permissionContext, permission: permissions.loanRepaymentReverseRequest }),
+    authorization.isAllowed({ ...permissionContext, permission: permissions.loanRepaymentReverse }),
+    authorization.isAllowed({ ...permissionContext, permission: permissions.savingsTransact }),
+    rescheduleCandidate
+      ? authorization.isAllowed({ ...permissionContext, permission: permissions.loanReschedule })
+      : Promise.resolve(false),
+  ]);
 
   const today = new Date();
-  const overdueCharges = loan.charges.filter(
-    (charge) => charge.status === "PENDING" && charge.dueOn && charge.dueOn < today,
-  );
-  const overdueChargesMinor = overdueCharges.reduce(
-    (sum, charge) => sum + charge.amountMinor,
-    0n,
-  );
+  const listsCharges = activeTab === "charges" || activeTab === "details";
+  const listsOverdue = activeTab === "overdue-charges";
+  const overdueWhere = { loanId: loan.id, status: "PENDING" as const, dueOn: { lt: today } };
+  const [foldedCharges, paidCrbCharge, pendingOpenCharges, chargeTotal, listedCharges, overdueSummary, overdueCharges] = await Promise.all([
+    loadFoldedLoanCharges(prisma, [{ id: loan.id, installments: loan.installments }]),
+    prisma.charge.findFirst({
+      where: { loanId: loan.id, status: "PAID", name: { startsWith: "crb", mode: "insensitive" } },
+      select: { id: true },
+    }),
+    prisma.charge.findMany({
+      where: { loanId: loan.id, status: "PENDING", dueOn: null },
+      select: { name: true, amountMinor: true },
+    }),
+    listsCharges ? prisma.charge.count({ where: { loanId: loan.id } }) : Promise.resolve(0),
+    listsCharges
+      ? prisma.charge.findMany({ where: { loanId: loan.id }, orderBy: { createdAt: "desc" }, take: 50 })
+      : Promise.resolve([]),
+    listsOverdue
+      ? prisma.charge.aggregate({ where: overdueWhere, _count: true, _sum: { amountMinor: true } })
+      : Promise.resolve(null),
+    listsOverdue
+      ? prisma.charge.findMany({ where: overdueWhere, orderBy: { dueOn: "asc" }, take: 50 })
+      : Promise.resolve([]),
+  ]);
+  const overdueChargeCount = overdueSummary?._count ?? 0;
+  const overdueChargesMinor = overdueSummary?._sum.amountMinor ?? 0n;
 
-  const schedule = installmentsWithCharges(loan.installments, loan.charges);
+  const schedule = installmentsWithCharges(loan.installments, foldedCharges.get(loan.id) ?? []);
   const totals = schedule.reduce(
     (sum, item) => ({
       due:
@@ -268,31 +280,42 @@ export default async function LoanPage({
     lifExempt,
     principalMinor: loan.principalMinor,
     disbursed: Boolean(loan.disbursedOn),
-    collectCrb: !loan.disbursedOn || loan.product.collectCrb || loan.charges.some((charge) => charge.status === "PAID" && charge.name.toLowerCase().startsWith("crb")),
+    collectCrb: !loan.disbursedOn || loan.product.collectCrb || paidCrbCharge !== null,
   });
-  const settlementAccounts = await prisma.settlementAccount.findMany({
-    where: { organizationId: scope.organizationId, currencyCode: loan.denominationCurrency, active: true },
-    select: { id: true, name: true, type: true, provider: true, accountReference: true, currencyCode: true },
-    orderBy: [{ type: "asc" }, { name: "asc" }],
-  });
-  const officeOfficers = await prisma.user.findMany({
-    where: {
-      organizationId: scope.organizationId,
-      ...assignableStaffWhere({ includeUserId: loan.loanOfficerId, officeId: loan.officeId }),
-    },
-    select: { id: true, name: true },
-    orderBy: { name: "asc" },
-  });
-  const chargeDefinitions = await prisma.chargeDefinition.findMany({
-    where: { organizationId: scope.organizationId, appliesTo: "LOAN", active: true },
-    select: { id: true, name: true, calculationType: true, amountMinor: true, percentageBps: true, currencyCode: true, penalty: true },
-    orderBy: { name: "asc" },
-  });
-  const serviceRequests = await prisma.loanServiceRequest.findMany({
-    where: { loanId: loan.id },
-    include: { requestedBy: { select: { name: true } }, decidedBy: { select: { name: true } } },
-    orderBy: { requestedAt: "desc" },
-  });
+  const needsCharges = activeTab === "charges" || activeTab === "details" || activeTab === "overdue-charges";
+  const needsOfficers = activeTab === "overview" || activeTab === "details";
+  const needsServiceRequests = activeTab === "servicing" || activeTab === "payments" || activeTab === "schedule";
+  const [settlementAccounts, officeOfficers, chargeDefinitions, serviceRequests] = await Promise.all([
+    prisma.settlementAccount.findMany({
+      where: { organizationId: scope.organizationId, currencyCode: loan.denominationCurrency, active: true },
+      select: { id: true, name: true, type: true, provider: true, accountReference: true, currencyCode: true },
+      orderBy: [{ type: "asc" }, { name: "asc" }],
+    }),
+    needsOfficers
+      ? prisma.user.findMany({
+          where: {
+            organizationId: scope.organizationId,
+            ...assignableStaffWhere({ includeUserId: loan.loanOfficerId, officeId: loan.officeId }),
+          },
+          select: { id: true, name: true },
+          orderBy: { name: "asc" },
+        })
+      : Promise.resolve([]),
+    needsCharges
+      ? prisma.chargeDefinition.findMany({
+          where: { organizationId: scope.organizationId, appliesTo: "LOAN", active: true },
+          select: { id: true, name: true, calculationType: true, amountMinor: true, percentageBps: true, currencyCode: true, penalty: true },
+          orderBy: { name: "asc" },
+        })
+      : Promise.resolve([]),
+    needsServiceRequests
+      ? prisma.loanServiceRequest.findMany({
+          where: { loanId: loan.id },
+          include: { requestedBy: { select: { name: true } }, decidedBy: { select: { name: true } } },
+          orderBy: { requestedAt: "desc" },
+        })
+      : Promise.resolve([]),
+  ]);
   const hasPendingServiceAction = serviceRequests.some((request) => request.status === "PENDING");
   const pendingRepaymentReversalIds = new Set(
     serviceRequests.flatMap((request) => {
@@ -332,7 +355,8 @@ export default async function LoanPage({
     : [];
   // Surfaces this client's other accounts from the loan detail page, mirroring how
   // savings-accounts/[accountNumber]/page.tsx links back to its owning client/group.
-  const otherLoans = loan.clientId
+  const canDisburseFromHeader = loan.status === "APPROVED" && !loan.disbursedOn;
+  const otherLoans = loan.clientId && (canDisburseFromHeader || activeTab === "details")
     ? await prisma.loan.findMany({
         where: { clientId: loan.clientId, id: { not: loan.id } },
         select: {
@@ -347,8 +371,12 @@ export default async function LoanPage({
           interestWrittenOffMinor: true,
           feesWrittenOffMinor: true,
           penaltiesWrittenOffMinor: true,
-          installments: { select: { dueOn: true, principalDueMinor: true, interestDueMinor: true, feesDueMinor: true, penaltiesDueMinor: true, monitoringFeeDueMinor: true, principalPaidMinor: true, interestPaidMinor: true, feesPaidMinor: true, penaltiesPaidMinor: true, monitoringFeePaidMinor: true, principalWaivedMinor: true, interestWaivedMinor: true, feesWaivedMinor: true, penaltiesWaivedMinor: true, monitoringFeeWaivedMinor: true } },
-          charges: { select: { name: true, amountMinor: true, status: true, dueOn: true } },
+          ...(canDisburseFromHeader
+            ? {
+                installments: { select: { dueOn: true, principalDueMinor: true, interestDueMinor: true, feesDueMinor: true, penaltiesDueMinor: true, monitoringFeeDueMinor: true, principalPaidMinor: true, interestPaidMinor: true, feesPaidMinor: true, penaltiesPaidMinor: true, monitoringFeePaidMinor: true, principalWaivedMinor: true, interestWaivedMinor: true, feesWaivedMinor: true, penaltiesWaivedMinor: true, monitoringFeeWaivedMinor: true } },
+                charges: { select: { name: true, amountMinor: true, status: true, dueOn: true } },
+              }
+            : {}),
         },
         orderBy: { createdAt: "desc" },
       })
@@ -356,11 +384,18 @@ export default async function LoanPage({
   // "Top up" at disbursement: any other open loan of this client with money still owed on it can
   // be paid off from this loan's proceeds (see disburse-loan.ts's disburseLoanAndPayOffPrevious).
   const openLoanStatuses = ["ACTIVE", "IN_ARREARS", "OVERPAID"];
-  const payoffLoanOptions = otherLoans
-    .filter((item) => openLoanStatuses.includes(item.status) && item.denominationCurrency === loan.denominationCurrency)
-    .map((item) => ({ id: item.id, accountNumber: item.accountNumber, currencyCode: item.denominationCurrency, outstandingMinor: loanOutstandingMinor(item.installments, item, item.charges).toString() }))
-    .filter((item) => BigInt(item.outstandingMinor) > 0n);
-  const clientSavingsAccounts = loan.clientId
+  const payoffLoanOptions = canDisburseFromHeader
+    ? otherLoans
+        .filter((item) => openLoanStatuses.includes(item.status) && item.denominationCurrency === loan.denominationCurrency)
+        .flatMap((item) => {
+          if (!("installments" in item) || !item.installments || !("charges" in item) || !item.charges) return [];
+          const outstandingMinor = loanOutstandingMinor(item.installments, item, item.charges).toString();
+          return BigInt(outstandingMinor) > 0n
+            ? [{ id: item.id, accountNumber: item.accountNumber, currencyCode: item.denominationCurrency, outstandingMinor }]
+            : [];
+        })
+    : [];
+  const clientSavingsAccounts = loan.clientId && activeTab === "details"
     ? await prisma.savingsAccount.findMany({
         where: { clientId: loan.clientId },
         select: {
@@ -423,7 +458,6 @@ export default async function LoanPage({
     }
   }
   const canUndoDisbursement = canRequestServiceActions && hasPendingDisbursement && !disbursementCashedOut;
-  const canDisburseFromHeader = loan.status === "APPROVED" && !loan.disbursedOn;
   const disbursePreview: LoanPreviewInput = {
     borrowerLabel: [owner?.name, loan.client && loan.group ? loan.group.name : null].filter(Boolean).join(" · ") || "Unknown",
     productName: loan.product.name,
@@ -441,7 +475,7 @@ export default async function LoanPage({
     amortizationMethod: snapshotString(loan.termsSnapshot, "amortizationMethod") ?? loan.product.amortizationMethod,
     interestDayCount: snapshotString(loan.termsSnapshot, "interestDayCount"),
     firstRepaymentOn: snapshotString(loan.termsSnapshot, "firstRepaymentOn") ?? undefined,
-    charges: loan.charges.map((charge) => ({
+    charges: pendingOpenCharges.map((charge) => ({
       name: charge.name,
       amountLabel: formatMinor(charge.amountMinor, loan.denominationCurrency),
       amountMinor: charge.amountMinor.toString(),
@@ -455,8 +489,8 @@ export default async function LoanPage({
   const lifAccount = savingsAccounts.find((account) => account.product?.shortName === LIF_SAVINGS_SHORT_NAME);
   const securityAccount = savingsAccounts.find((account) => account.product?.shortName === SECURITY_SAVINGS_SHORT_NAME);
   const contributionAccount = savingsAccounts.find((account) => account.product?.shortName === MEMBER_CONTRIBUTION_SAVINGS_SHORT_NAME);
-  const pendingDisbursementCharges = loan.charges.filter(
-    (charge) => charge.status === "PENDING" && charge.dueOn == null && !isStatutoryDisbursementCharge(charge.name),
+  const pendingDisbursementCharges = pendingOpenCharges.filter(
+    (charge) => !isStatutoryDisbursementCharge(charge.name),
   );
   const disbursementPayout = {
     principalMinor: loan.principalMinor.toString(),
@@ -942,7 +976,12 @@ export default async function LoanPage({
           <div className="panel-heading">
             <div>
               <h2>Charges</h2>
-              <p>Fees and penalties on this loan, including after disbursement. Waive a paid charge to refund it to savings.</p>
+              <p>
+                Fees and penalties on this loan, including after disbursement. Waive a paid charge to refund it to savings.
+                {chargeTotal > listedCharges.length
+                  ? ` Showing the latest ${listedCharges.length.toLocaleString()} of ${chargeTotal.toLocaleString()} charges.`
+                  : ""}
+              </p>
             </div>
           </div>
           <LoanChargesPanel
@@ -958,7 +997,7 @@ export default async function LoanPage({
               penalty: definition.penalty,
             }))}
             principalMinor={loan.principalMinor.toString()}
-            charges={loan.charges.map((charge) => ({
+            charges={listedCharges.map((charge) => ({
               id: charge.id,
               name: charge.name,
               amountMinor: charge.amountMinor.toString(),
@@ -1074,11 +1113,14 @@ export default async function LoanPage({
             <div>
               <h2>Overdue charges</h2>
               <p>
-                {overdueCharges.length} overdue item(s) · {formatMinor(overdueChargesMinor, loan.denominationCurrency)} outstanding
+                {overdueChargeCount.toLocaleString()} overdue item(s) · {formatMinor(overdueChargesMinor, loan.denominationCurrency)} outstanding
+                {overdueChargeCount > overdueCharges.length
+                  ? ` Showing the first ${overdueCharges.length.toLocaleString()}.`
+                  : ""}
               </p>
             </div>
           </div>
-          {overdueCharges.length === 0 ? (
+          {overdueChargeCount === 0 ? (
             <div className="empty-state compact-empty">
               <strong>No overdue charges</strong>
               <p>This loan has no pending charges past due date.</p>

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { Breadcrumbs } from "@/components/breadcrumbs";
+import { ReportPagination } from "@/components/report-pagination";
 import { ReportPicker } from "@/components/report-picker";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
@@ -11,6 +12,7 @@ import { AuthorizationService } from "@/modules/identity/application/authorizati
 import { getUserDataScope } from "@/modules/identity/application/data-scope";
 import { permissions } from "@/modules/identity/domain/permissions";
 import { formatMinor } from "@/modules/money/domain/format-minor";
+import { paginateItems, parseReportPagination } from "@/modules/reports/domain/report-pagination";
 import { loadReportPickerOptions } from "@/modules/reports/report-catalog";
 import {
   agingBucketTone,
@@ -23,7 +25,7 @@ import {
 export default async function ArrearsReportPage({
   searchParams,
 }: {
-  searchParams: Promise<{ officeId?: string; loanOfficerId?: string }>;
+  searchParams: Promise<{ officeId?: string; loanOfficerId?: string; page?: string; pageSize?: string }>;
 }) {
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session) redirect("/sign-in");
@@ -38,14 +40,22 @@ export default async function ArrearsReportPage({
   );
   if (!allowed) redirect("/reports");
 
-  const filters = parseRiskFilters(await searchParams);
+  const params = await searchParams;
+  const filters = parseRiskFilters(params);
+  const pagination = parseReportPagination(params);
   const [report, options, pickerOptions] = await Promise.all([
     loadArrearsReport(prisma, scope, filters),
     loadRiskFilterOptions(prisma, scope),
     loadReportPickerOptions(prisma, session.user.id, scope.organizationId),
   ]);
+  const loanPage = paginateItems(report.loans, pagination);
   const generatedAt = formatDateTime(report.generatedAt);
   const exportHref = `/api/reports/risk/arrears${querySuffix(filters)}${querySuffix(filters) ? "&" : "?"}format=csv`;
+  const pageQuery = {
+    officeId: filters.officeId,
+    loanOfficerId: filters.loanOfficerId,
+    pageSize: pagination.pageSize === 50 ? undefined : String(pagination.pageSize),
+  };
 
   return (
     <main className="directory-page">
@@ -60,7 +70,7 @@ export default async function ArrearsReportPage({
         <div>
           <h1>Arrears Report</h1>
           <p>
-            {report.totals.loanCount.toLocaleString()} loans in arrears · {formatMinor(report.totals.overdueTotalMinor, "UGX")} overdue total · snapshot {generatedAt}
+            {report.totals.loanCount.toLocaleString()} loans in arrears · snapshot {generatedAt}
           </p>
         </div>
         <ReportPicker current="/reports/risk/arrears" options={pickerOptions} />
@@ -130,65 +140,76 @@ export default async function ArrearsReportPage({
       <section className="panel">
         <div className="panel-heading">
           <div>
-            <h2>Loans currently in arrears</h2>
-            <p>Overdue amounts include only unpaid installment components with due dates before today.</p>
+            <h2>Loans in arrears</h2>
+            <p>{loanPage.pageSize} per page · unpaid installments due before today</p>
           </div>
         </div>
-        {report.loans.length === 0 ? (
+        {loanPage.totalRows === 0 ? (
           <div className="empty-state">
             <CircleDollarSign size={28} />
             <strong>No arrears in scope</strong>
             <p>Change the filter and try again.</p>
           </div>
         ) : (
-          <div className="table-scroll">
-            <table className="clickable-rows">
-              <thead>
-                <tr>
-                  <th>Borrower</th>
-                  <th>Product</th>
-                  <th>Office</th>
-                  <th>Officer</th>
-                  <th>Status</th>
-                  <th>Bucket</th>
-                  <th>Days overdue</th>
-                  <th>Principal overdue</th>
-                  <th>Interest overdue</th>
-                  <th>Fees overdue</th>
-                  <th>Monitoring fee overdue</th>
-                  <th>Penalties overdue</th>
-                  <th>Total overdue</th>
-                </tr>
-              </thead>
-              <tbody>
-                {report.loans.map((loan) => (
-                  <tr key={loan.id}>
-                    <td>
-                      <strong>{loan.borrowerName}</strong>
-                      <small className="mono">{loan.accountNumber}</small>
-                      <Link className="row-link" href={`/loans/${loan.id}`} aria-label={`Open ${loan.accountNumber}`} />
-                    </td>
-                    <td>{loan.productName}</td>
-                    <td>{loan.officeName}</td>
-                    <td>{loan.loanOfficerName}</td>
-                    <td>
-                      <span className={`status ${loanStatusTone(loan.status)}`}>{loan.status.replaceAll("_", " ")}</span>
-                    </td>
-                    <td>
-                      <span className={`status ${agingBucketTone(loan.agingBucket)}`}>{bucketLabel(loan.agingBucket)}</span>
-                    </td>
-                    <td>{loan.daysOverdue.toLocaleString()}</td>
-                    <td>{formatMinor(loan.overduePrincipalMinor, loan.currencyCode)}</td>
-                    <td>{formatMinor(loan.overdueInterestMinor, loan.currencyCode)}</td>
-                    <td>{formatMinor(loan.overdueFeesMinor, loan.currencyCode)}</td>
-                    <td>{formatMinor(loan.overdueMonitoringFeeMinor, loan.currencyCode)}</td>
-                    <td>{formatMinor(loan.overduePenaltiesMinor, loan.currencyCode)}</td>
-                    <td>{formatMinor(loan.overdueTotalMinor, loan.currencyCode)}</td>
+          <>
+            <div className="table-scroll">
+              <table className="clickable-rows">
+                <thead>
+                  <tr>
+                    <th>Borrower</th>
+                    <th>Product</th>
+                    <th>Office</th>
+                    <th>Officer</th>
+                    <th>Status</th>
+                    <th>Bucket</th>
+                    <th>Days overdue</th>
+                    <th>Principal overdue</th>
+                    <th>Interest overdue</th>
+                    <th>Fees overdue</th>
+                    <th>Monitoring fee overdue</th>
+                    <th>Penalties overdue</th>
+                    <th>Total overdue</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {loanPage.items.map((loan) => (
+                    <tr key={loan.id}>
+                      <td>
+                        <strong>{loan.borrowerName}</strong>
+                        <small className="mono">{loan.accountNumber}</small>
+                        <Link className="row-link" href={`/loans/${loan.id}`} aria-label={`Open ${loan.accountNumber}`} />
+                      </td>
+                      <td>{loan.productName}</td>
+                      <td>{loan.officeName}</td>
+                      <td>{loan.loanOfficerName}</td>
+                      <td>
+                        <span className={`status ${loanStatusTone(loan.status)}`}>{loan.status.replaceAll("_", " ")}</span>
+                      </td>
+                      <td>
+                        <span className={`status ${agingBucketTone(loan.agingBucket)}`}>{bucketLabel(loan.agingBucket)}</span>
+                      </td>
+                      <td>{loan.daysOverdue.toLocaleString()}</td>
+                      <td>{formatMinor(loan.overduePrincipalMinor, loan.currencyCode)}</td>
+                      <td>{formatMinor(loan.overdueInterestMinor, loan.currencyCode)}</td>
+                      <td>{formatMinor(loan.overdueFeesMinor, loan.currencyCode)}</td>
+                      <td>{formatMinor(loan.overdueMonitoringFeeMinor, loan.currencyCode)}</td>
+                      <td>{formatMinor(loan.overduePenaltiesMinor, loan.currencyCode)}</td>
+                      <td>{formatMinor(loan.overdueTotalMinor, loan.currencyCode)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <ReportPagination
+              label="Arrears loan pages"
+              page={loanPage.page}
+              pageSize={loanPage.pageSize}
+              pathname="/reports/risk/arrears"
+              query={pageQuery}
+              totalPages={loanPage.totalPages}
+              totalRows={loanPage.totalRows}
+            />
+          </>
         )}
       </section>
     </main>

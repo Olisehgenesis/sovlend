@@ -1,4 +1,8 @@
+import { cache } from "react";
 import type { PrismaClient } from "@prisma/client";
+
+import { prisma } from "@/lib/prisma";
+import { loadOrganizationOffices } from "@/modules/identity/application/actor-access";
 
 export type UserDataScope = Readonly<{
   organizationId: string;
@@ -12,8 +16,15 @@ export type UserDataScope = Readonly<{
   officerUserId: string | null;
 }>;
 
-export async function getUserDataScope(prisma: PrismaClient, userId: string): Promise<UserDataScope | null> {
-  const user = await prisma.user.findUnique({
+const cachedUserDataScope = cache((userId: string) => computeUserDataScope(prisma, userId));
+
+export async function getUserDataScope(db: PrismaClient, userId: string): Promise<UserDataScope | null> {
+  if (db === prisma) return cachedUserDataScope(userId);
+  return computeUserDataScope(db, userId);
+}
+
+async function computeUserDataScope(db: PrismaClient, userId: string): Promise<UserDataScope | null> {
+  const user = await db.user.findUnique({
     where: { id: userId },
     select: {
       organizationId: true,
@@ -41,10 +52,12 @@ export async function getUserDataScope(prisma: PrismaClient, userId: string): Pr
   const officeIds = new Set(assigned.map((assignment) => assignment.officeId));
 
   if (assigned.some((assignment) => assignment.includeChildren)) {
-    const offices = await prisma.office.findMany({
-      where: { organizationId: user.organizationId },
-      select: { id: true, parentId: true },
-    });
+    const offices = db === prisma
+      ? await loadOrganizationOffices(user.organizationId)
+      : await db.office.findMany({
+          where: { organizationId: user.organizationId },
+          select: { id: true, parentId: true },
+        });
     let changed = true;
     while (changed) {
       changed = false;

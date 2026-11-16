@@ -91,6 +91,7 @@ describe("collectionsReportCsv", () => {
         },
       ],
       totals: [],
+      pagination: { page: 1, pageSize: 50, totalRows: 1, totalPages: 1 },
     };
 
     const csv = collectionsReportCsv(report);

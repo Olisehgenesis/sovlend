@@ -4,11 +4,13 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { Breadcrumbs } from "@/components/breadcrumbs";
+import { ReportPagination } from "@/components/report-pagination";
 import { ReportPicker } from "@/components/report-picker";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { permissions } from "@/modules/identity/domain/permissions";
 import { formatMinor } from "@/modules/money/domain/format-minor";
+import { paginateItems, parseReportPagination } from "@/modules/reports/domain/report-pagination";
 import { loadReportPickerOptions } from "@/modules/reports/report-catalog";
 import {
   formatLoanStatus,
@@ -21,7 +23,7 @@ import {
 export default async function OutstandingBalancesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ officeId?: string; loanOfficerId?: string; currencyCode?: string }>;
+  searchParams: Promise<{ officeId?: string; loanOfficerId?: string; currencyCode?: string; page?: string; pageSize?: string }>;
 }) {
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session) redirect("/sign-in");
@@ -36,18 +38,27 @@ export default async function OutstandingBalancesPage({
   if (!context.allowed) redirect("/reports");
 
   const params = await searchParams;
-  const query = querySuffix(params);
+  const pagination = parseReportPagination(params);
+  const filterQuery = {
+    officeId: params.officeId,
+    loanOfficerId: params.loanOfficerId,
+    currencyCode: params.currencyCode,
+  };
+  const query = querySuffix(filterQuery);
   const [report, pickerOptions] = await Promise.all([
-    loadOutstandingBalancesReport(prisma, context.scope, {
-      officeId: params.officeId,
-      loanOfficerId: params.loanOfficerId,
-      currencyCode: params.currencyCode,
-    }),
+    loadOutstandingBalancesReport(prisma, context.scope, filterQuery),
     loadReportPickerOptions(prisma, session.user.id, context.scope.organizationId),
   ]);
+  const rowPage = paginateItems(report.rows, pagination);
   const currencyOptions = [...new Set(report.rows.map((row) => row.currencyCode))].sort();
   const apiHref = `/api/reports/operations/outstanding-balances${query}`;
   const exportHref = `${apiHref}${query ? "&" : "?"}format=csv`;
+  const pageQuery = {
+    officeId: params.officeId,
+    loanOfficerId: params.loanOfficerId,
+    currencyCode: params.currencyCode,
+    pageSize: pagination.pageSize === 50 ? undefined : String(pagination.pageSize),
+  };
 
   return (
     <main className="directory-page">
@@ -61,7 +72,7 @@ export default async function OutstandingBalancesPage({
       <header className="directory-header">
         <div>
           <h1>Outstanding balances (OLB)</h1>
-          <p>Current outstanding principal, interest, fees, monitoring fees, and penalties for every active or in-arrears loan.</p>
+          <p>{report.rows.length.toLocaleString()} loans with outstanding balances</p>
         </div>
         <ReportPicker current="/reports/operations/outstanding-balances" options={pickerOptions} />
         <div className="header-actions">
@@ -116,80 +127,91 @@ export default async function OutstandingBalancesPage({
         <div className="panel-heading">
           <div>
             <h2>Outstanding loan balances</h2>
-            <p>{report.rows.length.toLocaleString()} loan account(s) with positive outstanding balances</p>
+            <p>{rowPage.pageSize} per page</p>
           </div>
           <Wallet size={19} />
         </div>
-        {report.rows.length === 0 ? (
+        {rowPage.totalRows === 0 ? (
           <div className="empty-state">
             <Wallet size={28} />
-            <strong>No balances match these filters</strong>
-            <p>Try clearing filters or check another office or officer.</p>
+            <strong>No balances match filters</strong>
+            <p>Change filters and try again.</p>
           </div>
         ) : (
-          <div className="table-scroll">
-            <table className="clickable-rows">
-              <thead>
-                <tr>
-                  <th>Borrower</th>
-                  <th>Loan account</th>
-                  <th>Office</th>
-                  <th>Officer</th>
-                  <th>Status</th>
-                  <th>Principal</th>
-                  <th>Interest</th>
-                  <th>Fees</th>
-                  <th>Monitoring fee</th>
-                  <th>Penalties</th>
-                  <th>Total OLB</th>
-                  <th>Disbursed</th>
-                </tr>
-              </thead>
-              <tbody>
-                {report.rows.map((row) => (
-                  <tr key={row.loanId}>
-                    <td>
-                      <strong>{row.borrowerName}</strong>
-                      <Link
-                        aria-label={`Open loan ${row.accountNumber}`}
-                        className="row-link"
-                        href={`/loans/${row.loanId}`}
-                      />
-                    </td>
-                    <td className="mono">{row.accountNumber}</td>
-                    <td>{row.officeName}</td>
-                    <td>{row.loanOfficerName}</td>
-                    <td>
-                      <span className={`status ${loanStatusTone(row.status)}`}>
-                        {formatLoanStatus(row.status)}
-                      </span>
-                    </td>
-                    <td>{formatMinor(row.principalOutstandingMinor, row.currencyCode)}</td>
-                    <td>{formatMinor(row.interestOutstandingMinor, row.currencyCode)}</td>
-                    <td>{formatMinor(row.feesOutstandingMinor, row.currencyCode)}</td>
-                    <td>{formatMinor(row.monitoringFeeOutstandingMinor, row.currencyCode)}</td>
-                    <td>{formatMinor(row.penaltiesOutstandingMinor, row.currencyCode)}</td>
-                    <td>{formatMinor(row.totalOutstandingMinor, row.currencyCode)}</td>
-                    <td>{row.disbursedOn ? formatReportDate(row.disbursedOn) : "—"}</td>
+          <>
+            <div className="table-scroll">
+              <table className="clickable-rows">
+                <thead>
+                  <tr>
+                    <th>Borrower</th>
+                    <th>Loan account</th>
+                    <th>Office</th>
+                    <th>Officer</th>
+                    <th>Status</th>
+                    <th>Principal</th>
+                    <th>Interest</th>
+                    <th>Fees</th>
+                    <th>Monitoring fee</th>
+                    <th>Penalties</th>
+                    <th>Total OLB</th>
+                    <th>Disbursed</th>
                   </tr>
-                ))}
-              </tbody>
-              <tfoot>
-                {report.totals.map((row) => (
-                  <tr key={`total-${row.currencyCode}`}>
-                    <th colSpan={5}>Grand total ({row.loanCount.toLocaleString()} loans)</th>
-                    <th>{formatMinor(row.principalOutstandingMinor, row.currencyCode)}</th>
-                    <th>{formatMinor(row.interestOutstandingMinor, row.currencyCode)}</th>
-                    <th>{formatMinor(row.feesOutstandingMinor, row.currencyCode)}</th>
-                    <th>{formatMinor(row.monitoringFeeOutstandingMinor, row.currencyCode)}</th>
-                    <th>{formatMinor(row.penaltiesOutstandingMinor, row.currencyCode)}</th>
-                    <th>{formatMinor(row.totalOutstandingMinor, row.currencyCode)}</th>
-                    <th>{row.currencyCode}</th>
-                  </tr>
-                ))}
-              </tfoot>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {rowPage.items.map((row) => (
+                    <tr key={row.loanId}>
+                      <td>
+                        <strong>{row.borrowerName}</strong>
+                        <Link
+                          aria-label={`Open loan ${row.accountNumber}`}
+                          className="row-link"
+                          href={`/loans/${row.loanId}`}
+                        />
+                      </td>
+                      <td className="mono">{row.accountNumber}</td>
+                      <td>{row.officeName}</td>
+                      <td>{row.loanOfficerName}</td>
+                      <td>
+                        <span className={`status ${loanStatusTone(row.status)}`}>
+                          {formatLoanStatus(row.status)}
+                        </span>
+                      </td>
+                      <td>{formatMinor(row.principalOutstandingMinor, row.currencyCode)}</td>
+                      <td>{formatMinor(row.interestOutstandingMinor, row.currencyCode)}</td>
+                      <td>{formatMinor(row.feesOutstandingMinor, row.currencyCode)}</td>
+                      <td>{formatMinor(row.monitoringFeeOutstandingMinor, row.currencyCode)}</td>
+                      <td>{formatMinor(row.penaltiesOutstandingMinor, row.currencyCode)}</td>
+                      <td>{formatMinor(row.totalOutstandingMinor, row.currencyCode)}</td>
+                      <td>{row.disbursedOn ? formatReportDate(row.disbursedOn) : "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  {report.totals.map((row) => (
+                    <tr key={`total-${row.currencyCode}`}>
+                      <th colSpan={5}>Grand total ({row.loanCount.toLocaleString()} loans)</th>
+                      <th>{formatMinor(row.principalOutstandingMinor, row.currencyCode)}</th>
+                      <th>{formatMinor(row.interestOutstandingMinor, row.currencyCode)}</th>
+                      <th>{formatMinor(row.feesOutstandingMinor, row.currencyCode)}</th>
+                      <th>{formatMinor(row.monitoringFeeOutstandingMinor, row.currencyCode)}</th>
+                      <th>{formatMinor(row.penaltiesOutstandingMinor, row.currencyCode)}</th>
+                      <th>{formatMinor(row.totalOutstandingMinor, row.currencyCode)}</th>
+                      <th>{row.currencyCode}</th>
+                    </tr>
+                  ))}
+                </tfoot>
+              </table>
+            </div>
+            <ReportPagination
+              label="OLB loan pages"
+              page={rowPage.page}
+              pageSize={rowPage.pageSize}
+              pathname="/reports/operations/outstanding-balances"
+              query={pageQuery}
+              totalPages={rowPage.totalPages}
+              totalRows={rowPage.totalRows}
+            />
+          </>
         )}
       </section>
     </main>

@@ -1,5 +1,10 @@
 import type { PrismaClient } from "@prisma/client";
 
+import { prisma } from "@/lib/prisma";
+import {
+  loadOfficeAncestorIds,
+  loadPermissionAssignments,
+} from "@/modules/identity/application/actor-access";
 import { hasPermission, type PermissionCode, type PermissionContext } from "../domain/permissions";
 
 export class PermissionDeniedError extends Error {}
@@ -13,11 +18,8 @@ export class AuthorizationService {
   }
 
   async isAllowed(context: Omit<PermissionContext, "officeAncestorIds">): Promise<boolean> {
-    const [assignments, officeAncestorIds] = await Promise.all([
-      this.prisma.userPermissionAssignment.findMany({
-        where: { userId: context.actorUserId },
-        include: { group: { include: { permissions: true } } },
-      }),
+    const [assignments, ancestorIds] = await Promise.all([
+      this.loadAssignments(context.actorUserId),
       context.officeId ? this.getOfficeAncestors(context.officeId) : Promise.resolve([]),
     ]);
 
@@ -33,7 +35,7 @@ export class AuthorizationService {
         validFrom: assignment.validFrom,
         validUntil: assignment.validUntil,
       })),
-      { ...context, officeAncestorIds },
+      { ...context, officeAncestorIds: ancestorIds },
     );
   }
 
@@ -41,10 +43,7 @@ export class AuthorizationService {
   // assignment granting the permission counts, regardless of the assignment's office scope.
   async isAllowedForOrganization(actorUserId: string, organizationId: string, permission: PermissionCode): Promise<boolean> {
     const now = new Date();
-    const assignments = await this.prisma.userPermissionAssignment.findMany({
-      where: { userId: actorUserId },
-      include: { group: { include: { permissions: true } } },
-    });
+    const assignments = await this.loadAssignments(actorUserId);
     return assignments.some((assignment) => {
       if (assignment.group.organizationId !== organizationId) return false;
       if (assignment.validFrom > now || (assignment.validUntil && assignment.validUntil <= now)) return false;
@@ -52,7 +51,17 @@ export class AuthorizationService {
     });
   }
 
+  private loadAssignments(userId: string) {
+    if (this.prisma === prisma) return loadPermissionAssignments(userId);
+    return this.prisma.userPermissionAssignment.findMany({
+      where: { userId },
+      include: { group: { include: { permissions: true } } },
+    });
+  }
+
   private async getOfficeAncestors(officeId: string): Promise<string[]> {
+    if (this.prisma === prisma) return loadOfficeAncestorIds(officeId);
+
     const ancestors: string[] = [];
     let currentId: string | null = officeId;
     while (currentId) {

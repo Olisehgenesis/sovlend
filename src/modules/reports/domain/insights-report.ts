@@ -1,6 +1,7 @@
 import { Prisma, type PrismaClient, type LoanStatus } from "@prisma/client";
 
 import { officeWhere, type UserDataScope } from "@/modules/identity/application/data-scope";
+import { sumSavingsByAccount } from "@/modules/savings/domain/account-balance";
 import { reportRowsToCsv as rowsToCsv } from "@/modules/reports/domain/report-csv";
 
 const DAY_MS = 86_400_000;
@@ -449,18 +450,22 @@ export async function loadGroupPortfolioReport(prisma: PrismaClient, scope: User
       },
       savingsAccounts: {
         select: {
+          id: true,
           currencyCode: true,
-          transactions: { select: { amountMinor: true } },
         },
       },
     },
   });
 
+  const savingsBalances = await sumSavingsByAccount(
+    prisma,
+    groups.flatMap((group) => group.savingsAccounts.map((account) => account.id)),
+  );
   const rows = groups.map<GroupPortfolioRow>((group) => {
     const loanPrincipalMinor = group.loans.reduce((sum, loan) => sum + loan.principalMinor, 0n);
     const outstandingPrincipalMinor = group.loans.reduce((sum, loan) => sum + outstandingPrincipalMinorFromInstallments(loan.installments, loan.principalWrittenOffMinor), 0n);
     const savingsBalanceMinor = group.savingsAccounts.reduce(
-      (sum, account) => sum + account.transactions.reduce((accountSum, transaction) => accountSum + transaction.amountMinor, 0n),
+      (sum, account) => sum + (savingsBalances.get(account.id) ?? 0n),
       0n,
     );
 

@@ -1,11 +1,8 @@
-import type { AccountType, OwnershipType, PriceStatus } from "@prisma/client";
+import { Prisma, type AccountType, type OwnershipType, type PriceStatus } from "@prisma/client";
 
 import { prisma } from "@/lib/prisma";
 import { transactionTypeVariants } from "@/lib/loan-transaction-type-variants";
-import {
-  installmentOutstandingMinor,
-  principalOutstandingMinor as principalOutstandingHelper,
-} from "@/modules/lending/domain/loan-outstanding";
+import { installmentOutstandingMinor } from "@/modules/lending/domain/loan-outstanding";
 export { formatMinor } from "@/modules/money/domain/format-minor";
 import { getUserDataScope, loanScopeWhere } from "@/modules/identity/application/data-scope";
 
@@ -124,26 +121,13 @@ export async function loadDashboard(userId: string) {
         orderBy: { updatedAt: "desc" },
         take: 20,
       }),
-      // Portfolio-wide (not capped at 20) principal figures for Portfolio at Risk: PAR must be
-      // principal overdue / principal outstanding across every active/in-arrears loan, not just
-      // the handful shown in the "needs attention" list above.
-      prisma.loan.findMany({
-        where: { ...loanScope, status: { in: [...activeStatuses] } },
-        select: {
-          principalWrittenOffMinor: true,
-          installments: { select: { principalDueMinor: true, principalPaidMinor: true, principalWaivedMinor: true, dueOn: true } },
-        },
-      }),
+      principalPortfolioTotals(user.organizationId, scope, today),
       prisma.ownershipPool.findMany({
         where: { organizationId: user.organizationId },
         select: {
           type: true,
           accounts: {
-            select: {
-              type: true,
-              currencyCode: true,
-              lines: { select: { direction: true, amountMinor: true } },
-            },
+            select: { id: true, type: true, currencyCode: true },
           },
         },
       }),
@@ -159,6 +143,21 @@ export async function loadDashboard(userId: string) {
       }),
     ]);
 
+  const accountIds = ownershipPools.flatMap((pool) => pool.accounts.map((account) => account.id));
+  const ownershipLines = accountIds.length === 0
+    ? []
+    : await prisma.journalLine.groupBy({
+        by: ["accountId", "direction"],
+        where: { accountId: { in: accountIds } },
+        _sum: { amountMinor: true },
+      });
+  const linesByAccount = new Map<string, Array<{ direction: "DEBIT" | "CREDIT"; amountMinor: bigint }>>();
+  for (const line of ownershipLines) {
+    const rows = linesByAccount.get(line.accountId) ?? [];
+    rows.push({ direction: line.direction, amountMinor: line._sum.amountMinor ?? 0n });
+    linesByAccount.set(line.accountId, rows);
+  }
+
   const dueTodayMinor = dueInstallments.reduce((total, installment) => total + outstanding(installment), 0n);
   const disbursedTodayMinor = disbursements.reduce(
     (total, transaction) => total + transaction.denominationAmountMinor,
@@ -168,13 +167,8 @@ export async function loadDashboard(userId: string) {
   // Portfolio at Risk = principal overdue / principal outstanding, across the whole active
   // portfolio (not just the 20 loans shown in "needs attention") — matches iLend/Fineract's PAR
   // definition, which looks at the principal balance only, not principal+interest+fees+penalties.
-  let principalOutstandingMinor = 0n;
-  let principalOverdueMinor = 0n;
-  for (const loan of principalLoans) {
-    principalOutstandingMinor += principalOutstandingHelper(loan.installments, loan.principalWrittenOffMinor);
-    const overdueInstallments = loan.installments.filter((installment) => installment.dueOn < today);
-    principalOverdueMinor += principalOutstandingHelper(overdueInstallments, 0n);
-  }
+  const principalOutstandingMinor = principalLoans.outstanding;
+  const principalOverdueMinor = principalLoans.overdue;
   const portfolioMinor = portfolio._sum.principalMinor ?? 0n;
   const btcPrice =
     btcUsdPrice && usdUgxPrice
@@ -229,9 +223,68 @@ export async function loadDashboard(userId: string) {
       }))
       .filter((loan) => loan.dueMinor > 0n || loan.state === "IN_ARREARS")
       .slice(0, 8),
-    ownership: summarizeOwnership(ownershipPools, user.organization.baseCurrency),
+    ownership: summarizeOwnership(
+      ownershipPools.map((pool) => ({
+        type: pool.type,
+        accounts: pool.accounts.map((account) => ({
+          type: account.type,
+          currencyCode: account.currencyCode,
+          lines: linesByAccount.get(account.id) ?? [],
+        })),
+      })),
+      user.organization.baseCurrency,
+    ),
     btcPrice,
     usdPrice,
+  };
+}
+
+/** Same loan-level clamp as principalOutstandingMinor: sum the installments, then clamp once.
+ * Charges never change principal, so this matches the in-memory portfolio figure. */
+async function principalPortfolioTotals(
+  organizationId: string,
+  scope: NonNullable<Awaited<ReturnType<typeof getUserDataScope>>>,
+  today: Date,
+) {
+  const scopeSql = scope.officerUserId
+    ? Prisma.sql`AND l."loanOfficerId" = ${scope.officerUserId}`
+    : scope.officeIds
+      ? scope.officeIds.length === 0
+        ? Prisma.sql`AND false`
+        : Prisma.sql`AND l."officeId" IN (${Prisma.join(scope.officeIds.map((id) => Prisma.sql`${id}::uuid`))})`
+      : Prisma.empty;
+  const rows = await prisma.$queryRaw<Array<{ outstanding: bigint; overdue: bigint }>>`
+    SELECT
+      COALESCE(SUM(outstanding), 0)::bigint AS outstanding,
+      COALESCE(SUM(overdue), 0)::bigint AS overdue
+    FROM (
+      SELECT
+        GREATEST(
+          COALESCE(SUM(i."principalDueMinor"), 0)::bigint
+            - COALESCE(SUM(i."principalPaidMinor"), 0)::bigint
+            - COALESCE(SUM(i."principalWaivedMinor"), 0)::bigint
+            - l."principalWrittenOffMinor",
+          0
+        ) AS outstanding,
+        GREATEST(
+          COALESCE(SUM(i."principalDueMinor") FILTER (WHERE i."dueOn" < ${today}::date), 0)::bigint
+            - COALESCE(SUM(i."principalPaidMinor") FILTER (WHERE i."dueOn" < ${today}::date), 0)::bigint
+            - COALESCE(SUM(i."principalWaivedMinor") FILTER (WHERE i."dueOn" < ${today}::date), 0)::bigint,
+          0
+        ) AS overdue
+      FROM "Loan" l
+      JOIN "Office" o ON o.id = l."officeId"
+      JOIN "LoanInstallment" i ON i."loanId" = l.id
+      WHERE o."organizationId" = ${organizationId}::uuid
+        AND l.status IN ('ACTIVE', 'IN_ARREARS')
+        ${scopeSql}
+      GROUP BY l.id, l."principalWrittenOffMinor"
+    ) portfolio
+  `;
+  const row = rows[0];
+  return {
+    outstanding: row ? BigInt(row.outstanding) : 0n,
+    overdue: row ? BigInt(row.overdue) : 0n,
   };
 }
 

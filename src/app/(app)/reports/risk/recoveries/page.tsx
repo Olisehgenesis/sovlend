@@ -4,20 +4,25 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { Breadcrumbs } from "@/components/breadcrumbs";
+import { ReportPagination } from "@/components/report-pagination";
 import { ReportPicker } from "@/components/report-picker";
+import { parseReportTab, ReportTableTabs } from "@/components/report-table-tabs";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { AuthorizationService } from "@/modules/identity/application/authorization-service";
 import { getUserDataScope } from "@/modules/identity/application/data-scope";
 import { permissions } from "@/modules/identity/domain/permissions";
 import { formatMinor } from "@/modules/money/domain/format-minor";
+import { paginateItems, parseReportPagination } from "@/modules/reports/domain/report-pagination";
 import { loadReportPickerOptions } from "@/modules/reports/report-catalog";
 import { loadRecoveriesReport, loadRiskFilterOptions, parseRiskFilters } from "@/modules/reports/domain/risk-report";
+
+const TABS = ["periods", "loans"] as const;
 
 export default async function RecoveriesReportPage({
   searchParams,
 }: {
-  searchParams: Promise<{ officeId?: string; loanOfficerId?: string }>;
+  searchParams: Promise<{ officeId?: string; loanOfficerId?: string; tab?: string; page?: string; pageSize?: string }>;
 }) {
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session) redirect("/sign-in");
@@ -32,12 +37,23 @@ export default async function RecoveriesReportPage({
   );
   if (!allowed) redirect("/reports");
 
-  const filters = parseRiskFilters(await searchParams);
+  const params = await searchParams;
+  const filters = parseRiskFilters(params);
+  const tab = parseReportTab(params.tab, TABS, "periods");
+  const pagination = parseReportPagination(params);
   const [report, options, pickerOptions] = await Promise.all([
     loadRecoveriesReport(prisma, scope, filters),
     loadRiskFilterOptions(prisma, scope),
     loadReportPickerOptions(prisma, session.user.id, scope.organizationId),
   ]);
+  const loanPage = paginateItems(report.loans, pagination);
+  const exportHref = `/api/reports/risk/recoveries${querySuffix(filters)}${querySuffix(filters) ? "&" : "?"}format=csv`;
+  const tabQuery = {
+    officeId: filters.officeId,
+    loanOfficerId: filters.loanOfficerId,
+    tab,
+    pageSize: pagination.pageSize === 50 ? undefined : String(pagination.pageSize),
+  };
 
   return (
     <main className="directory-page">
@@ -51,13 +67,11 @@ export default async function RecoveriesReportPage({
       <header className="directory-header">
         <div>
           <h1>Recoveries on Written-Off Loans</h1>
-          <p>
-            {report.totals.writtenOffLoanCount.toLocaleString()} written-off loans · {report.totals.loansWithRecoveriesCount.toLocaleString()} with recoveries · {formatMinor(report.totals.totalRecoveredMinor, "UGX")} recovered
-          </p>
+          <p>{report.totals.writtenOffLoanCount.toLocaleString()} written-off loans in scope</p>
         </div>
         <ReportPicker current="/reports/risk/recoveries" options={pickerOptions} />
         <div className="header-actions">
-          <a className="secondary-action" href={`/api/reports/risk/recoveries${querySuffix(filters)}&format=csv`}>
+          <a className="secondary-action" href={exportHref}>
             <Download size={16} /> Export CSV
           </a>
           <Link className="secondary-action" href="/loans?status=WRITTEN_OFF">
@@ -87,6 +101,7 @@ export default async function RecoveriesReportPage({
 
       <section className="panel report-toolbar">
         <form className="report-toolbar-form" method="get">
+          <input name="tab" type="hidden" value={tab} />
           <label>
             Office
             <select name="officeId" defaultValue={filters.officeId ?? ""}>
@@ -115,103 +130,126 @@ export default async function RecoveriesReportPage({
         </form>
       </section>
 
-      <section className="panel">
-        <div className="panel-heading">
-          <div>
-            <h2>Write-off date assumption</h2>
-            <p>{report.assumptions.writeOffDateSource}</p>
-          </div>
-        </div>
-        {report.periods.length === 0 ? (
-          <div className="empty-state">
-            <RefreshCcw size={28} />
-            <strong>No recovery periods found</strong>
-            <p>There are no written-off recoveries in the current scope.</p>
-          </div>
-        ) : (
-          <div className="table-scroll">
-            <table>
-              <thead>
-                <tr>
-                  <th>Period</th>
-                  <th>Loans</th>
-                  <th>Recoveries</th>
-                  <th>Recovered amount</th>
-                </tr>
-              </thead>
-              <tbody>
-                {report.periods.map((period) => (
-                  <tr key={period.periodKey}>
-                    <td>
-                      <strong>{period.periodLabel}</strong>
-                    </td>
-                    <td>{period.loanCount.toLocaleString()}</td>
-                    <td>{period.recoveryCount.toLocaleString()}</td>
-                    <td>{formatMinor(period.recoveredMinor, "UGX")}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
+      <ReportTableTabs
+        active={tab}
+        pathname="/reports/risk/recoveries"
+        query={{ officeId: filters.officeId, loanOfficerId: filters.loanOfficerId }}
+        tabs={[
+          { id: "periods", label: "By period" },
+          { id: "loans", label: "Loans", count: report.loans.length },
+        ]}
+      />
 
-      <section className="panel">
-        <div className="panel-heading">
-          <div>
-            <h2>Recovered written-off loans</h2>
-            <p>Repayment-type transactions dated after the write-off event.</p>
+      {tab === "periods" ? (
+        <section className="panel">
+          <div className="panel-heading">
+            <div>
+              <h2>Recovery by period</h2>
+              <p>{report.assumptions.writeOffDateSource}</p>
+            </div>
           </div>
-          <RefreshCcw size={19} />
-        </div>
-        {report.loans.length === 0 ? (
-          <div className="empty-state">
-            <RefreshCcw size={28} />
-            <strong>No recoveries found</strong>
-            <p>There are no repayment-type transactions after write-off in the current scope.</p>
-          </div>
-        ) : (
-          <div className="table-scroll">
-            <table className="clickable-rows">
-              <thead>
-                <tr>
-                  <th>Borrower</th>
-                  <th>Product</th>
-                  <th>Office</th>
-                  <th>Officer</th>
-                  <th>Write-off date</th>
-                  <th>Source</th>
-                  <th>Written off</th>
-                  <th>Recovered</th>
-                </tr>
-              </thead>
-              <tbody>
-                {report.loans.map((loan) => (
-                  <tr key={loan.id}>
-                    <td>
-                      <strong>{loan.borrowerName}</strong>
-                      <small className="mono">{loan.accountNumber}</small>
-                      <Link className="row-link" href={`/loans/${loan.id}`} aria-label={`Open ${loan.accountNumber}`} />
-                    </td>
-                    <td>{loan.productName}</td>
-                    <td>{loan.officeName}</td>
-                    <td>{loan.loanOfficerName}</td>
-                    <td>{formatDate(loan.writeOffDate)}</td>
-                    <td>{loan.writeOffDateSource}</td>
-                    <td>{formatMinor(loan.writeOffAmountMinor, loan.currencyCode)}</td>
-                    <td>
-                      <strong>{formatMinor(loan.recoveredAmountMinor, loan.currencyCode)}</strong>
-                      <small>
-                        {loan.recoveryCount} tx · {loan.latestRecoveryOn ? formatDate(loan.latestRecoveryOn) : "—"}
-                      </small>
-                    </td>
+          {report.periods.length === 0 ? (
+            <div className="empty-state">
+              <RefreshCcw size={28} />
+              <strong>No recovery periods</strong>
+              <p>Nothing in the current scope.</p>
+            </div>
+          ) : (
+            <div className="table-scroll">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Period</th>
+                    <th>Loans</th>
+                    <th>Recoveries</th>
+                    <th>Recovered amount</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {report.periods.map((period) => (
+                    <tr key={period.periodKey}>
+                      <td>
+                        <strong>{period.periodLabel}</strong>
+                      </td>
+                      <td>{period.loanCount.toLocaleString()}</td>
+                      <td>{period.recoveryCount.toLocaleString()}</td>
+                      <td>{formatMinor(period.recoveredMinor, "UGX")}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+      ) : (
+        <section className="panel">
+          <div className="panel-heading">
+            <div>
+              <h2>Recovered loans</h2>
+              <p>{loanPage.pageSize} per page</p>
+            </div>
+            <RefreshCcw size={19} />
           </div>
-        )}
-      </section>
+          {loanPage.totalRows === 0 ? (
+            <div className="empty-state">
+              <RefreshCcw size={28} />
+              <strong>No recoveries</strong>
+              <p>Nothing in the current scope.</p>
+            </div>
+          ) : (
+            <>
+              <div className="table-scroll">
+                <table className="clickable-rows">
+                  <thead>
+                    <tr>
+                      <th>Borrower</th>
+                      <th>Product</th>
+                      <th>Office</th>
+                      <th>Officer</th>
+                      <th>Write-off date</th>
+                      <th>Source</th>
+                      <th>Written off</th>
+                      <th>Recovered</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {loanPage.items.map((loan) => (
+                      <tr key={loan.id}>
+                        <td>
+                          <strong>{loan.borrowerName}</strong>
+                          <small className="mono">{loan.accountNumber}</small>
+                          <Link className="row-link" href={`/loans/${loan.id}`} aria-label={`Open ${loan.accountNumber}`} />
+                        </td>
+                        <td>{loan.productName}</td>
+                        <td>{loan.officeName}</td>
+                        <td>{loan.loanOfficerName}</td>
+                        <td>{formatDate(loan.writeOffDate)}</td>
+                        <td>{loan.writeOffDateSource}</td>
+                        <td>{formatMinor(loan.writeOffAmountMinor, loan.currencyCode)}</td>
+                        <td>
+                          <strong>{formatMinor(loan.recoveredAmountMinor, loan.currencyCode)}</strong>
+                          <small>
+                            {loan.recoveryCount} tx · {loan.latestRecoveryOn ? formatDate(loan.latestRecoveryOn) : "—"}
+                          </small>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <ReportPagination
+                label="Recovery loan pages"
+                page={loanPage.page}
+                pageSize={loanPage.pageSize}
+                pathname="/reports/risk/recoveries"
+                query={tabQuery}
+                totalPages={loanPage.totalPages}
+                totalRows={loanPage.totalRows}
+              />
+            </>
+          )}
+        </section>
+      )}
     </main>
   );
 }

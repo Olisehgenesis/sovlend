@@ -30,30 +30,56 @@ type MockLine = {
   amountMinor: bigint;
 };
 
+type LineFilter = { account?: { type?: { in: string[] } } };
+
+function linesMatching(accountsById: Map<string, MockAccount>, lines: MockLine[], where?: LineFilter) {
+  const allowedTypes = where?.account?.type?.in;
+  return lines.filter((line) => !allowedTypes || allowedTypes.includes(accountsById.get(line.accountId)!.type));
+}
+
 /**
- * Builds a minimal fake Prisma client backing the two accounting-report queries
- * (`ledgerAccount.findMany` and `journalLine.findMany`) used by getBalanceSheetReport /
- * getTrialBalanceReport, without requiring a real database connection.
+ * Builds a minimal fake Prisma client. Balance sheet, income statement, and trial balance
+ * sum lines with groupBy; the mock derives those groups from the same fixture lines.
  */
 function buildLedgerMock(accounts: MockAccount[], lines: MockLine[]) {
   const accountsById = new Map(accounts.map((account) => [account.id, account]));
+  const matching = (where?: LineFilter) => linesMatching(accountsById, lines, where);
   return {
     ledgerAccount: {
-      findMany: vi.fn(async ({ where }: { where?: { type?: { in: string[] } } }) =>
-        accounts.filter((account) => !where?.type || where.type.in.includes(account.type)),
+      findMany: vi.fn(async ({ where }: { where?: { type?: { in: string[] }; id?: { in: string[] } } }) =>
+        accounts.filter((account) => {
+          if (where?.type && !where.type.in.includes(account.type)) return false;
+          if (where?.id && !where.id.in.includes(account.id)) return false;
+          return true;
+        }),
       ),
     },
+    journal: {
+      count: vi.fn(async ({ where }: { where?: { lines?: { some?: LineFilter } } }) => {
+        return new Set(matching(where?.lines?.some).map((line) => line.journalId)).size;
+      }),
+    },
     journalLine: {
-      findMany: vi.fn(async ({ where }: { where: { account?: { type?: { in: string[] } } } }) =>
-        lines
-          .filter((line) => {
-            const allowedTypes = where.account?.type?.in;
-            return !allowedTypes || allowedTypes.includes(accountsById.get(line.accountId)!.type);
-          })
-          .map((line) => ({
-            ...line,
-            account: { type: accountsById.get(line.accountId)!.type },
-          })),
+      count: vi.fn(async ({ where }: { where?: LineFilter }) => matching(where).length),
+      groupBy: vi.fn(async ({ where }: { where?: LineFilter }) => {
+        const totals = new Map<string, { accountId: string; direction: "DEBIT" | "CREDIT"; amountMinor: bigint }>();
+        for (const line of matching(where)) {
+          const key = `${line.accountId}:${line.direction}`;
+          const current = totals.get(key) ?? { accountId: line.accountId, direction: line.direction, amountMinor: 0n };
+          current.amountMinor += line.amountMinor;
+          totals.set(key, current);
+        }
+        return [...totals.values()].map((row) => ({
+          accountId: row.accountId,
+          direction: row.direction,
+          _sum: { amountMinor: row.amountMinor },
+        }));
+      }),
+      findMany: vi.fn(async ({ where }: { where: LineFilter }) =>
+        matching(where).map((line) => ({
+          ...line,
+          account: { type: accountsById.get(line.accountId)!.type },
+        })),
       ),
     },
   } as unknown as import("@prisma/client").PrismaClient;

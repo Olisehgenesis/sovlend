@@ -1,4 +1,4 @@
-import type { Client, ClientStatus, LoanStatus, PrismaClient } from "@prisma/client";
+import { Prisma, type Client, type ClientStatus, type LoanStatus, type PrismaClient } from "@prisma/client";
 
 import { clientScopeWhere, type UserDataScope } from "@/modules/identity/application/data-scope";
 import { getClientWalletSummary } from "@/modules/lending/application/client-wallet";
@@ -92,6 +92,7 @@ export type ClientStatementChargeRow = Readonly<{
   amountMinor: bigint;
   dueOn: Date | null;
   loanAccountNumber: string | null;
+  copies: number;
 }>;
 
 export type ClientStatementActivityRow = Readonly<{
@@ -202,7 +203,6 @@ export async function loadClientStatement(
           },
         },
       },
-      charges: { orderBy: { createdAt: "desc" }, include: { loan: { select: { accountNumber: true } } } },
     },
   });
   if (!client) return null;
@@ -282,14 +282,39 @@ export async function loadClientStatement(
     ),
   ].sort((left, right) => right.activityOn.getTime() - left.activityOn.getTime());
 
-  const charges: ClientStatementChargeRow[] = client.charges.map((charge) => ({
+  const chargeRows = await prisma.$queryRaw<Array<{
+    id: string;
+    name: string;
+    status: string;
+    currencyCode: string;
+    dueOn: Date | null;
+    loanAccountNumber: string | null;
+    amountMinor: bigint | string | number;
+    copies: number;
+  }>>(Prisma.sql`
+    SELECT MIN(c.id)::text AS id,
+           c.name,
+           c.status,
+           c."currencyCode" AS "currencyCode",
+           c."dueOn" AS "dueOn",
+           l."accountNumber" AS "loanAccountNumber",
+           c."amountMinor" AS "amountMinor",
+           COUNT(*)::int AS copies
+    FROM "Charge" c
+    LEFT JOIN "Loan" l ON l.id = c."loanId"
+    WHERE c."clientId" = ${client.id}::uuid
+    GROUP BY c.name, c.status, c."currencyCode", c."dueOn", c."amountMinor", l."accountNumber"
+    ORDER BY c."dueOn" DESC NULLS LAST, c.name
+  `);
+  const charges: ClientStatementChargeRow[] = chargeRows.map((charge) => ({
     id: charge.id,
     name: charge.name,
     status: charge.status,
     currencyCode: charge.currencyCode,
-    amountMinor: charge.amountMinor,
+    amountMinor: typeof charge.amountMinor === "bigint" ? charge.amountMinor : BigInt(charge.amountMinor),
     dueOn: charge.dueOn,
-    loanAccountNumber: charge.loan?.accountNumber ?? null,
+    loanAccountNumber: charge.loanAccountNumber,
+    copies: charge.copies,
   }));
 
   const currencyCode = wallet.currencyCode;
@@ -297,7 +322,10 @@ export async function loadClientStatement(
   const totalPrincipalPaidMinor = loans.reduce((sum, loan) => sum + loan.principalPaidMinor, 0n);
   const totalInterestPaidMinor = loans.reduce((sum, loan) => sum + loan.interestPaidMinor, 0n);
   const totalPaidMinor = loans.reduce((sum, loan) => sum + loan.totalPaidMinor, 0n);
-  const totalChargesOutstandingMinor = charges.reduce((sum, charge) => sum + (charge.status === "PENDING" ? charge.amountMinor : 0n), 0n);
+  const totalChargesOutstandingMinor = charges.reduce(
+    (sum, charge) => sum + (charge.status === "PENDING" ? charge.amountMinor * BigInt(charge.copies) : 0n),
+    0n,
+  );
 
   return {
     asOf,

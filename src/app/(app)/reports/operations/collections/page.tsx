@@ -17,11 +17,13 @@ import {
   resolveDatePreset,
   type ReportDatePreset,
 } from "@/modules/reports/domain/accounting-report";
+import { ReportPagination } from "@/components/report-pagination";
 import {
   formatReportDate,
   loadCollectionsReport,
   loadOperationsReportContext,
 } from "@/modules/reports/domain/operations-report";
+import { parseReportPagination } from "@/modules/reports/domain/report-pagination";
 
 type CollectionsDatePreset = ReportDatePreset | "all_time";
 
@@ -35,7 +37,14 @@ function parseCollectionsPreset(value?: string | null): CollectionsDatePreset | 
 export default async function CollectionsReportPage({
   searchParams,
 }: {
-  searchParams: Promise<{ officeId?: string; startDate?: string; endDate?: string; preset?: string }>;
+  searchParams: Promise<{
+    officeId?: string;
+    startDate?: string;
+    endDate?: string;
+    preset?: string;
+    page?: string;
+    pageSize?: string;
+  }>;
 }) {
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session) redirect("/sign-in");
@@ -50,8 +59,14 @@ export default async function CollectionsReportPage({
   if (!context.allowed) redirect("/reports");
 
   const params = await searchParams;
+  const pagination = parseReportPagination(params);
   const preset = parseCollectionsPreset(params.preset);
-  const standardPreset = preset && preset !== "all_time" ? preset : parseReportDatePreset(params.preset);
+  const monthFallback = !preset && !params.startDate && !params.endDate;
+  const standardPreset = monthFallback
+    ? "month"
+    : preset && preset !== "all_time"
+      ? preset
+      : parseReportDatePreset(params.preset);
   const resolvedRange =
     preset === "all_time"
       ? { startDate: null as Date | null, endDate: null as Date | null }
@@ -66,19 +81,25 @@ export default async function CollectionsReportPage({
     standardPreset
       ? formatDateInputValue(resolvedRange.endDate as Date)
       : params.endDate ?? "";
-  const activePreset =
-    preset ??
-    (!params.startDate && !params.endDate ? ("all_time" as const) : null);
+  const activePreset = preset ?? (monthFallback ? ("month" as const) : null);
   const query = querySuffix({
     officeId: params.officeId,
     startDate: startDateValue || undefined,
     endDate: endDateValue || undefined,
   });
+  const pageQuery = {
+    officeId: params.officeId,
+    startDate: startDateValue || undefined,
+    endDate: endDateValue || undefined,
+    preset: activePreset ?? undefined,
+    pageSize: pagination.pageSize === 50 ? undefined : String(pagination.pageSize),
+  };
   const [report, pickerOptions] = await Promise.all([
     loadCollectionsReport(prisma, context.scope, {
       officeId: params.officeId,
       startDate: startDateValue || null,
       endDate: endDateValue || null,
+      pagination,
     }),
     loadReportPickerOptions(prisma, session.user.id, context.scope.organizationId),
   ]);
@@ -181,66 +202,77 @@ export default async function CollectionsReportPage({
         <div className="panel-heading">
           <div>
             <h2>Collections ledger</h2>
-            <p>{report.rows.length.toLocaleString()} repayment receipt(s)</p>
+            <p>{report.pagination.totalRows.toLocaleString()} repayment receipt(s)</p>
           </div>
         </div>
         {report.rows.length === 0 ? (
           <p className="coa-section-empty">No collections for this range.</p>
         ) : (
-          <div className="table-scroll">
-            <table className="clickable-rows">
-              <thead>
-                <tr>
-                  <th>Date</th>
-                  <th>Receipt</th>
-                  <th>Borrower</th>
-                  <th>Loan account</th>
-                  <th>Office</th>
-                  <th>Product</th>
-                  <th>Principal</th>
-                  <th>Interest</th>
-                  <th>Fees</th>
-                  <th>Penalty</th>
-                  <th>Others</th>
-                  <th>Total receipt</th>
-                </tr>
-              </thead>
-              <tbody>
-                {report.rows.map((row) => (
-                  <tr key={row.transactionId}>
-                    <td>{formatReportDate(row.businessDate)}</td>
-                    <td className="mono">{row.receiptNumber ?? "—"}</td>
-                    <td>
-                      <strong>{row.borrowerName}</strong>
-                      <Link aria-label={`Open loan ${row.accountNumber}`} className="row-link" href={`/loans/${row.loanId}`} />
-                    </td>
-                    <td className="mono">{row.accountNumber}</td>
-                    <td>{row.officeName}</td>
-                    <td>{row.productName}</td>
-                    <td>{formatMinor(row.principalMinor, row.currencyCode)}</td>
-                    <td>{formatMinor(row.interestMinor, row.currencyCode)}</td>
-                    <td>{formatMinor(row.feesMinor, row.currencyCode)}</td>
-                    <td>{formatMinor(row.penaltiesMinor, row.currencyCode)}</td>
-                    <td>{formatMinor(row.othersMinor, row.currencyCode)}</td>
-                    <td>{formatMinor(row.totalMinor, row.currencyCode)}</td>
+          <>
+            <div className="table-scroll">
+              <table className="clickable-rows">
+                <thead>
+                  <tr>
+                    <th>Date</th>
+                    <th>Receipt</th>
+                    <th>Borrower</th>
+                    <th>Loan account</th>
+                    <th>Office</th>
+                    <th>Product</th>
+                    <th>Principal</th>
+                    <th>Interest</th>
+                    <th>Fees</th>
+                    <th>Penalty</th>
+                    <th>Others</th>
+                    <th>Total receipt</th>
                   </tr>
-                ))}
-              </tbody>
-              <tfoot>
-                {report.totals.map((row) => (
-                  <tr key={`total-${row.currencyCode}`}>
-                    <th colSpan={6}>Grand total ({row.transactionCount.toLocaleString()} receipts)</th>
-                    <th>{formatMinor(row.principalMinor, row.currencyCode)}</th>
-                    <th>{formatMinor(row.interestMinor, row.currencyCode)}</th>
-                    <th>{formatMinor(row.feesMinor, row.currencyCode)}</th>
-                    <th>{formatMinor(row.penaltiesMinor, row.currencyCode)}</th>
-                    <th>{formatMinor(row.othersMinor, row.currencyCode)}</th>
-                    <th>{formatMinor(row.totalMinor, row.currencyCode)}</th>
-                  </tr>
-                ))}
-              </tfoot>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {report.rows.map((row) => (
+                    <tr key={row.transactionId}>
+                      <td>{formatReportDate(row.businessDate)}</td>
+                      <td className="mono">{row.receiptNumber ?? "—"}</td>
+                      <td>
+                        <strong>{row.borrowerName}</strong>
+                        <Link aria-label={`Open loan ${row.accountNumber}`} className="row-link" href={`/loans/${row.loanId}`} />
+                      </td>
+                      <td className="mono">{row.accountNumber}</td>
+                      <td>{row.officeName}</td>
+                      <td>{row.productName}</td>
+                      <td>{formatMinor(row.principalMinor, row.currencyCode)}</td>
+                      <td>{formatMinor(row.interestMinor, row.currencyCode)}</td>
+                      <td>{formatMinor(row.feesMinor, row.currencyCode)}</td>
+                      <td>{formatMinor(row.penaltiesMinor, row.currencyCode)}</td>
+                      <td>{formatMinor(row.othersMinor, row.currencyCode)}</td>
+                      <td>{formatMinor(row.totalMinor, row.currencyCode)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  {report.totals.map((row) => (
+                    <tr key={`total-${row.currencyCode}`}>
+                      <th colSpan={6}>Grand total ({row.transactionCount.toLocaleString()} receipts)</th>
+                      <th>{formatMinor(row.principalMinor, row.currencyCode)}</th>
+                      <th>{formatMinor(row.interestMinor, row.currencyCode)}</th>
+                      <th>{formatMinor(row.feesMinor, row.currencyCode)}</th>
+                      <th>{formatMinor(row.penaltiesMinor, row.currencyCode)}</th>
+                      <th>{formatMinor(row.othersMinor, row.currencyCode)}</th>
+                      <th>{formatMinor(row.totalMinor, row.currencyCode)}</th>
+                    </tr>
+                  ))}
+                </tfoot>
+              </table>
+            </div>
+            <ReportPagination
+              label="Collections pages"
+              page={report.pagination.page}
+              pageSize={report.pagination.pageSize}
+              pathname="/reports/operations/collections"
+              query={pageQuery}
+              totalPages={report.pagination.totalPages}
+              totalRows={report.pagination.totalRows}
+            />
+          </>
         )}
       </section>
     </main>

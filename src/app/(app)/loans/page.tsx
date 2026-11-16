@@ -11,6 +11,7 @@ import { TableRowLink } from "@/components/table-row-link";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { statusLabel } from "@/lib/status-label";
+import { loadFoldedLoanCharges } from "@/modules/reports/domain/portfolio-charges";
 import { formatMinor } from "@/modules/reporting/application/dashboard";
 import { fromMinor } from "@/components/loan-application-form-shared";
 import {
@@ -205,12 +206,12 @@ export default async function LoansPage({
           monitoringFeeWaivedMinor: true,
         },
       },
-      charges: { select: { name: true, amountMinor: true, status: true, dueOn: true } },
     },
     orderBy: { createdAt: "desc" },
     skip: (page - 1) * pageSize,
     take: pageSize,
   });
+  const loanCharges = await loadFoldedLoanCharges(prisma, loans);
 
   let productNumber = 0;
   const catalogSections = groupLoanProductsByTerm(products).map((group) => ({
@@ -328,7 +329,7 @@ export default async function LoansPage({
                 </thead>
                 <tbody>
                   {loans.map((loan, index) => {
-                    const schedule = installmentsWithCharges(loan.installments, loan.charges);
+                    const schedule = installmentsWithCharges(loan.installments, loanCharges.get(loan.id) ?? []);
                     const principalDueRaw = schedule.reduce(
                       (sum, item) => sum + item.principalDueMinor - item.principalPaidMinor - item.principalWaivedMinor,
                       0n,

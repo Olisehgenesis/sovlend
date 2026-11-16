@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { loadAccessUser } from "@/modules/identity/application/actor-access";
 import { AuthorizationService } from "@/modules/identity/application/authorization-service";
 import { permissions } from "@/modules/identity/domain/permissions";
 
@@ -13,7 +14,7 @@ export function isInvestorApproverRole(systemRole: string | null | undefined) {
  */
 export async function canManageInvestorAccessForOrganization(session: { user: { id: string; role?: string | null } }, organizationId: string): Promise<boolean> {
   if (session.user.role === "admin") return true;
-  const user = await prisma.user.findUnique({ where: { id: session.user.id }, select: { organizationId: true, systemRole: true } });
+  const user = await loadAccessUser(session.user.id);
   if (!user?.organizationId || user.organizationId !== organizationId) return false;
   if (isInvestorApproverRole(user.systemRole)) return true;
   return new AuthorizationService(prisma).isAllowedForOrganization(session.user.id, organizationId, permissions.investorAccessManage);
@@ -23,7 +24,7 @@ export async function canManageInvestorAccessForOrganization(session: { user: { 
  * user is a super-admin (who can see every organization's requests) or is not authorized at all. */
 export async function loadInvestorAccessScope(session: { user: { id: string; role?: string | null } }): Promise<{ isSuperAdmin: true; organizationId: null } | { isSuperAdmin: false; organizationId: string } | null> {
   if (session.user.role === "admin") return { isSuperAdmin: true, organizationId: null };
-  const user = await prisma.user.findUnique({ where: { id: session.user.id }, select: { organizationId: true, systemRole: true } });
+  const user = await loadAccessUser(session.user.id);
   if (!user?.organizationId) return null;
   if (isInvestorApproverRole(user.systemRole)) return { isSuperAdmin: false, organizationId: user.organizationId };
   const allowed = await new AuthorizationService(prisma).isAllowedForOrganization(session.user.id, user.organizationId, permissions.investorAccessManage);

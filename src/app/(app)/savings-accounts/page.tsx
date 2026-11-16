@@ -11,6 +11,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { clientScopeWhere, getUserDataScope, groupScopeWhere } from "@/modules/identity/application/data-scope";
 import { formatMinor } from "@/modules/money/domain/format-minor";
+import { sumSavingsByAccount } from "@/modules/savings/domain/account-balance";
 import { displaySavingsProductName, storedSavingsProductNamesMatching } from "@/modules/savings/domain/savings-product-label";
 
 const pageSize = 25;
@@ -202,16 +203,17 @@ export default async function SavingsAccountsPage({
     prisma.savingsAccount.groupBy({ by: ["status"], where: scopeWhere, _count: { _all: true } }),
     prisma.savingsAccount.findMany({
       where: scopeWhere,
-      select: { currencyCode: true, transactions: { select: { amountMinor: true } } },
+      select: { id: true, currencyCode: true },
     }),
   ]);
+  const savingsBalances = await sumSavingsByAccount(prisma, balanceAccounts.map((account) => account.id));
   const statusCountMap = new Map(statusCounts.map((row) => [row.status, row._count._all]));
   const totalAccounts = statusCounts.reduce((sum, row) => sum + row._count._all, 0);
   const activeAccounts = statusCountMap.get("ACTIVE") ?? 0;
   const pendingAccounts = statusCountMap.get("SUBMITTED") ?? 0;
   const balanceByCurrency = new Map<string, bigint>();
   for (const account of balanceAccounts) {
-    const balance = account.transactions.reduce((sum, transaction) => sum + transaction.amountMinor, 0n);
+    const balance = savingsBalances.get(account.id) ?? 0n;
     balanceByCurrency.set(account.currencyCode, (balanceByCurrency.get(account.currencyCode) ?? 0n) + balance);
   }
   const totalBalanceLabel =
@@ -256,7 +258,6 @@ export default async function SavingsAccountsPage({
       },
       product: { select: { name: true } },
       fieldOfficer: { select: { name: true } },
-      transactions: { select: { amountMinor: true } },
     },
     orderBy: [{ createdAt: "desc" }, { accountNumber: "asc" }],
     skip: (page - 1) * pageSize,
@@ -355,10 +356,7 @@ export default async function SavingsAccountsPage({
                       }
                     : null;
                 const holderName = owner?.name ?? "Unknown owner";
-                const balanceMinor = account.transactions.reduce(
-                  (sum, transaction) => sum + transaction.amountMinor,
-                  0n,
-                );
+                const balanceMinor = savingsBalances.get(account.id) ?? 0n;
                 const productName = displaySavingsProductName(
                   account.product?.name ?? snapshotString(account.termsSnapshot, "name"),
                 );

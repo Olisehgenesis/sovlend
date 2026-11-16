@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { isLoanPaymentTransaction, transactionTypeLabel, transactionTypeVariants } from "@/lib/loan-transaction-type-variants";
 import { installmentOutstandingMinor, installmentsWithCharges, loanOutstandingMinor } from "@/modules/lending/domain/loan-outstanding";
+import { loadFoldedLoanCharges } from "@/modules/reports/domain/portfolio-charges";
 import { displaySavingsProductName } from "@/modules/savings/domain/savings-product-label";
 
 const disbursementTypes = new Set(transactionTypeVariants("DISBURSEMENT"));
@@ -73,7 +74,6 @@ export async function loadWallet(clientId: string, activityLimit: number): Promi
       include: {
         product: { select: { name: true } },
         installments: true,
-        charges: { select: { name: true, amountMinor: true, status: true, dueOn: true } },
       },
       orderBy: { createdAt: "desc" },
     }),
@@ -103,6 +103,7 @@ export async function loadWallet(clientId: string, activityLimit: number): Promi
     prisma.loanTransaction.count({ where: { loan: { clientId } } }),
   ]);
 
+  const foldedCharges = await loadFoldedLoanCharges(prisma, loans);
   const balanceByAccount = new Map(savingsTotals.map((row) => [row.savingsAccountId, row._sum.amountMinor ?? 0n]));
   const savingsByCurrency = new Map<string, bigint>();
   const owedByCurrency = new Map<string, bigint>();
@@ -124,7 +125,7 @@ export async function loadWallet(clientId: string, activityLimit: number): Promi
   }
 
   for (const loan of loans) {
-    const schedule = installmentsWithCharges(loan.installments, loan.charges);
+    const schedule = installmentsWithCharges(loan.installments, foldedCharges.get(loan.id) ?? []);
     const outstanding = loanOutstandingMinor(schedule, loan);
     add(owedByCurrency, loan.denominationCurrency, outstanding);
     accounts.push({

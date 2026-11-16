@@ -5,6 +5,7 @@ import { notFound, redirect } from "next/navigation";
 
 import { Breadcrumbs } from "@/components/breadcrumbs";
 import { ReportDatePresetPills, parseReportDatePreset } from "@/components/report-date-presets";
+import { ReportPagination } from "@/components/report-pagination";
 import { ReportPicker } from "@/components/report-picker";
 import { SearchableSelect } from "@/components/searchable-select";
 import { auth } from "@/lib/auth";
@@ -14,6 +15,7 @@ import { getUserDataScope } from "@/modules/identity/application/data-scope";
 import { permissions } from "@/modules/identity/domain/permissions";
 import { journalLineDescription } from "@/modules/ledger/domain/journal";
 import { formatMinor } from "@/modules/money/domain/format-minor";
+import { parseReportPagination } from "@/modules/reports/domain/report-pagination";
 import { loadReportPickerOptions } from "@/modules/reports/report-catalog";
 import {
   accountingAccountTypeSections,
@@ -50,6 +52,8 @@ export default async function GeneralLedgerView({
     toCode?: string;
     accountType?: string;
     include?: string;
+    page?: string;
+    pageSize?: string;
   }>;
   selectedAccountId?: string;
 }) {
@@ -88,6 +92,7 @@ export default async function GeneralLedgerView({
   const toCode = params.toCode?.trim() || null;
   if (accountId && !accounts.some((account) => account.id === accountId)) notFound();
   if (params.officeId && !officeId) notFound();
+  const pagination = parseReportPagination(params);
   const report = await getGeneralLedgerReport(prisma, scope, {
     startDate,
     endDate,
@@ -97,6 +102,7 @@ export default async function GeneralLedgerView({
     toCode,
     accountType,
     include,
+    entries: accountId ? pagination : "balances",
   });
   const activeOfficeName = offices.find((office) => office.id === officeId)?.name ?? "All offices";
   const queryString = buildReportQueryString({
@@ -252,9 +258,31 @@ export default async function GeneralLedgerView({
               entries={report.entries.filter((entry) => entry.account.id === balance.account.id)}
               key={balance.account.id}
               queryString={queryString}
+              showLines={Boolean(accountId)}
             />
           ))
         )}
+        {accountId ? (
+          <ReportPagination
+            label="Ledger pages"
+            page={pagination.page}
+            pageSize={pagination.pageSize}
+            pathname={basePath}
+            query={{
+              startDate: formatDateInputValue(startDate),
+              endDate: formatDateInputValue(endDate),
+              officeId,
+              accountId,
+              fromCode,
+              toCode,
+              accountType,
+              include: include === "balance" ? null : include,
+              preset,
+            }}
+            totalPages={Math.max(1, Math.ceil(report.lineCount / pagination.pageSize))}
+            totalRows={report.lineCount}
+          />
+        ) : null}
       </section>
     </main>
   );
@@ -265,11 +293,13 @@ function LedgerAccountSection({
   balance,
   entries,
   queryString,
+  showLines,
 }: {
   accountHref: string;
   balance: GeneralLedgerAccountBalance;
   entries: GeneralLedgerEntry[];
   queryString: string;
+  showLines: boolean;
 }) {
   const opening = summarizeBalance(balance.account.type, balance.openingBalanceMinor);
   const closing = summarizeBalance(balance.account.type, balance.closingBalanceMinor);
@@ -303,7 +333,7 @@ function LedgerAccountSection({
           </div>
         </div>
       </div>
-      <div className="table-scroll">
+      {showLines ? <div className="table-scroll">
         <table>
           <thead>
             <tr>
@@ -364,7 +394,11 @@ function LedgerAccountSection({
             </tr>
           </tbody>
         </table>
-      </div>
+      </div> : (
+        <p className="muted-text">
+          <Link className="green-link" href={accountHref}>Open this account</Link> to read its lines. The totals above cover the whole period.
+        </p>
+      )}
     </div>
   );
 }

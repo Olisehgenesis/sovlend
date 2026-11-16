@@ -4,13 +4,16 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { Breadcrumbs } from "@/components/breadcrumbs";
+import { ReportPagination } from "@/components/report-pagination";
 import { ReportPicker } from "@/components/report-picker";
+import { parseReportTab, ReportTableTabs } from "@/components/report-table-tabs";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { AuthorizationService } from "@/modules/identity/application/authorization-service";
 import { getUserDataScope } from "@/modules/identity/application/data-scope";
 import { permissions } from "@/modules/identity/domain/permissions";
 import { formatMinor } from "@/modules/money/domain/format-minor";
+import { paginateItems, parseReportPagination } from "@/modules/reports/domain/report-pagination";
 import { loadReportPickerOptions } from "@/modules/reports/report-catalog";
 import {
   agingBucketTone,
@@ -21,10 +24,12 @@ import {
   parseRiskFilters,
 } from "@/modules/reports/domain/risk-report";
 
+const TABS = ["summary", "loans"] as const;
+
 export default async function AgingReportPage({
   searchParams,
 }: {
-  searchParams: Promise<{ officeId?: string; loanOfficerId?: string }>;
+  searchParams: Promise<{ officeId?: string; loanOfficerId?: string; tab?: string; page?: string; pageSize?: string }>;
 }) {
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session) redirect("/sign-in");
@@ -39,14 +44,24 @@ export default async function AgingReportPage({
   );
   if (!allowed) redirect("/reports");
 
-  const filters = parseRiskFilters(await searchParams);
+  const params = await searchParams;
+  const filters = parseRiskFilters(params);
+  const tab = parseReportTab(params.tab, TABS, "summary");
+  const pagination = parseReportPagination(params);
   const [report, options, pickerOptions] = await Promise.all([
     loadAgingReport(prisma, scope, filters),
     loadRiskFilterOptions(prisma, scope),
     loadReportPickerOptions(prisma, session.user.id, scope.organizationId),
   ]);
+  const loanPage = paginateItems(report.loans, pagination);
   const generatedAt = formatDateTime(report.generatedAt);
   const exportHref = `/api/reports/risk/aging${querySuffix(filters)}${querySuffix(filters) ? "&" : "?"}format=csv`;
+  const tabQuery = {
+    officeId: filters.officeId,
+    loanOfficerId: filters.loanOfficerId,
+    tab,
+    pageSize: pagination.pageSize === 50 ? undefined : String(pagination.pageSize),
+  };
 
   return (
     <main className="directory-page">
@@ -61,7 +76,7 @@ export default async function AgingReportPage({
         <div>
           <h1>Aging / Portfolio-at-Risk</h1>
           <p>
-            {report.totals.loanCount.toLocaleString()} open loans · {formatMinor(report.totals.totalOutstandingPrincipalMinor, "UGX")} outstanding principal · snapshot {generatedAt}
+            {report.totals.loanCount.toLocaleString()} open loans · snapshot {generatedAt}
           </p>
         </div>
         <ReportPicker current="/reports/risk/aging" options={pickerOptions} />
@@ -96,6 +111,7 @@ export default async function AgingReportPage({
 
       <section className="panel report-toolbar">
         <form className="report-toolbar-form" method="get">
+          <input name="tab" type="hidden" value={tab} />
           <label>
             Office
             <select name="officeId" defaultValue={filters.officeId ?? ""}>
@@ -124,96 +140,119 @@ export default async function AgingReportPage({
         </form>
       </section>
 
-      <section className="panel">
-        <div className="panel-heading">
-          <div>
-            <h2>Bucket summary</h2>
-            <p>Cumulative PAR shows the selected bucket and every worse bucket above it.</p>
-          </div>
-          <CircleDollarSign size={19} />
-        </div>
-        <div className="table-scroll">
-          <table>
-            <thead>
-              <tr>
-                <th>Bucket</th>
-                <th>Loans</th>
-                <th>Outstanding principal</th>
-                <th>PAR ratio</th>
-                <th>Cumulative PAR</th>
-              </tr>
-            </thead>
-            <tbody>
-              {report.buckets.map((bucket) => (
-                <tr key={bucket.key}>
-                  <td>
-                    <strong>{bucket.label}</strong>
-                  </td>
-                  <td>{bucket.loanCount.toLocaleString()}</td>
-                  <td>{formatMinor(bucket.outstandingPrincipalMinor, "UGX")}</td>
-                  <td>{formatBps(bucket.bucketParBps)}</td>
-                  <td>{formatBps(bucket.cumulativeParBps)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </section>
+      <ReportTableTabs
+        active={tab}
+        pathname="/reports/risk/aging"
+        query={{ officeId: filters.officeId, loanOfficerId: filters.loanOfficerId }}
+        tabs={[
+          { id: "summary", label: "Bucket summary" },
+          { id: "loans", label: "Loans", count: report.loans.length },
+        ]}
+      />
 
-      <section className="panel">
-        <div className="panel-heading">
-          <div>
-            <h2>Loan-level aging</h2>
-            <p>Each loan is bucketed by the earliest unpaid overdue installment.</p>
+      {tab === "summary" ? (
+        <section className="panel">
+          <div className="panel-heading">
+            <div>
+              <h2>Bucket summary</h2>
+              <p>Cumulative PAR includes the selected bucket and every worse bucket.</p>
+            </div>
+            <CircleDollarSign size={19} />
           </div>
-        </div>
-        {report.loans.length === 0 ? (
-          <div className="empty-state">
-            <CircleDollarSign size={28} />
-            <strong>No loans in scope</strong>
-            <p>Change the filter and try again.</p>
-          </div>
-        ) : (
           <div className="table-scroll">
-            <table className="clickable-rows">
+            <table>
               <thead>
                 <tr>
-                  <th>Borrower</th>
-                  <th>Product</th>
-                  <th>Office</th>
-                  <th>Officer</th>
-                  <th>Status</th>
                   <th>Bucket</th>
-                  <th>Days overdue</th>
+                  <th>Loans</th>
                   <th>Outstanding principal</th>
+                  <th>PAR ratio</th>
+                  <th>Cumulative PAR</th>
                 </tr>
               </thead>
               <tbody>
-                {report.loans.map((loan) => (
-                  <tr key={loan.id}>
+                {report.buckets.map((bucket) => (
+                  <tr key={bucket.key}>
                     <td>
-                      <strong>{loan.borrowerName}</strong>
-                      <small className="mono">{loan.accountNumber}</small>
-                      <Link className="row-link" href={`/loans/${loan.id}`} aria-label={`Open ${loan.accountNumber}`} />
+                      <strong>{bucket.label}</strong>
                     </td>
-                    <td>{loan.productName}</td>
-                    <td>{loan.officeName}</td>
-                    <td>{loan.loanOfficerName}</td>
-                    <td>
-                      <span className={`status ${loanStatusTone(loan.status)}`}>{loan.status.replaceAll("_", " ")}</span>
-                    </td>
-                    <td>
-                      <span className={`status ${agingBucketTone(loan.agingBucket)}`}>{bucketLabel(loan.agingBucket)}</span>
-                    </td>
-                    <td>{loan.daysOverdue.toLocaleString()}</td>
-                    <td>{formatMinor(loan.outstandingPrincipalMinor, loan.currencyCode)}</td>
+                    <td>{bucket.loanCount.toLocaleString()}</td>
+                    <td>{formatMinor(bucket.outstandingPrincipalMinor, "UGX")}</td>
+                    <td>{formatBps(bucket.bucketParBps)}</td>
+                    <td>{formatBps(bucket.cumulativeParBps)}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
-        )}
-      </section>
+        </section>
+      ) : (
+        <section className="panel">
+          <div className="panel-heading">
+            <div>
+              <h2>Loan-level aging</h2>
+              <p>Bucketed by the earliest unpaid overdue installment · {loanPage.pageSize} per page</p>
+            </div>
+          </div>
+          {loanPage.totalRows === 0 ? (
+            <div className="empty-state">
+              <CircleDollarSign size={28} />
+              <strong>No loans in scope</strong>
+              <p>Change the filter and try again.</p>
+            </div>
+          ) : (
+            <>
+              <div className="table-scroll">
+                <table className="clickable-rows">
+                  <thead>
+                    <tr>
+                      <th>Borrower</th>
+                      <th>Product</th>
+                      <th>Office</th>
+                      <th>Officer</th>
+                      <th>Status</th>
+                      <th>Bucket</th>
+                      <th>Days overdue</th>
+                      <th>Outstanding principal</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {loanPage.items.map((loan) => (
+                      <tr key={loan.id}>
+                        <td>
+                          <strong>{loan.borrowerName}</strong>
+                          <small className="mono">{loan.accountNumber}</small>
+                          <Link className="row-link" href={`/loans/${loan.id}`} aria-label={`Open ${loan.accountNumber}`} />
+                        </td>
+                        <td>{loan.productName}</td>
+                        <td>{loan.officeName}</td>
+                        <td>{loan.loanOfficerName}</td>
+                        <td>
+                          <span className={`status ${loanStatusTone(loan.status)}`}>{loan.status.replaceAll("_", " ")}</span>
+                        </td>
+                        <td>
+                          <span className={`status ${agingBucketTone(loan.agingBucket)}`}>{bucketLabel(loan.agingBucket)}</span>
+                        </td>
+                        <td>{loan.daysOverdue.toLocaleString()}</td>
+                        <td>{formatMinor(loan.outstandingPrincipalMinor, loan.currencyCode)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <ReportPagination
+                label="Aging loan pages"
+                page={loanPage.page}
+                pageSize={loanPage.pageSize}
+                pathname="/reports/risk/aging"
+                query={tabQuery}
+                totalPages={loanPage.totalPages}
+                totalRows={loanPage.totalRows}
+              />
+            </>
+          )}
+        </section>
+      )}
     </main>
   );
 }

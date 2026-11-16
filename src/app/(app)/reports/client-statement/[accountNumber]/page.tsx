@@ -274,7 +274,10 @@ export default async function ClientStatementPage({ params }: { params: Promise<
                           {charge.status}
                         </span>
                       </td>
-                      <td>{formatMinor(charge.amountMinor, charge.currencyCode)}</td>
+                      <td>
+                        {charge.copies > 1 ? `${charge.copies.toLocaleString()} × ` : ""}
+                        {formatMinor(charge.amountMinor, charge.currencyCode)}
+                      </td>
                     </tr>
                   ))}
                 </tbody>

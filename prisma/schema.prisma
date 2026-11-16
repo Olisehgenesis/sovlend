@@ -905,6 +905,7 @@ model Loan {
   updatedAt                DateTime             @updatedAt
 
   @@index([officeId, status])
+  @@index([loanOfficerId, status])
   @@index([clientId, status])
   @@index([groupId, status])
   @@index([topUpOfLoanId])

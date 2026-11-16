@@ -2,6 +2,7 @@ import type { PrismaClient } from "@prisma/client";
 
 import { clientScopeWhere, groupScopeWhere, officeWhere, type UserDataScope } from "@/modules/identity/application/data-scope";
 import { reportRowsToCsv as rowsToCsv } from "@/modules/reports/domain/report-csv";
+import { sumSavingsByAccount } from "@/modules/savings/domain/account-balance";
 import { displaySavingsProductName } from "@/modules/savings/domain/savings-product-label";
 
 /**
@@ -109,10 +110,10 @@ export async function loadSavingsAccountListingReport(
       },
       product: { select: { name: true } },
       fieldOfficer: { select: { id: true, name: true } },
-      transactions: { select: { amountMinor: true } },
     },
     orderBy: [{ createdAt: "desc" }, { accountNumber: "asc" }],
   });
+  const balances = await sumSavingsByAccount(prisma, accounts.map((account) => account.id));
 
   const rows = accounts.map<SavingsAccountRow>((account) => {
     const owner = account.client
@@ -145,7 +146,7 @@ export async function loadSavingsAccountListingReport(
       accountType: account.accountType,
       status: account.status,
       currencyCode: account.currencyCode,
-      balanceMinor: account.transactions.reduce((sum, transaction) => sum + transaction.amountMinor, 0n),
+      balanceMinor: balances.get(account.id) ?? 0n,
       fieldOfficerId: account.fieldOfficer?.id ?? null,
       fieldOfficerName: account.fieldOfficer?.name ?? "Unassigned",
       openedOn: account.approvedOn ?? account.submittedOn ?? account.createdAt,
@@ -352,19 +353,20 @@ export async function loadSavingsPortfolioByOfficerReport(
       ],
     },
     select: {
+      id: true,
       status: true,
       currencyCode: true,
       fieldOfficer: { select: { id: true, name: true } },
-      transactions: { select: { amountMinor: true } },
     },
   });
+  const balances = await sumSavingsByAccount(prisma, accounts.map((account) => account.id));
 
   const totalsMap = new Map<string, SavingsOfficerPortfolioRow>();
   for (const account of accounts) {
     const officerId = account.fieldOfficer?.id ?? null;
     const officerName = account.fieldOfficer?.name ?? "Unassigned";
     const key = `${officerId ?? "unassigned"}::${account.currencyCode}`;
-    const balanceMinor = account.transactions.reduce((sum, transaction) => sum + transaction.amountMinor, 0n);
+    const balanceMinor = balances.get(account.id) ?? 0n;
 
     const row =
       totalsMap.get(key) ??

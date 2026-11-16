@@ -18,6 +18,7 @@ import { canBypassOriginationMakerChecker } from "@/modules/lending/application/
 import { assignableStaffWhere } from "@/modules/identity/domain/staff-roles";
 import { installmentOutstandingMinor } from "@/modules/lending/domain/loan-outstanding";
 import { formatMinor } from "@/modules/money/domain/format-minor";
+import { sumSavingsByAccount } from "@/modules/savings/domain/account-balance";
 import { displaySavingsProductName } from "@/modules/savings/domain/savings-product-label";
 
 const tabs = [
@@ -173,7 +174,6 @@ export default async function GroupDetailPage({ params, searchParams }: { params
         orderBy: { createdAt: "desc" },
         include: {
           product: { select: { name: true, shortName: true } },
-          transactions: { select: { amountMinor: true } },
         },
       },
       loanApplications: { where: { status: { in: ["SUBMITTED", "APPROVED"] } }, orderBy: { createdAt: "desc" }, include: { product: true, client: { select: { firstName: true, middleName: true, lastName: true, accountNumber: true } } } },
@@ -204,11 +204,15 @@ export default async function GroupDetailPage({ params, searchParams }: { params
     prisma.savingsAccount.findMany({
       where: { clientId: { in: memberClientIds } },
       select: {
+        id: true,
         clientId: true,
         currencyCode: true,
-        transactions: { select: { amountMinor: true } },
       },
     }),
+  ]);
+  const savingsBalances = await sumSavingsByAccount(prisma, [
+    ...group.savingsAccounts.map((account) => account.id),
+    ...memberSavingsAccounts.map((account) => account.id),
   ]);
 
   const today = new Date();
@@ -249,13 +253,13 @@ export default async function GroupDetailPage({ params, searchParams }: { params
     if (!account.clientId) continue;
     const summary = memberSavingsSummary.get(account.clientId) ?? { accountCount: 0, totalBalanceMinor: 0n, currencyCode: account.currencyCode };
     summary.accountCount += 1;
-    summary.totalBalanceMinor += account.transactions.reduce((sum, transaction) => sum + transaction.amountMinor, 0n);
+    summary.totalBalanceMinor += savingsBalances.get(account.id) ?? 0n;
     memberSavingsSummary.set(account.clientId, summary);
   }
 
   // Group-level status card totals: members' own accounts plus any rare accounts held directly by the group.
   const groupOwnedSavingsMinor = group.savingsAccounts.reduce(
-    (sum, account) => sum + account.transactions.reduce((accSum, transaction) => accSum + transaction.amountMinor, 0n),
+    (sum, account) => sum + (savingsBalances.get(account.id) ?? 0n),
     0n,
   );
   const groupOwnedLoanOutstandingMinor = group.loans.reduce(
@@ -630,7 +634,7 @@ export default async function GroupDetailPage({ params, searchParams }: { params
                   </thead>
                   <tbody>
                     {group.savingsAccounts.map((account) => {
-                      const balanceMinor = account.transactions.reduce((sum, transaction) => sum + transaction.amountMinor, 0n);
+                      const balanceMinor = savingsBalances.get(account.id) ?? 0n;
                       return (
                         <tr key={account.id}>
                           <td className="mono">
