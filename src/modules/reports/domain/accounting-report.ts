@@ -865,8 +865,9 @@ export async function getChartOfAccountsReport(
     });
 
   const selectableRows = rows.filter((row) => !filters.accountType || row.type === filters.accountType);
-  const defaultRow = selectableRows.find((row) => row.balanceMinor !== 0n) ?? selectableRows[0] ?? null;
-  const selectedAccountId = resolveAccountFilter(selectableRows, filters.accountId) ?? defaultRow?.id ?? null;
+  // Only open the activity panel when the user picks an account — do not preselect the first
+  // non-zero row (that made the Account filter look applied when it was not).
+  const selectedAccountId = filters.accountId ? resolveAccountFilter(selectableRows, filters.accountId) : null;
   const selectedAccountRow = selectedAccountId ? rows.find((row) => row.id === selectedAccountId) ?? null : null;
   const generalLedger = selectedAccountId
     ? await getGeneralLedgerReport(db, scope, {

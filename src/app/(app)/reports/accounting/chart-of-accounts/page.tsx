@@ -1,10 +1,11 @@
-import { BookOpenText, Download } from "lucide-react";
+import { Download } from "lucide-react";
 import { headers } from "next/headers";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { Breadcrumbs } from "@/components/breadcrumbs";
 import { ReportPicker } from "@/components/report-picker";
+import { ReportZeroToggle } from "@/components/report-zero-toggle";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { AuthorizationService } from "@/modules/identity/application/authorization-service";
@@ -15,7 +16,6 @@ import { formatMinor } from "@/modules/money/domain/format-minor";
 import { loadReportPickerOptions } from "@/modules/reports/report-catalog";
 import {
   accountingAccountTypeSections,
-  accountTypeLabel,
   buildReportQueryString,
   currentMonthDateRange,
   formatDateInputValue,
@@ -25,12 +25,26 @@ import {
   normalizeDateRange,
   parseDateInput,
   resolveAccountTypeFilter,
+  resolveDatePreset,
   resolveOfficeFilter,
   sideLabel,
   summarizeBalance,
   todayDate,
   type ChartOfAccountsRow,
+  type ReportDatePreset,
 } from "@/modules/reports/domain/accounting-report";
+
+const DATE_PRESETS: { value: ReportDatePreset; label: string }[] = [
+  { value: "today", label: "Today" },
+  { value: "week", label: "This week" },
+  { value: "month", label: "This month" },
+  { value: "year", label: "This year" },
+];
+
+function parsePreset(value?: string | null): ReportDatePreset | null {
+  if (value === "today" || value === "week" || value === "month" || value === "year") return value;
+  return null;
+}
 
 export default async function ChartOfAccountsPage({
   searchParams,
@@ -42,6 +56,8 @@ export default async function ChartOfAccountsPage({
     officeId?: string;
     accountType?: string;
     accountId?: string;
+    preset?: string;
+    showZero?: string;
   }>;
 }) {
   const session = await auth.api.getSession({ headers: await headers() });
@@ -65,35 +81,43 @@ export default async function ChartOfAccountsPage({
   ]);
   const officeId = resolveOfficeFilter(offices, params.officeId ?? null);
   const accountType = resolveAccountTypeFilter(params.accountType ?? null);
-  const { startDate, endDate } = normalizeDateRange(
-    parseDateInput(params.startDate, defaults.startDate),
-    parseDateInput(params.endDate, defaults.endDate),
-  );
-  const balanceDate = parseDateInput(params.asOfDate, todayDate());
+  const showZero = params.showZero === "1";
+  const preset = parsePreset(params.preset);
+  const activityRange = preset
+    ? resolveDatePreset(new Date(), preset)
+    : normalizeDateRange(
+        parseDateInput(params.startDate, defaults.startDate),
+        parseDateInput(params.endDate, defaults.endDate),
+      );
+  const balanceDate = parseDateInput(params.asOfDate, preset ? activityRange.endDate : todayDate());
   const report = await getChartOfAccountsReport(prisma, scope, {
     balanceDate,
-    activityStartDate: startDate,
-    activityEndDate: endDate,
+    activityStartDate: activityRange.startDate,
+    activityEndDate: activityRange.endDate,
     officeId,
     accountType,
     accountId: params.accountId ?? null,
   });
 
   const activeOfficeName = offices.find((office) => office.id === officeId)?.name ?? "All offices";
-  const queryString = buildReportQueryString({
-    asOfDate: formatDateInputValue(report.balanceDate),
-    startDate: formatDateInputValue(report.activityStartDate),
-    endDate: formatDateInputValue(report.activityEndDate),
+  const asOfValue = formatDateInputValue(report.balanceDate);
+  const startValue = formatDateInputValue(report.activityStartDate);
+  const endValue = formatDateInputValue(report.activityEndDate);
+  const filterState = {
+    asOfDate: asOfValue,
+    startDate: startValue,
+    endDate: endValue,
     officeId,
     accountType: report.accountType,
-    accountId: report.generalLedger.account?.id ?? null,
-  });
-  const apiHref = `/api/reports/accounting/chart-of-accounts${queryString ? `?${queryString}` : ""}`;
-  const exportHref = `${apiHref}${queryString ? "&" : "?"}format=csv`;
+    accountId: report.selectedAccountRow?.id ?? null,
+    showZero: showZero ? "1" : undefined,
+  };
+  const queryString = buildReportQueryString(filterState);
+  const exportHref = `/api/reports/accounting/chart-of-accounts${queryString ? `?${queryString}&` : "?"}format=csv`;
   const generalLedgerHref = report.generalLedger.account
     ? `/reports/accounting/general-ledger?${buildReportQueryString({
-        startDate: formatDateInputValue(report.activityStartDate),
-        endDate: formatDateInputValue(report.activityEndDate),
+        startDate: startValue,
+        endDate: endValue,
         officeId,
         accountId: report.generalLedger.account.id,
       })}`
@@ -105,7 +129,19 @@ export default async function ChartOfAccountsPage({
   const activityClosingBalance = report.generalLedger.account
     ? summarizeBalance(report.generalLedger.account.type, report.generalLedger.closingBalanceMinor)
     : null;
-  const hasSelectableAccounts = report.sections.some((section) => section.rows.length > 0);
+
+  const summaryCards = [
+    { label: "Assets", amountMinor: report.totalAssetsMinor, type: "ASSET" as const },
+    { label: "Liabilities", amountMinor: report.totalLiabilitiesMinor, type: "LIABILITY" as const },
+    { label: "Equity", amountMinor: report.totalEquityMinor, type: "EQUITY" as const },
+    { label: "Revenue", amountMinor: report.totalRevenueMinor, type: "REVENUE" as const },
+    { label: "Expenses", amountMinor: report.totalExpensesMinor, type: "EXPENSE" as const },
+  ];
+
+  const visibleSections = report.sections.map((section) => ({
+    ...section,
+    visibleRows: showZero ? section.rows : section.rows.filter((row) => row.balanceMinor !== 0n),
+  }));
 
   return (
     <main className="directory-page">
@@ -114,7 +150,7 @@ export default async function ChartOfAccountsPage({
         <div>
           <h1>Chart of Accounts</h1>
           <p>
-            Live ledger balances as of {formatReportDate(report.balanceDate)} · {activeOfficeName}
+            Balances as of {formatReportDate(report.balanceDate)} · {activeOfficeName}
           </p>
         </div>
         <ReportPicker current="/reports/accounting/chart-of-accounts" options={pickerOptions} />
@@ -130,98 +166,99 @@ export default async function ChartOfAccountsPage({
         </div>
       </header>
 
-      <section className="panel form-panel">
-        <form className="entity-form compact-mapping" method="GET">
-          <fieldset>
-            <legend>Filters</legend>
-            <div className="form-row three">
-              <label>
-                Balance as of
-                <input defaultValue={formatDateInputValue(report.balanceDate)} name="asOfDate" required type="date" />
-              </label>
-              <label>
-                Activity start date
-                <input defaultValue={formatDateInputValue(report.activityStartDate)} name="startDate" required type="date" />
-              </label>
-              <label>
-                Activity end date
-                <input defaultValue={formatDateInputValue(report.activityEndDate)} name="endDate" required type="date" />
-              </label>
-            </div>
-            <div className="form-row three">
-              <label>
-                Office
-                <select defaultValue={officeId ?? ""} name="officeId">
-                  <option value="">All offices</option>
-                  {offices.map((office) => (
-                    <option key={office.id} value={office.id}>
-                      {office.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                Account type
-                <select defaultValue={report.accountType ?? ""} name="accountType">
-                  <option value="">All account types</option>
-                  {accountingAccountTypeSections.map((section) => (
-                    <option key={section.type} value={section.type}>
-                      {section.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                Account
-                <select defaultValue={report.generalLedger.account?.id ?? ""} name="accountId">
-                  {!hasSelectableAccounts ? <option value="">No accounts available</option> : null}
-                  {report.sections.flatMap((section) =>
-                    section.rows.length > 0 ? (
-                      <optgroup key={section.type} label={section.label}>
-                        {section.rows.map((row) => (
-                          <option key={row.id} value={row.id}>
-                            {row.code} · {row.name}
-                          </option>
-                        ))}
-                      </optgroup>
-                    ) : [],
-                  )}
-                </select>
-              </label>
-            </div>
-          </fieldset>
-          <div className="form-actions">
-            <button className="primary" type="submit">
-              Apply filters
-            </button>
+      <section className="loan-summary-metrics coa-summary-metrics" aria-label="Account type totals">
+        {summaryCards.map((card) => (
+          <article key={card.label}>
+            <span>{card.label}</span>
+            <strong>{formatBalance(card.type, card.amountMinor, "UGX")}</strong>
+            <small>As of {formatReportDate(report.balanceDate)}</small>
+          </article>
+        ))}
+      </section>
+
+      <section className="panel report-toolbar">
+        <div className="quick-filters report-toolbar-presets">
+          <span className="quick-filters-label">Activity</span>
+          <div className="quick-filters-pills">
+            {DATE_PRESETS.map((item) => (
+              <Link
+                className={`pill-link ${preset === item.value ? "active" : ""}`}
+                href={`/reports/accounting/chart-of-accounts?${buildReportQueryString({
+                  preset: item.value,
+                  officeId,
+                  accountType: report.accountType,
+                  accountId: report.selectedAccountRow?.id,
+                  showZero: showZero ? "1" : undefined,
+                })}`}
+                key={item.value}
+              >
+                {item.label}
+              </Link>
+            ))}
           </div>
+        </div>
+        <form className="report-toolbar-form" method="GET">
+          <label>
+            As of
+            <input defaultValue={asOfValue} name="asOfDate" required type="date" />
+          </label>
+          <label>
+            From
+            <input defaultValue={startValue} name="startDate" required type="date" />
+          </label>
+          <label>
+            To
+            <input defaultValue={endValue} name="endDate" required type="date" />
+          </label>
+          <label>
+            Office
+            <select defaultValue={officeId ?? ""} name="officeId">
+              <option value="">All offices</option>
+              {offices.map((office) => (
+                <option key={office.id} value={office.id}>
+                  {office.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Type
+            <select defaultValue={report.accountType ?? ""} name="accountType">
+              <option value="">All types</option>
+              {accountingAccountTypeSections.map((section) => (
+                <option key={section.type} value={section.type}>
+                  {section.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          {report.selectedAccountRow ? <input name="accountId" type="hidden" value={report.selectedAccountRow.id} /> : null}
+          <ReportZeroToggle defaultChecked={showZero} label="Show zero balances" name="showZero" />
+          <button className="primary" type="submit">
+            Apply
+          </button>
         </form>
       </section>
 
-      <div style={{ display: "grid", gap: 18, marginTop: 18 }}>
-        {report.sections.map((section) => (
-          <section className="panel" key={section.type}>
-            <div className="panel-heading">
-              <div>
-                <h2>{section.label}</h2>
-                <p>
-                  {section.rows.length.toLocaleString()} account{section.rows.length === 1 ? "" : "s"} · {section.nonZeroCount.toLocaleString()} with
-                  balance
-                </p>
-              </div>
-              <span className="status up-to-date">
-                {formatBalance(section.type, section.totalMinor, "UGX")}
+      <section className="panel coa-ledger">
+        {visibleSections.map((section) => (
+          <details className="coa-section" key={section.type} open={section.visibleRows.length > 0 || Boolean(accountType)}>
+            <summary className="coa-section-heading">
+              <span>{section.label}</span>
+              <span className="coa-section-meta">
+                {section.visibleRows.length.toLocaleString()} shown
+                {!showZero && section.rows.length !== section.visibleRows.length
+                  ? ` · ${section.nonZeroCount.toLocaleString()} with balance`
+                  : ""}
               </span>
-            </div>
-            <div style={{ color: "var(--muted)", fontSize: 11, padding: "0 18px 14px" }}>
-              Current balances use posted journal lines through {formatReportDate(report.balanceDate)}.
-            </div>
-            {section.rows.length === 0 ? (
-              <div className="empty-state" style={{ minHeight: 160 }}>
-                <BookOpenText size={24} />
-                <strong>No {section.label.toLowerCase()} accounts</strong>
-                <p>Create or activate detail accounts of this type to populate this section.</p>
-              </div>
+              <strong className="mono">{formatBalance(section.type, section.totalMinor, "UGX")}</strong>
+            </summary>
+            {section.visibleRows.length === 0 ? (
+              <p className="coa-section-empty">
+                {section.rows.length === 0
+                  ? `No ${section.label.toLowerCase()} accounts yet.`
+                  : "All accounts in this type have a zero balance. Turn on Show zero balances to list them."}
+              </p>
             ) : (
               <div className="table-scroll">
                 <table className="clickable-rows">
@@ -234,24 +271,19 @@ export default async function ChartOfAccountsPage({
                     </tr>
                   </thead>
                   <tbody>
-                    {section.rows.map((row) => {
+                    {section.visibleRows.map((row) => {
                       const rowHref = `/reports/accounting/chart-of-accounts?${buildReportQueryString({
-                        asOfDate: formatDateInputValue(report.balanceDate),
-                        startDate: formatDateInputValue(report.activityStartDate),
-                        endDate: formatDateInputValue(report.activityEndDate),
-                        officeId,
-                        accountType: report.accountType,
+                        ...filterState,
                         accountId: row.id,
+                        preset,
                       })}`;
                       const isSelected = row.id === report.selectedAccountRow?.id;
-
                       return (
-                        <tr key={row.id} style={isSelected ? { background: "#f5f8f4" } : undefined}>
+                        <tr className={isSelected ? "coa-row-selected" : undefined} key={row.id}>
                           <td>
                             <strong>
                               {row.code} · {row.name}
                             </strong>
-                            <small>{accountTypeLabel(row.type)} account</small>
                             <Link aria-label={`Open ${row.name}`} className="row-link" href={rowHref} />
                           </td>
                           <td className="mono">{formatMinor(row.debitTotalMinor, row.currencyCode)}</td>
@@ -266,132 +298,110 @@ export default async function ChartOfAccountsPage({
                 </table>
               </div>
             )}
-          </section>
+          </details>
         ))}
+      </section>
 
-        <section className="panel">
-          <div className="panel-heading">
-            <div>
-              <h2>
-                {report.generalLedger.account
-                  ? `${report.generalLedger.account.code} · ${report.generalLedger.account.name}`
-                  : "Account activity"}
-              </h2>
-              <p>
-                Recent journal movement from {formatReportDate(report.activityStartDate)} to {formatReportDate(report.activityEndDate)}
-              </p>
-            </div>
-            <div style={{ alignItems: "center", display: "flex", flexWrap: "wrap", gap: 8, justifyContent: "flex-end" }}>
+      <section className="panel">
+        <div className="panel-heading">
+          <div>
+            <h2>
+              {report.generalLedger.account
+                ? `${report.generalLedger.account.code} · ${report.generalLedger.account.name}`
+                : "Account activity"}
+            </h2>
+            <p>
+              {report.generalLedger.account
+                ? `${formatReportDate(report.activityStartDate)} – ${formatReportDate(report.activityEndDate)}`
+                : "Select an account in the list to see recent journal movement."}
+            </p>
+          </div>
+          {report.generalLedger.account ? (
+            <div className="coa-activity-actions">
               {selectedBalance && report.selectedAccountRow ? (
                 <span className="status up-to-date">
-                  Current {formatMinor(selectedBalance.absoluteMinor, report.selectedAccountRow.currencyCode)} {sideLabel(selectedBalance.balanceSide)}
+                  {formatMinor(selectedBalance.absoluteMinor, report.selectedAccountRow.currencyCode)}{" "}
+                  {sideLabel(selectedBalance.balanceSide)}
                 </span>
               ) : null}
               <Link className="secondary-action" href={generalLedgerHref}>
                 Open General Ledger
               </Link>
             </div>
-          </div>
+          ) : null}
+        </div>
 
-          {!report.generalLedger.account ? (
-            <div className="empty-state" style={{ minHeight: 160 }}>
-              <BookOpenText size={28} />
-              <strong>No ledger accounts available</strong>
-              <p>Configure detail GL accounts before browsing ledger balances.</p>
-            </div>
-          ) : !report.generalLedger.hasActivity ? (
-            <div className="empty-state" style={{ minHeight: 160 }}>
-              <BookOpenText size={28} />
-              <strong>No posted entries in the selected activity window</strong>
-              <p>
-                This account currently stands at{" "}
-                {selectedBalance
-                  ? formatMinor(selectedBalance.absoluteMinor, report.generalLedger.account.currencyCode)
-                  : formatMinor(0n, report.generalLedger.account.currencyCode)}
-                {selectedBalance ? ` ${sideLabel(selectedBalance.balanceSide)}` : ""}, but there were no movements in this period.
-              </p>
-            </div>
-          ) : (
-            <>
-              <div style={{ color: "var(--muted)", display: "flex", flexWrap: "wrap", fontSize: 11, gap: 14, padding: "14px 18px" }}>
-                <span>
-                  {report.generalLedger.journalCount.toLocaleString()} posted journal{report.generalLedger.journalCount === 1 ? "" : "s"}
-                </span>
-                <span>
-                  {report.generalLedger.lineCount.toLocaleString()} ledger line{report.generalLedger.lineCount === 1 ? "" : "s"}
-                </span>
-                {activityClosingBalance && report.generalLedger.account ? (
-                  <span>
-                    Activity-window closing {formatMinor(activityClosingBalance.absoluteMinor, report.generalLedger.account.currencyCode)}{" "}
-                    {sideLabel(activityClosingBalance.balanceSide)}
-                  </span>
-                ) : null}
-              </div>
-              <div className="table-scroll">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Date</th>
-                      <th>Journal</th>
-                      <th>Office</th>
-                      <th>Memo</th>
-                      <th>Debit</th>
-                      <th>Credit</th>
-                      <th>Running balance</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {report.generalLedger.entries.map((entry) => {
-                      const running = summarizeBalance(report.generalLedger.account!.type, entry.runningBalanceMinor);
-                      return (
-                        <tr key={entry.id}>
-                          <td>{formatReportDate(entry.businessDate)}</td>
-                          <td>
-                            <strong>{entry.referenceType.replaceAll("_", " ")}</strong>
-                            <small>{entry.referenceId ?? entry.journalId}</small>
-                          </td>
-                          <td>{entry.officeName}</td>
-                          <td>{journalLineDescription(entry.narration, entry.memo)}</td>
-                          <td className="mono">
-                            {entry.direction === "DEBIT" ? formatMinor(entry.amountMinor, report.generalLedger.account!.currencyCode) : "—"}
-                          </td>
-                          <td className="mono">
-                            {entry.direction === "CREDIT" ? formatMinor(entry.amountMinor, report.generalLedger.account!.currencyCode) : "—"}
-                          </td>
-                          <td className="mono">
-                            {formatMinor(running.absoluteMinor, report.generalLedger.account!.currencyCode)} {sideLabel(running.balanceSide)}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                    <tr>
+        {!report.generalLedger.account ? (
+          <p className="coa-section-empty">Click any account above to load its activity for the selected dates.</p>
+        ) : !report.generalLedger.hasActivity ? (
+          <p className="coa-section-empty">
+            No journals from {formatReportDate(report.activityStartDate)} to {formatReportDate(report.activityEndDate)}.
+            {selectedBalance
+              ? ` Current balance remains ${formatMinor(selectedBalance.absoluteMinor, report.generalLedger.account.currencyCode)} ${sideLabel(selectedBalance.balanceSide)}.`
+              : ""}
+          </p>
+        ) : (
+          <div className="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Journal</th>
+                  <th>Office</th>
+                  <th>Memo</th>
+                  <th>Debit</th>
+                  <th>Credit</th>
+                  <th>Running balance</th>
+                </tr>
+              </thead>
+              <tbody>
+                {report.generalLedger.entries.map((entry) => {
+                  const running = summarizeBalance(report.generalLedger.account!.type, entry.runningBalanceMinor);
+                  return (
+                    <tr key={entry.id}>
+                      <td>{formatReportDate(entry.businessDate)}</td>
                       <td>
-                        <strong>Totals</strong>
+                        <strong>{entry.referenceType.replaceAll("_", " ")}</strong>
+                        <small>{entry.referenceId ?? entry.journalId}</small>
                       </td>
-                      <td>—</td>
-                      <td>—</td>
-                      <td>—</td>
+                      <td>{entry.officeName}</td>
+                      <td>{journalLineDescription(entry.narration, entry.memo)}</td>
                       <td className="mono">
-                        <strong>{formatMinor(report.generalLedger.debitTotalMinor, report.generalLedger.account.currencyCode)}</strong>
-                      </td>
-                      <td className="mono">
-                        <strong>{formatMinor(report.generalLedger.creditTotalMinor, report.generalLedger.account.currencyCode)}</strong>
+                        {entry.direction === "DEBIT" ? formatMinor(entry.amountMinor, report.generalLedger.account!.currencyCode) : "—"}
                       </td>
                       <td className="mono">
-                        <strong>
-                          {activityClosingBalance
-                            ? `${formatMinor(activityClosingBalance.absoluteMinor, report.generalLedger.account.currencyCode)} ${sideLabel(activityClosingBalance.balanceSide)}`
-                            : "—"}
-                        </strong>
+                        {entry.direction === "CREDIT" ? formatMinor(entry.amountMinor, report.generalLedger.account!.currencyCode) : "—"}
+                      </td>
+                      <td className="mono">
+                        {formatMinor(running.absoluteMinor, report.generalLedger.account!.currencyCode)} {sideLabel(running.balanceSide)}
                       </td>
                     </tr>
-                  </tbody>
-                </table>
-              </div>
-            </>
-          )}
-        </section>
-      </div>
+                  );
+                })}
+                <tr>
+                  <td>
+                    <strong>Totals</strong>
+                  </td>
+                  <td colSpan={3} />
+                  <td className="mono">
+                    <strong>{formatMinor(report.generalLedger.debitTotalMinor, report.generalLedger.account.currencyCode)}</strong>
+                  </td>
+                  <td className="mono">
+                    <strong>{formatMinor(report.generalLedger.creditTotalMinor, report.generalLedger.account.currencyCode)}</strong>
+                  </td>
+                  <td className="mono">
+                    <strong>
+                      {activityClosingBalance
+                        ? `${formatMinor(activityClosingBalance.absoluteMinor, report.generalLedger.account.currencyCode)} ${sideLabel(activityClosingBalance.balanceSide)}`
+                        : "—"}
+                    </strong>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
     </main>
   );
 }
