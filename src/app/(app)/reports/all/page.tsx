@@ -9,11 +9,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { flattenReportLinks, loadVisibleReportSections } from "@/modules/reports/report-catalog";
 
-/**
- * Flat "All Reports" registry, mirroring iLend's `#/reports/all` master list: every canned
- * report the current user may open, in one sortable-by-eye table (Report name / Category /
- * Type / actions), instead of the card-grid grouping on the main /reports directory page.
- */
+/** Flat registry of every report the current user may open, in one table. */
 export default async function AllReportsPage() {
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session) redirect("/sign-in");
@@ -39,9 +35,8 @@ export default async function AllReportsPage() {
       <Breadcrumbs items={[{ href: "/reports", label: "Reports" }, { label: "All reports" }]} />
       <header className="directory-header">
         <div>
-          <p className="eyebrow">Master registry</p>
           <h1>All reports</h1>
-          <p>Every canned report available to your permission group, in one list — report name, category, and type, just like the legacy reports registry.</p>
+          <p>Every report available to you, with category, type, and export links.</p>
         </div>
         {totalVisible > 0 ? <ReportPicker current="" options={pickerOptions} /> : null}
       </header>

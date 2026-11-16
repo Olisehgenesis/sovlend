@@ -39,7 +39,6 @@ export default async function GuarantorExposureReportPage() {
       <Breadcrumbs items={[{ label: "Reports", href: "/reports" }, { label: "Insights", href: "/reports" }, { label: "Guarantor exposure" }]} />
       <header className="directory-header">
         <div>
-          <p className="eyebrow">SovLend-only insight</p>
           <h1>Guarantor exposure report</h1>
           <p>
             {report.summary.repeatedGuarantorCount.toLocaleString()} repeat guarantors · {report.summary.concentrationRiskCount.toLocaleString()} concentration-risk matches · {formatMinor(report.summary.totalOutstandingMinor, report.summary.currencyCode)} backed
@@ -57,8 +56,8 @@ export default async function GuarantorExposureReportPage() {
 
       <section className="readiness-banner attention">
         <div>
-          <strong>Approximate matching heuristic</strong>
-          <span>Guarantors are deduplicated across loans by normalized first name + last name + phone digits because the source schema has no shared guarantor person ID.</span>
+          <strong>Name and phone matching</strong>
+          <span>Guarantors are grouped by normalized name and phone when a shared person ID is not available.</span>
         </div>
         <div className="readiness-progress"><i style={{ width: "100%" }} /></div>
       </section>
@@ -69,7 +68,6 @@ export default async function GuarantorExposureReportPage() {
             <h2>Repeat guarantors</h2>
             <p>Generated {formatDisplayDateTime(new Date(report.generatedAt))}</p>
           </div>
-          <ShieldAlert size={19} />
         </div>
         <DataTable
           columns={[

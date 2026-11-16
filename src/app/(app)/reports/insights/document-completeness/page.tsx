@@ -38,7 +38,6 @@ export default async function DocumentCompletenessReportPage() {
       <Breadcrumbs items={[{ label: "Reports", href: "/reports" }, { label: "Insights", href: "/reports" }, { label: "KYC/document completeness" }]} />
       <header className="directory-header">
         <div>
-          <p className="eyebrow">SovLend-only insight</p>
           <h1>KYC / document completeness report</h1>
           <p>{report.summary.loanCount.toLocaleString()} active or in-arrears loans · {report.summary.missingAllDocumentsCount.toLocaleString()} with no documents at all</p>
         </div>
@@ -54,8 +53,8 @@ export default async function DocumentCompletenessReportPage() {
 
       <section className="readiness-banner attention">
         <div>
-          <strong>Best-effort document matching</strong>
-          <span>Coverage is inferred from fuzzy document-name patterns already in the tenant data (for example National ID, clientSignature, Loan agreement, Guarantor form). It is a gap finder, not a hard compliance gate.</span>
+          <strong>Pattern-based coverage</strong>
+          <span>Missing documents are inferred from file-name patterns in tenant data; use this as a gap finder, not a compliance sign-off.</span>
         </div>
         <div className="readiness-progress"><i style={{ width: "100%" }} /></div>
       </section>
@@ -66,7 +65,6 @@ export default async function DocumentCompletenessReportPage() {
             <h2>Coverage summary</h2>
             <p>Generated {formatDisplayDateTime(new Date(report.generatedAt))}</p>
           </div>
-          <FileWarning size={19} />
         </div>
         <dl className="detail-grid">
           <div><dt>Loans with no documents</dt><dd>{report.summary.missingAllDocumentsCount.toLocaleString()}</dd></div>

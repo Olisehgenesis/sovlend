@@ -1,10 +1,12 @@
-import { CircleDollarSign, Download } from "lucide-react";
+import { Download } from "lucide-react";
 import { headers } from "next/headers";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { Breadcrumbs } from "@/components/breadcrumbs";
+import { parseReportDatePreset, ReportDatePresetPills } from "@/components/report-date-presets";
 import { ReportPicker } from "@/components/report-picker";
+import { formatDateInputValue, resolveDatePreset } from "@/modules/reports/domain/accounting-report";
 import { ReportZeroToggle } from "@/components/report-zero-toggle";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
@@ -21,7 +23,7 @@ import {
 export default async function CollectionByOfficerPage({
   searchParams,
 }: {
-  searchParams: Promise<{ date?: string; showZero?: string }>;
+  searchParams: Promise<{ date?: string; showZero?: string; preset?: string }>;
 }) {
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session) redirect("/sign-in");
@@ -36,10 +38,14 @@ export default async function CollectionByOfficerPage({
 
   const params = await searchParams;
   const showZero = params.showZero === "1";
-  const query = querySuffix(params);
+  const preset = parseReportDatePreset(params.preset);
+  const dateParam = preset
+    ? formatDateInputValue(resolveDatePreset(new Date(), preset).endDate)
+    : params.date;
+  const query = querySuffix({ date: dateParam, showZero: params.showZero });
   const [report, pickerOptions] = await Promise.all([
     loadCollectionByOfficerReport(prisma, context.scope, {
-      date: params.date,
+      date: dateParam,
       hideZeroCollection: !showZero,
     }),
     loadReportPickerOptions(prisma, session.user.id, context.scope.organizationId),
@@ -58,56 +64,33 @@ export default async function CollectionByOfficerPage({
       />
       <header className="directory-header">
         <div>
-          <p className="eyebrow">Operations report</p>
           <h1>Expected daily collection per officer</h1>
-          <p>
-            Scheduled collections for {formatReportDate(report.businessDate)}, with overdue arrears kept separate for recovery follow-up.
-          </p>
+          <p>Scheduled collections for {formatReportDate(report.businessDate)}.</p>
         </div>
         <ReportPicker current="/reports/operations/collection-by-officer" options={pickerOptions} />
         <div className="header-actions">
           <a className="secondary-action" href={exportHref}>
             <Download size={16} /> Export CSV
           </a>
-          <Link className="secondary-action" href={apiHref}>
-            API JSON
-          </Link>
-          <Link className="secondary-action" href="/reports">
-            Reports
-          </Link>
         </div>
       </header>
 
-      <section className="panel">
-        <div className="panel-heading">
-          <div>
-            <h2>Filters</h2>
-            <p>Run the officer view for any business date.</p>
-          </div>
-        </div>
-        <form className="entity-form compact-mapping" method="GET">
-          <fieldset>
-            <legend>Business date</legend>
-            <div className="form-row">
-              <label>
-                Date
-                <input defaultValue={isoDate(report.businessDate)} name="date" type="date" />
-              </label>
-            </div>
-            <ReportZeroToggle
-              defaultChecked={showZero}
-              label="Show officers with nothing due"
-              name="showZero"
-            />
-          </fieldset>
-          <div className="form-actions">
-            <button className="primary" type="submit">
-              Apply filters
-            </button>
-            <Link className="secondary-action" href="/reports/operations/collection-by-officer">
-              Reset
-            </Link>
-          </div>
+      <section className="panel report-toolbar">
+        <ReportDatePresetPills
+          active={preset}
+          label="As of"
+          pathname="/reports/operations/collection-by-officer"
+          query={{ showZero: showZero ? "1" : undefined }}
+        />
+        <form className="report-toolbar-form" method="GET">
+          <label>
+            Date
+            <input defaultValue={isoDate(report.businessDate)} name="date" type="date" />
+          </label>
+          <ReportZeroToggle defaultChecked={showZero} label="Show officers with nothing due" name="showZero" />
+          <button className="primary" type="submit">
+            Apply
+          </button>
         </form>
       </section>
 
@@ -120,14 +103,9 @@ export default async function CollectionByOfficerPage({
               {!showZero ? " · officers with nothing due are hidden" : ""}
             </p>
           </div>
-          <CircleDollarSign size={19} />
         </div>
         {report.rows.length === 0 ? (
-          <div className="empty-state">
-            <CircleDollarSign size={28} />
-            <strong>No due installments for this date</strong>
-            <p>Try another date or wait for new schedules to fall due.</p>
-          </div>
+          <p className="coa-section-empty">No due installments for this date.</p>
         ) : (
           <div className="table-scroll">
             <table>

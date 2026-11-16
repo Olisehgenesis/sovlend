@@ -64,7 +64,6 @@ export default async function ActiveLoansPage({
       />
       <header className="directory-header">
         <div>
-          <p className="eyebrow">Operations report</p>
           <h1>Active Loans</h1>
           <p>{report.rows.length.toLocaleString()} open loan account(s), including {inArrearsCount.toLocaleString()} currently in arrears.</p>
         </div>
@@ -73,58 +72,36 @@ export default async function ActiveLoansPage({
           <a className="secondary-action" href={exportHref}>
             <Download size={16} /> Export CSV
           </a>
-          <Link className="secondary-action" href={apiHref}>
-            API JSON
-          </Link>
-          <Link className="secondary-action" href="/reports">
-            Reports
-          </Link>
         </div>
       </header>
 
-      <section className="panel">
-        <div className="panel-heading">
-          <div>
-            <h2>Filters</h2>
-            <p>Slice the active-loan register by office or assigned loan officer.</p>
-          </div>
-        </div>
-        <form className="entity-form compact-mapping" method="GET">
-          <fieldset>
-            <legend>Portfolio filters</legend>
-            <div className="form-row">
-              <label>
-                Office
-                <select defaultValue={params.officeId ?? ""} name="officeId">
-                  <option value="">All offices</option>
-                  {context.offices.map((office) => (
-                    <option key={office.id} value={office.id}>
-                      {office.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                Loan officer
-                <select defaultValue={params.loanOfficerId ?? ""} name="loanOfficerId">
-                  <option value="">All officers</option>
-                  {context.officers.map((officer) => (
-                    <option key={officer.id} value={officer.id}>
-                      {officer.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </div>
-          </fieldset>
-          <div className="form-actions">
-            <button className="primary" type="submit">
-              Apply filters
-            </button>
-            <Link className="secondary-action" href="/reports/operations/active-loans">
-              Reset
-            </Link>
-          </div>
+      <section className="panel report-toolbar">
+        <form className="report-toolbar-form" method="GET">
+          <label>
+            Office
+            <select defaultValue={params.officeId ?? ""} name="officeId">
+              <option value="">All offices</option>
+              {context.offices.map((office) => (
+                <option key={office.id} value={office.id}>
+                  {office.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Loan officer
+            <select defaultValue={params.loanOfficerId ?? ""} name="loanOfficerId">
+              <option value="">All officers</option>
+              {context.officers.map((officer) => (
+                <option key={officer.id} value={officer.id}>
+                  {officer.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button className="primary" type="submit">
+            Apply
+          </button>
         </form>
       </section>
 

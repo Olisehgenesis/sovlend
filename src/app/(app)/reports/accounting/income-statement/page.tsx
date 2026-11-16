@@ -1,9 +1,10 @@
-import { Download, ReceiptText } from "lucide-react";
+import { Download } from "lucide-react";
 import { headers } from "next/headers";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { Breadcrumbs } from "@/components/breadcrumbs";
+import { ReportDatePresetPills, parseReportDatePreset } from "@/components/report-date-presets";
 import { ReportPicker } from "@/components/report-picker";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
@@ -21,13 +22,14 @@ import {
   listAccountingReportOffices,
   normalizeDateRange,
   parseDateInput,
+  resolveDatePreset,
   resolveOfficeFilter,
 } from "@/modules/reports/domain/accounting-report";
 
 export default async function IncomeStatementPage({
   searchParams,
 }: {
-  searchParams: Promise<{ startDate?: string; endDate?: string; officeId?: string }>;
+  searchParams: Promise<{ startDate?: string; endDate?: string; officeId?: string; preset?: string }>;
 }) {
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session) redirect("/sign-in");
@@ -48,27 +50,28 @@ export default async function IncomeStatementPage({
     listAccountingReportOffices(prisma, scope),
     loadReportPickerOptions(prisma, session.user.id, scope.organizationId),
   ]);
-  const { startDate, endDate } = normalizeDateRange(
-    parseDateInput(params.startDate, defaults.startDate),
-    parseDateInput(params.endDate, defaults.endDate),
-  );
+  const preset = parseReportDatePreset(params.preset);
+  const { startDate, endDate } = preset
+    ? resolveDatePreset(new Date(), preset)
+    : normalizeDateRange(
+        parseDateInput(params.startDate, defaults.startDate),
+        parseDateInput(params.endDate, defaults.endDate),
+      );
   const officeId = resolveOfficeFilter(offices, params.officeId ?? null);
   const report = await getIncomeStatementReport(prisma, scope, { startDate, endDate, officeId });
   const activeOfficeName = offices.find((office) => office.id === officeId)?.name ?? "All offices";
-  const queryString = buildReportQueryString({
-    startDate: formatDateInputValue(startDate),
-    endDate: formatDateInputValue(endDate),
-    officeId,
-  });
-  const apiHref = `/api/reports/accounting/income-statement${queryString ? `?${queryString}` : ""}`;
-  const exportHref = `${apiHref}${queryString ? "&" : "?"}format=csv`;
+  const startValue = formatDateInputValue(startDate);
+  const endValue = formatDateInputValue(endDate);
+  const queryString = buildReportQueryString({ startDate: startValue, endDate: endValue, officeId });
+  const exportHref = `/api/reports/accounting/income-statement${queryString ? `?${queryString}&` : "?"}format=csv`;
   const generalLedgerHref = (accountId: string) =>
     `/reports/accounting/general-ledger?${buildReportQueryString({
-      startDate: formatDateInputValue(startDate),
-      endDate: formatDateInputValue(endDate),
+      startDate: startValue,
+      endDate: endValue,
       officeId,
       accountId,
     })}`;
+  const netLabel = report.netIncomeMinor >= 0n ? "Net income" : "Net loss";
 
   return (
     <main className="directory-page">
@@ -77,7 +80,7 @@ export default async function IncomeStatementPage({
         <div>
           <h1>Income Statement</h1>
           <p>
-            Profit and loss from {formatReportDate(report.startDate)} to {formatReportDate(report.endDate)} · {activeOfficeName}
+            {formatReportDate(report.startDate)} – {formatReportDate(report.endDate)} · {activeOfficeName}
           </p>
         </div>
         <ReportPicker current="/reports/accounting/income-statement" options={pickerOptions} />
@@ -88,59 +91,50 @@ export default async function IncomeStatementPage({
         </div>
       </header>
 
-      <section className="metrics" style={{ marginTop: 18 }}>
-        <article className="metric-card">
-          <span>Total revenue</span>
+      <section className="loan-summary-metrics coa-summary-metrics" aria-label="Income statement totals" style={{ gridTemplateColumns: "repeat(3, minmax(0, 1fr))" }}>
+        <article>
+          <span>Revenue</span>
           <strong>{formatMinor(report.revenue.totalMinor, "UGX")}</strong>
-          <small>
-            {formatReportDate(report.startDate)} – {formatReportDate(report.endDate)}
-          </small>
         </article>
-        <article className="metric-card">
-          <span>Total expenses</span>
+        <article>
+          <span>Expenses</span>
           <strong>{formatMinor(report.expenses.totalMinor, "UGX")}</strong>
-          <small>
-            {formatReportDate(report.startDate)} – {formatReportDate(report.endDate)}
-          </small>
         </article>
-        <article className="metric-card">
-          <span>{report.netIncomeMinor >= 0n ? "Net income" : "Net loss"}</span>
+        <article>
+          <span>{netLabel}</span>
           <strong>{formatMinor(report.netIncomeMinor, "UGX")}</strong>
-          <small>{activeOfficeName}</small>
         </article>
       </section>
 
-      <section className="panel form-panel">
-        <form className="entity-form compact-mapping" method="GET">
-          <fieldset>
-            <legend>Filters</legend>
-            <div className="form-row three">
-              <label>
-                Start date
-                <input defaultValue={formatDateInputValue(startDate)} name="startDate" required type="date" />
-              </label>
-              <label>
-                End date
-                <input defaultValue={formatDateInputValue(endDate)} name="endDate" required type="date" />
-              </label>
-              <label>
-                Office
-                <select defaultValue={officeId ?? ""} name="officeId">
-                  <option value="">All offices</option>
-                  {offices.map((office) => (
-                    <option key={office.id} value={office.id}>
-                      {office.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </div>
-          </fieldset>
-          <div className="form-actions">
-            <button className="primary" type="submit">
-              Apply filters
-            </button>
-          </div>
+      <section className="panel report-toolbar">
+        <ReportDatePresetPills
+          active={preset}
+          pathname="/reports/accounting/income-statement"
+          query={{ officeId }}
+        />
+        <form className="report-toolbar-form" method="GET">
+          <label>
+            From
+            <input defaultValue={startValue} name="startDate" required type="date" />
+          </label>
+          <label>
+            To
+            <input defaultValue={endValue} name="endDate" required type="date" />
+          </label>
+          <label>
+            Office
+            <select defaultValue={officeId ?? ""} name="officeId">
+              <option value="">All offices</option>
+              {offices.map((office) => (
+                <option key={office.id} value={office.id}>
+                  {office.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button className="primary" type="submit">
+            Apply
+          </button>
         </form>
       </section>
 
@@ -149,21 +143,13 @@ export default async function IncomeStatementPage({
           <div>
             <h2>Profit and loss</h2>
             <p>
-              {report.journalCount.toLocaleString()} posted journal{report.journalCount === 1 ? "" : "s"} · {report.lineCount.toLocaleString()} line
-              {report.lineCount === 1 ? "" : "s"}
+              {report.journalCount.toLocaleString()} journals · {report.lineCount.toLocaleString()} lines · {netLabel}
             </p>
           </div>
-          <span className={`status ${report.netIncomeMinor >= 0n ? "up-to-date" : "review"}`}>
-            {report.netIncomeMinor >= 0n ? "Net income" : "Net loss"}
-          </span>
         </div>
 
         {!report.hasActivity ? (
-          <div className="empty-state">
-            <ReceiptText size={28} />
-            <strong>No posted journal entries yet</strong>
-            <p>The income statement will populate once posted revenue or expense journals exist in the selected period.</p>
-          </div>
+          <p className="coa-section-empty">No posted revenue or expense journals in this period.</p>
         ) : (
           <div className="table-scroll">
             <table className="clickable-rows">
@@ -177,19 +163,28 @@ export default async function IncomeStatementPage({
                 <StatementSection
                   id="revenue-section"
                   label="Revenue"
-                  rows={report.revenue.rows.map((row) => ({ id: row.id, label: `${row.code} · ${row.name}`, amountMinor: row.balanceMinor, href: generalLedgerHref(row.id) }))}
+                  rows={report.revenue.rows.map((row) => ({
+                    id: row.id,
+                    label: `${row.code} · ${row.name}`,
+                    amountMinor: row.balanceMinor,
+                    href: generalLedgerHref(row.id),
+                  }))}
                   totalMinor={report.revenue.totalMinor}
                 />
                 <StatementSection
                   id="expenses-section"
                   label="Expenses"
-                  rows={report.expenses.rows.map((row) => ({ id: row.id, label: `${row.code} · ${row.name}`, amountMinor: row.balanceMinor, href: generalLedgerHref(row.id) }))}
+                  rows={report.expenses.rows.map((row) => ({
+                    id: row.id,
+                    label: `${row.code} · ${row.name}`,
+                    amountMinor: row.balanceMinor,
+                    href: generalLedgerHref(row.id),
+                  }))}
                   totalMinor={report.expenses.totalMinor}
                 />
-
                 <tr>
                   <td>
-                    <strong>Net income</strong>
+                    <strong>{netLabel}</strong>
                   </td>
                   <td className="mono">
                     <strong>{formatMinor(report.netIncomeMinor, "UGX")}</strong>

@@ -1,10 +1,12 @@
-import { CircleDollarSign, Download } from "lucide-react";
+import { Download } from "lucide-react";
 import { headers } from "next/headers";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { Breadcrumbs } from "@/components/breadcrumbs";
+import { parseReportDatePreset, ReportDatePresetPills } from "@/components/report-date-presets";
 import { ReportPicker } from "@/components/report-picker";
+import { formatDateInputValue, resolveDatePreset } from "@/modules/reports/domain/accounting-report";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { permissions } from "@/modules/identity/domain/permissions";
@@ -15,7 +17,7 @@ import { loadDisbursalCohortReport, loadOperationsReportContext } from "@/module
 export default async function DisbursalCohortPage({
   searchParams,
 }: {
-  searchParams: Promise<{ startDate?: string; endDate?: string; loanOfficerId?: string }>;
+  searchParams: Promise<{ startDate?: string; endDate?: string; loanOfficerId?: string; preset?: string }>;
 }) {
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session) redirect("/sign-in");
@@ -30,13 +32,14 @@ export default async function DisbursalCohortPage({
   if (!context.allowed) redirect("/reports");
 
   const params = await searchParams;
-  const query = querySuffix(params);
+  const preset = parseReportDatePreset(params.preset);
+  const resolvedRange = preset ? resolveDatePreset(new Date(), preset) : null;
+  const startDate = resolvedRange ? formatDateInputValue(resolvedRange.startDate) : params.startDate;
+  const endDate = resolvedRange ? formatDateInputValue(resolvedRange.endDate) : params.endDate;
+  const filterParams = { startDate, endDate, loanOfficerId: params.loanOfficerId };
+  const query = querySuffix(filterParams);
   const [report, pickerOptions] = await Promise.all([
-    loadDisbursalCohortReport(prisma, context.scope, {
-      startDate: params.startDate,
-      endDate: params.endDate,
-      loanOfficerId: params.loanOfficerId,
-    }),
+    loadDisbursalCohortReport(prisma, context.scope, filterParams),
     loadReportPickerOptions(prisma, session.user.id, context.scope.organizationId),
   ]);
   const apiHref = `/api/reports/operations/disbursal-cohort${query}`;
@@ -53,64 +56,46 @@ export default async function DisbursalCohortPage({
       />
       <header className="directory-header">
         <div>
-          <p className="eyebrow">Operations report</p>
           <h1>All loans by disbursal period</h1>
-          <p>Monthly disbursal cohorts across your visible portfolio, newest month first.</p>
+          <p>Monthly disbursal cohorts, newest month first.</p>
         </div>
         <ReportPicker current="/reports/operations/disbursal-cohort" options={pickerOptions} />
         <div className="header-actions">
           <a className="secondary-action" href={exportHref}>
             <Download size={16} /> Export CSV
           </a>
-          <Link className="secondary-action" href={apiHref}>
-            API JSON
-          </Link>
-          <Link className="secondary-action" href="/reports">
-            Reports
-          </Link>
         </div>
       </header>
 
-      <section className="panel">
-        <div className="panel-heading">
-          <div>
-            <h2>Filters</h2>
-            <p>Narrow cohorts by date range or a single loan officer.</p>
-          </div>
-        </div>
-        <form className="entity-form compact-mapping" method="GET">
-          <fieldset>
-            <legend>Disbursal window</legend>
-            <div className="form-row three">
-              <label>
-                Start date
-                <input defaultValue={params.startDate ?? ""} name="startDate" type="date" />
-              </label>
-              <label>
-                End date
-                <input defaultValue={params.endDate ?? ""} name="endDate" type="date" />
-              </label>
-              <label>
-                Loan officer
-                <select defaultValue={params.loanOfficerId ?? ""} name="loanOfficerId">
-                  <option value="">All officers</option>
-                  {context.officers.map((officer) => (
-                    <option key={officer.id} value={officer.id}>
-                      {officer.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </div>
-          </fieldset>
-          <div className="form-actions">
-            <button className="primary" type="submit">
-              Apply filters
-            </button>
-            <Link className="secondary-action" href="/reports/operations/disbursal-cohort">
-              Reset
-            </Link>
-          </div>
+      <section className="panel report-toolbar">
+        <ReportDatePresetPills
+          active={preset}
+          pathname="/reports/operations/disbursal-cohort"
+          query={{ loanOfficerId: params.loanOfficerId }}
+        />
+        <form className="report-toolbar-form" method="GET">
+          <label>
+            From
+            <input defaultValue={startDate ?? ""} name="startDate" type="date" />
+          </label>
+          <label>
+            To
+            <input defaultValue={endDate ?? ""} name="endDate" type="date" />
+          </label>
+          <label>
+            Loan officer
+            <select defaultValue={params.loanOfficerId ?? ""} name="loanOfficerId">
+              <option value="">All officers</option>
+              {context.officers.map((officer) => (
+                <option key={officer.id} value={officer.id}>
+                  {officer.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button className="primary" type="submit">
+            Apply
+          </button>
         </form>
       </section>
 
@@ -120,14 +105,9 @@ export default async function DisbursalCohortPage({
             <h2>Monthly disbursal cohorts</h2>
             <p>{report.rows.length.toLocaleString()} cohort row(s)</p>
           </div>
-          <CircleDollarSign size={19} />
         </div>
         {report.rows.length === 0 ? (
-          <div className="empty-state">
-            <CircleDollarSign size={28} />
-            <strong>No disbursals match these filters</strong>
-            <p>Try widening the dates or removing the officer filter.</p>
-          </div>
+          <p className="coa-section-empty">No disbursals match these filters.</p>
         ) : (
           <div className="table-scroll">
             <table>

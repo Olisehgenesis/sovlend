@@ -1,9 +1,10 @@
-import { HandCoins, Download } from "lucide-react";
+import { Download } from "lucide-react";
 import { headers } from "next/headers";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { Breadcrumbs } from "@/components/breadcrumbs";
+import { REPORT_DATE_PRESETS, parseReportDatePreset } from "@/components/report-date-presets";
 import { ReportPicker } from "@/components/report-picker";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
@@ -24,19 +25,11 @@ import {
 
 type CollectionsDatePreset = ReportDatePreset | "all_time";
 
-const DATE_PRESETS: { value: CollectionsDatePreset; label: string }[] = [
-  { value: "today", label: "Today" },
-  { value: "week", label: "This week" },
-  { value: "month", label: "This month" },
-  { value: "year", label: "This year" },
-  { value: "all_time", label: "All time" },
-];
-
 function parseCollectionsPreset(value?: string | null): CollectionsDatePreset | null {
   if (value === "today" || value === "week" || value === "month" || value === "year" || value === "all_time") {
     return value;
   }
-  return null;
+  return parseReportDatePreset(value) as CollectionsDatePreset | null;
 }
 
 export default async function CollectionsReportPage({
@@ -58,18 +51,19 @@ export default async function CollectionsReportPage({
 
   const params = await searchParams;
   const preset = parseCollectionsPreset(params.preset);
+  const standardPreset = preset && preset !== "all_time" ? preset : parseReportDatePreset(params.preset);
   const resolvedRange =
     preset === "all_time"
       ? { startDate: null as Date | null, endDate: null as Date | null }
-      : preset
-        ? resolveDatePreset(new Date(), preset)
+      : standardPreset
+        ? resolveDatePreset(new Date(), standardPreset)
         : { startDate: null as Date | null, endDate: null as Date | null };
   const startDateValue =
-    preset && preset !== "all_time"
+    standardPreset
       ? formatDateInputValue(resolvedRange.startDate as Date)
       : params.startDate ?? "";
   const endDateValue =
-    preset && preset !== "all_time"
+    standardPreset
       ? formatDateInputValue(resolvedRange.endDate as Date)
       : params.endDate ?? "";
   const activePreset =
@@ -88,8 +82,7 @@ export default async function CollectionsReportPage({
     }),
     loadReportPickerOptions(prisma, session.user.id, context.scope.organizationId),
   ]);
-  const apiHref = `/api/reports/operations/collections${query}`;
-  const exportHref = `${apiHref}${query ? "&" : "?"}format=csv`;
+  const exportHref = `/api/reports/operations/collections${query}${query ? "&" : "?"}format=csv`;
   const rangeLabel =
     report.startDate && report.endDate
       ? `${formatReportDate(report.startDate)} – ${formatReportDate(report.endDate)}`
@@ -106,31 +99,38 @@ export default async function CollectionsReportPage({
       />
       <header className="directory-header">
         <div>
-          <p className="eyebrow">Operations report</p>
           <h1>Collections</h1>
-          <p>Actual receipts ledger of every repayment posted, newest first, with a full principal/interest/fees/penalty breakdown · {rangeLabel}</p>
+          <p>
+            Repayment receipts with principal, interest, fees, and penalty breakdown · {rangeLabel}
+          </p>
         </div>
         <ReportPicker current="/reports/operations/collections" options={pickerOptions} />
         <div className="header-actions">
           <a className="secondary-action" href={exportHref}>
             <Download size={16} /> Export CSV
           </a>
-          <Link className="secondary-action" href={apiHref}>
-            API JSON
-          </Link>
-          <Link className="secondary-action" href="/reports">
-            Reports
-          </Link>
         </div>
       </header>
 
-      <section className="panel form-panel">
-        <div className="quick-filters">
-          <span className="quick-filters-label">Quick range</span>
+      {report.totals.length > 0 ? (
+        <section className="loan-summary-metrics" aria-label="Collection totals">
+          {report.totals.map((row) => (
+            <article key={row.currencyCode}>
+              <span>Total collected ({row.currencyCode})</span>
+              <strong>{formatMinor(row.totalMinor, row.currencyCode)}</strong>
+              <small>{row.transactionCount.toLocaleString()} receipts</small>
+            </article>
+          ))}
+        </section>
+      ) : null}
+
+      <section className="panel report-toolbar">
+        <div className="quick-filters report-toolbar-presets">
+          <span className="quick-filters-label">Range</span>
           <div className="quick-filters-pills">
-            {DATE_PRESETS.map((item) => (
+            {REPORT_DATE_PRESETS.map((item) => (
               <Link
-                className={`pill-link ${activePreset === item.value ? "active" : ""}`}
+                className={`pill-link ${standardPreset === item.value ? "active" : ""}`}
                 href={`/reports/operations/collections?${buildReportQueryString({
                   preset: item.value,
                   officeId: params.officeId,
@@ -140,43 +140,40 @@ export default async function CollectionsReportPage({
                 {item.label}
               </Link>
             ))}
-          </div>
-        </div>
-        <form className="entity-form compact-mapping" method="GET">
-          <fieldset>
-            <legend>Collections filters</legend>
-            <div className="form-row">
-              <label>
-                Start date
-                <input defaultValue={startDateValue} name="startDate" type="date" />
-              </label>
-              <label>
-                End date
-                <input defaultValue={endDateValue} name="endDate" type="date" />
-              </label>
-            </div>
-            <div className="form-row">
-              <label>
-                Office
-                <select defaultValue={params.officeId ?? ""} name="officeId">
-                  <option value="">All offices</option>
-                  {context.offices.map((office) => (
-                    <option key={office.id} value={office.id}>
-                      {office.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </div>
-          </fieldset>
-          <div className="form-actions">
-            <button className="primary" type="submit">
-              Apply filters
-            </button>
-            <Link className="secondary-action" href="/reports/operations/collections">
-              Reset
+            <Link
+              className={`pill-link ${activePreset === "all_time" ? "active" : ""}`}
+              href={`/reports/operations/collections?${buildReportQueryString({
+                preset: "all_time",
+                officeId: params.officeId,
+              })}`}
+            >
+              All time
             </Link>
           </div>
+        </div>
+        <form className="report-toolbar-form" method="GET">
+          <label>
+            From
+            <input defaultValue={startDateValue} name="startDate" type="date" />
+          </label>
+          <label>
+            To
+            <input defaultValue={endDateValue} name="endDate" type="date" />
+          </label>
+          <label>
+            Office
+            <select defaultValue={params.officeId ?? ""} name="officeId">
+              <option value="">All offices</option>
+              {context.offices.map((office) => (
+                <option key={office.id} value={office.id}>
+                  {office.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button className="primary" type="submit">
+            Apply
+          </button>
         </form>
       </section>
 
@@ -186,14 +183,9 @@ export default async function CollectionsReportPage({
             <h2>Collections ledger</h2>
             <p>{report.rows.length.toLocaleString()} repayment receipt(s)</p>
           </div>
-          <HandCoins size={19} />
         </div>
         {report.rows.length === 0 ? (
-          <div className="empty-state">
-            <HandCoins size={28} />
-            <strong>No collections match these filters</strong>
-            <p>Try widening the dates or removing the office filter.</p>
-          </div>
+          <p className="coa-section-empty">No collections for this range.</p>
         ) : (
           <div className="table-scroll">
             <table className="clickable-rows">

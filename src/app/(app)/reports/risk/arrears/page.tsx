@@ -58,7 +58,6 @@ export default async function ArrearsReportPage({
       />
       <header className="directory-header">
         <div>
-          <p className="eyebrow">Portfolio risk</p>
           <h1>Arrears Report</h1>
           <p>
             {report.totals.loanCount.toLocaleString()} loans in arrears · {formatMinor(report.totals.overdueTotalMinor, "UGX")} overdue total · snapshot {generatedAt}
@@ -69,9 +68,6 @@ export default async function ArrearsReportPage({
           <a className="secondary-action" href={exportHref}>
             <Download size={16} /> Export CSV
           </a>
-          <Link className="secondary-action" href={`/api/reports/risk/arrears${querySuffix(filters)}`}>
-            API JSON
-          </Link>
           <Link className="secondary-action" href="/loans?status=IN_ARREARS">
             In-arrears loans
           </Link>
@@ -101,40 +97,33 @@ export default async function ArrearsReportPage({
         </article>
       </section>
 
-      <section className="panel form-panel">
-        <form className="entity-form" method="get">
-          <div className="form-row">
-            <label>
-              <span>Office</span>
-              <select name="officeId" defaultValue={filters.officeId ?? ""}>
-                <option value="">All accessible offices</option>
-                {options.offices.map((office) => (
-                  <option key={office.id} value={office.id}>
-                    {office.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              <span>Loan officer</span>
-              <select name="loanOfficerId" defaultValue={filters.loanOfficerId ?? ""}>
-                <option value="">All loan officers</option>
-                {options.loanOfficers.map((loanOfficer) => (
-                  <option key={loanOfficer.id} value={loanOfficer.id}>
-                    {loanOfficer.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
-          <div className="form-actions">
-            <Link className="secondary-action" href="/reports/risk/arrears">
-              Clear
-            </Link>
-            <button className="primary" type="submit">
-              Apply filters
-            </button>
-          </div>
+      <section className="panel report-toolbar">
+        <form className="report-toolbar-form" method="get">
+          <label>
+            Office
+            <select name="officeId" defaultValue={filters.officeId ?? ""}>
+              <option value="">All accessible offices</option>
+              {options.offices.map((office) => (
+                <option key={office.id} value={office.id}>
+                  {office.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Loan officer
+            <select name="loanOfficerId" defaultValue={filters.loanOfficerId ?? ""}>
+              <option value="">All loan officers</option>
+              {options.loanOfficers.map((loanOfficer) => (
+                <option key={loanOfficer.id} value={loanOfficer.id}>
+                  {loanOfficer.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button className="primary" type="submit">
+            Apply
+          </button>
         </form>
       </section>
 

@@ -1,9 +1,10 @@
-import { Download, Scale } from "lucide-react";
+import { Download } from "lucide-react";
 import { headers } from "next/headers";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { Breadcrumbs } from "@/components/breadcrumbs";
+import { ReportDatePresetPills, parseReportDatePreset } from "@/components/report-date-presets";
 import { ReportPicker } from "@/components/report-picker";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
@@ -20,13 +21,15 @@ import {
   listAccountingReportOffices,
   OPENING_BALANCE_START_DATE,
   parseDateInput,
+  resolveDatePreset,
   resolveOfficeFilter,
+  todayDate,
 } from "@/modules/reports/domain/accounting-report";
 
 export default async function BalanceSheetPage({
   searchParams,
 }: {
-  searchParams: Promise<{ endDate?: string; officeId?: string }>;
+  searchParams: Promise<{ endDate?: string; officeId?: string; preset?: string }>;
 }) {
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session) redirect("/sign-in");
@@ -46,21 +49,19 @@ export default async function BalanceSheetPage({
     listAccountingReportOffices(prisma, scope),
     loadReportPickerOptions(prisma, session.user.id, scope.organizationId),
   ]);
-  const endDate = parseDateInput(params.endDate, new Date());
+  const preset = parseReportDatePreset(params.preset);
+  const endDate = preset
+    ? resolveDatePreset(new Date(), preset).endDate
+    : parseDateInput(params.endDate, todayDate());
   const officeId = resolveOfficeFilter(offices, params.officeId ?? null);
   const report = await getBalanceSheetReport(prisma, scope, { endDate, officeId });
   const activeOfficeName = offices.find((office) => office.id === officeId)?.name ?? "All offices";
-  const queryString = buildReportQueryString({
-    endDate: formatDateInputValue(endDate),
-    officeId,
-  });
-  const apiHref = `/api/reports/accounting/balance-sheet${queryString ? `?${queryString}` : ""}`;
-  const exportHref = `${apiHref}${queryString ? "&" : "?"}format=csv`;
-  // Balance sheet balances are cumulative since inception, so drill-down links use the same
-  // full history (opening balance date through the "as of" date) rather than the current month.
+  const endValue = formatDateInputValue(endDate);
+  const queryString = buildReportQueryString({ endDate: endValue, officeId });
+  const exportHref = `/api/reports/accounting/balance-sheet${queryString ? `?${queryString}&` : "?"}format=csv`;
   const historyRangeQuery = {
     startDate: formatDateInputValue(OPENING_BALANCE_START_DATE),
-    endDate: formatDateInputValue(endDate),
+    endDate: endValue,
     officeId,
   };
   const generalLedgerHref = (accountId: string) =>
@@ -74,7 +75,7 @@ export default async function BalanceSheetPage({
         <div>
           <h1>Balance Sheet</h1>
           <p>
-            Statement of financial position as of {formatReportDate(report.asOfDate)} · {activeOfficeName}
+            As of {formatReportDate(report.asOfDate)} · {activeOfficeName}
           </p>
         </div>
         <ReportPicker current="/reports/accounting/balance-sheet" options={pickerOptions} />
@@ -85,33 +86,47 @@ export default async function BalanceSheetPage({
         </div>
       </header>
 
-      <section className="panel form-panel">
-        <form className="entity-form compact-mapping" method="GET">
-          <fieldset>
-            <legend>Filters</legend>
-            <div className="form-row">
-              <label>
-                As of date
-                <input defaultValue={formatDateInputValue(endDate)} name="endDate" required type="date" />
-              </label>
-              <label>
-                Office
-                <select defaultValue={officeId ?? ""} name="officeId">
-                  <option value="">All offices</option>
-                  {offices.map((office) => (
-                    <option key={office.id} value={office.id}>
-                      {office.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </div>
-          </fieldset>
-          <div className="form-actions">
-            <button className="primary" type="submit">
-              Apply filters
-            </button>
-          </div>
+      <section className="loan-summary-metrics coa-summary-metrics" aria-label="Balance sheet totals" style={{ gridTemplateColumns: "repeat(3, minmax(0, 1fr))" }}>
+        <article>
+          <span>Assets</span>
+          <strong>{formatMinor(report.assetsTotalMinor, "UGX")}</strong>
+        </article>
+        <article>
+          <span>Liabilities + Equity</span>
+          <strong>{formatMinor(report.liabilitiesAndEquityTotalMinor, "UGX")}</strong>
+        </article>
+        <article>
+          <span>Difference</span>
+          <strong>{formatMinor(report.differenceMinor, "UGX")}</strong>
+        </article>
+      </section>
+
+      <section className="panel report-toolbar">
+        <ReportDatePresetPills
+          active={preset}
+          label="As of"
+          pathname="/reports/accounting/balance-sheet"
+          query={{ officeId }}
+        />
+        <form className="report-toolbar-form" method="GET">
+          <label>
+            As of
+            <input defaultValue={endValue} name="endDate" required type="date" />
+          </label>
+          <label>
+            Office
+            <select defaultValue={officeId ?? ""} name="officeId">
+              <option value="">All offices</option>
+              {offices.map((office) => (
+                <option key={office.id} value={office.id}>
+                  {office.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button className="primary" type="submit">
+            Apply
+          </button>
         </form>
       </section>
 
@@ -120,21 +135,14 @@ export default async function BalanceSheetPage({
           <div>
             <h2>Statement of financial position</h2>
             <p>
-              {report.journalCount.toLocaleString()} posted journal{report.journalCount === 1 ? "" : "s"} · {report.lineCount.toLocaleString()} line
-              {report.lineCount === 1 ? "" : "s"}
+              {report.journalCount.toLocaleString()} journals · {report.lineCount.toLocaleString()} lines
+              {report.differenceMinor === 0n ? " · Balanced" : " · Out of balance"}
             </p>
           </div>
-          <span className={`status ${report.differenceMinor === 0n ? "up-to-date" : "review"}`}>
-            {report.differenceMinor === 0n ? "Balanced" : "Out of balance"}
-          </span>
         </div>
 
         {!report.hasActivity ? (
-          <div className="empty-state">
-            <Scale size={28} />
-            <strong>No posted journal entries yet</strong>
-            <p>The balance sheet will populate once posted accounting journals exist for the selected date and office scope.</p>
-          </div>
+          <p className="coa-section-empty">No posted journals for this date and office.</p>
         ) : (
           <div className="table-scroll">
             <table className="clickable-rows">

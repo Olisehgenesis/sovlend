@@ -39,7 +39,6 @@ export default async function GroupPortfolioReportPage() {
       <Breadcrumbs items={[{ label: "Reports", href: "/reports" }, { label: "Insights", href: "/reports" }, { label: "Group portfolio" }]} />
       <header className="directory-header">
         <div>
-          <p className="eyebrow">SovLend-only insight</p>
           <h1>Group portfolio report</h1>
           <p>
             {report.totals.groupCount.toLocaleString()} groups · {report.totals.memberCount.toLocaleString()} members · {formatMinor(report.totals.savingsBalanceMinor, report.totals.currencyCode)} in group-owned savings
@@ -61,7 +60,6 @@ export default async function GroupPortfolioReportPage() {
             <h2>Portfolio by group</h2>
             <p>Generated {formatDisplayDateTime(new Date(report.generatedAt))}</p>
           </div>
-          <Network size={19} />
         </div>
         <DataTable
           columns={[

@@ -59,7 +59,6 @@ export default async function ParRollRateReportPage({
       />
       <header className="directory-header">
         <div>
-          <p className="eyebrow">Portfolio risk</p>
           <h1>PAR Roll-Rate / Vintage</h1>
           <p>
             Last {cohortMonths} cohort months · {report.totals.cohortCount.toLocaleString()} cohorts · {formatMinor(report.totals.totalOriginalPrincipalMinor, "UGX")} original principal
@@ -70,9 +69,6 @@ export default async function ParRollRateReportPage({
           <a className="secondary-action" href={`/api/reports/risk/par-rollrate${querySuffix(filters, cohortMonths)}&format=csv`}>
             <Download size={16} /> Export CSV
           </a>
-          <Link className="secondary-action" href={`/api/reports/risk/par-rollrate${querySuffix(filters, cohortMonths)}`}>
-            API JSON
-          </Link>
           <Link className="secondary-action" href="/reports/risk/aging">
             Aging report
           </Link>
@@ -98,44 +94,37 @@ export default async function ParRollRateReportPage({
         </article>
       </section>
 
-      <section className="panel form-panel">
-        <form className="entity-form" method="get">
-          <div className="form-row three">
-            <label>
-              <span>Office</span>
-              <select name="officeId" defaultValue={filters.officeId ?? ""}>
-                <option value="">All accessible offices</option>
-                {options.offices.map((office) => (
-                  <option key={office.id} value={office.id}>
-                    {office.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              <span>Loan officer</span>
-              <select name="loanOfficerId" defaultValue={filters.loanOfficerId ?? ""}>
-                <option value="">All loan officers</option>
-                {options.loanOfficers.map((loanOfficer) => (
-                  <option key={loanOfficer.id} value={loanOfficer.id}>
-                    {loanOfficer.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              <span>Cohort months</span>
-              <input name="cohortMonths" type="number" min={3} max={60} defaultValue={cohortMonths} />
-            </label>
-          </div>
-          <div className="form-actions">
-            <Link className="secondary-action" href="/reports/risk/par-rollrate">
-              Clear
-            </Link>
-            <button className="primary" type="submit">
-              Apply filters
-            </button>
-          </div>
+      <section className="panel report-toolbar">
+        <form className="report-toolbar-form" method="get">
+          <label>
+            Office
+            <select name="officeId" defaultValue={filters.officeId ?? ""}>
+              <option value="">All accessible offices</option>
+              {options.offices.map((office) => (
+                <option key={office.id} value={office.id}>
+                  {office.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Loan officer
+            <select name="loanOfficerId" defaultValue={filters.loanOfficerId ?? ""}>
+              <option value="">All loan officers</option>
+              {options.loanOfficers.map((loanOfficer) => (
+                <option key={loanOfficer.id} value={loanOfficer.id}>
+                  {loanOfficer.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Cohort months
+            <input name="cohortMonths" type="number" min={3} max={60} defaultValue={cohortMonths} />
+          </label>
+          <button className="primary" type="submit">
+            Apply
+          </button>
         </form>
       </section>
 

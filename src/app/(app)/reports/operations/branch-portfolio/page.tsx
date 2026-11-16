@@ -4,7 +4,9 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { Breadcrumbs } from "@/components/breadcrumbs";
+import { parseReportDatePreset, ReportDatePresetPills } from "@/components/report-date-presets";
 import { ReportPicker } from "@/components/report-picker";
+import { formatDateInputValue, resolveDatePreset } from "@/modules/reports/domain/accounting-report";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { permissions } from "@/modules/identity/domain/permissions";
@@ -21,7 +23,7 @@ import { branchPortfolioBucketLabels, branchPortfolioBucketOrder } from "@/modul
 export default async function BranchPortfolioPage({
   searchParams,
 }: {
-  searchParams: Promise<{ date?: string }>;
+  searchParams: Promise<{ date?: string; preset?: string }>;
 }) {
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session) redirect("/sign-in");
@@ -35,10 +37,14 @@ export default async function BranchPortfolioPage({
   if (!context.allowed) redirect("/reports");
 
   const params = await searchParams;
-  const query = querySuffix(params);
+  const preset = parseReportDatePreset(params.preset);
+  const asOfDate = preset
+    ? formatDateInputValue(resolveDatePreset(new Date(), preset).endDate)
+    : params.date;
+  const query = querySuffix({ date: asOfDate });
   const [report, pickerOptions] = await Promise.all([
     loadBranchPortfolioReport(prisma, context.scope, {
-      date: params.date,
+      date: asOfDate,
     }),
     loadReportPickerOptions(prisma, session.user.id, context.scope.organizationId),
   ]);
@@ -56,12 +62,9 @@ export default async function BranchPortfolioPage({
       />
       <header className="directory-header">
         <div>
-          <p className="eyebrow">Operations report</p>
           <h1>Branch portfolio</h1>
           <p>
-            Loan-officer active book, outstanding balances, savings, and day-bucket PAR for{" "}
-            {formatReportDate(report.asOfDate)}. Matches iLend&apos;s canned &quot;Branch Portfolio&quot; report,
-            which is grouped by loan officer.
+            Loan-officer book, balances, savings, and PAR buckets as of {formatReportDate(report.asOfDate)}.
           </p>
         </div>
         <ReportPicker current="/reports/operations/branch-portfolio" options={pickerOptions} />
@@ -69,31 +72,19 @@ export default async function BranchPortfolioPage({
           <a className="secondary-action" href={exportHref}>
             <Download size={16} /> Export CSV
           </a>
-          <Link className="secondary-action" href={apiHref}>
-            API JSON
-          </Link>
-          <Link className="secondary-action" href="/reports">
-            Reports
-          </Link>
         </div>
       </header>
 
-      <section className="panel form-panel">
-        <form className="entity-form compact-mapping" method="GET">
-          <div className="form-row">
-            <label>
-              <span>As of date</span>
-              <input name="date" type="date" defaultValue={params.date ?? ""} />
-            </label>
-          </div>
-          <div className="form-actions">
-            <button className="primary" type="submit">
-              Apply filters
-            </button>
-            <Link className="secondary-action" href="/reports/operations/branch-portfolio">
-              Reset
-            </Link>
-          </div>
+      <section className="panel report-toolbar">
+        <ReportDatePresetPills active={preset} label="As of" pathname="/reports/operations/branch-portfolio" />
+        <form className="report-toolbar-form" method="GET">
+          <label>
+            As of
+            <input defaultValue={asOfDate ?? formatDateInputValue(report.asOfDate)} name="date" type="date" />
+          </label>
+          <button className="primary" type="submit">
+            Apply
+          </button>
         </form>
       </section>
 
@@ -103,7 +94,6 @@ export default async function BranchPortfolioPage({
             <h2>Loan officer portfolio breakdown</h2>
             <p>{report.rows.length.toLocaleString()} loan officer/currency row(s)</p>
           </div>
-          <Building2 size={19} />
         </div>
         {report.rows.length === 0 ? (
           <div className="empty-state">

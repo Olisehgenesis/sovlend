@@ -60,7 +60,6 @@ export default async function OutstandingBalancesPage({
       />
       <header className="directory-header">
         <div>
-          <p className="eyebrow">Operations report</p>
           <h1>Outstanding balances (OLB)</h1>
           <p>Current outstanding principal, interest, fees, monitoring fees, and penalties for every active or in-arrears loan.</p>
         </div>
@@ -69,69 +68,47 @@ export default async function OutstandingBalancesPage({
           <a className="secondary-action" href={exportHref}>
             <Download size={16} /> Export CSV
           </a>
-          <Link className="secondary-action" href={apiHref}>
-            API JSON
-          </Link>
-          <Link className="secondary-action" href="/reports">
-            Reports
-          </Link>
         </div>
       </header>
 
-      <section className="panel">
-        <div className="panel-heading">
-          <div>
-            <h2>Filters</h2>
-            <p>Common ops run: slice OLB by office, officer, or currency.</p>
-          </div>
-        </div>
-        <form className="entity-form compact-mapping" method="GET">
-          <fieldset>
-            <legend>Portfolio filters</legend>
-            <div className="form-row three">
-              <label>
-                Office
-                <select defaultValue={params.officeId ?? ""} name="officeId">
-                  <option value="">All offices</option>
-                  {context.offices.map((office) => (
-                    <option key={office.id} value={office.id}>
-                      {office.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                Loan officer
-                <select defaultValue={params.loanOfficerId ?? ""} name="loanOfficerId">
-                  <option value="">All officers</option>
-                  {context.officers.map((officer) => (
-                    <option key={officer.id} value={officer.id}>
-                      {officer.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                Currency
-                <select defaultValue={params.currencyCode ?? ""} name="currencyCode">
-                  <option value="">All currencies</option>
-                  {currencyOptions.map((currencyCode) => (
-                    <option key={currencyCode} value={currencyCode}>
-                      {currencyCode}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </div>
-          </fieldset>
-          <div className="form-actions">
-            <button className="primary" type="submit">
-              Apply filters
-            </button>
-            <Link className="secondary-action" href="/reports/operations/outstanding-balances">
-              Reset
-            </Link>
-          </div>
+      <section className="panel report-toolbar">
+        <form className="report-toolbar-form" method="GET">
+          <label>
+            Office
+            <select defaultValue={params.officeId ?? ""} name="officeId">
+              <option value="">All offices</option>
+              {context.offices.map((office) => (
+                <option key={office.id} value={office.id}>
+                  {office.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Loan officer
+            <select defaultValue={params.loanOfficerId ?? ""} name="loanOfficerId">
+              <option value="">All officers</option>
+              {context.officers.map((officer) => (
+                <option key={officer.id} value={officer.id}>
+                  {officer.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Currency
+            <select defaultValue={params.currencyCode ?? ""} name="currencyCode">
+              <option value="">All currencies</option>
+              {currencyOptions.map((currencyCode) => (
+                <option key={currencyCode} value={currencyCode}>
+                  {currencyCode}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button className="primary" type="submit">
+            Apply
+          </button>
         </form>
       </section>
 

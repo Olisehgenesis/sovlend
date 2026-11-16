@@ -1,10 +1,12 @@
-import { Download, ReceiptText } from "lucide-react";
+import { Download } from "lucide-react";
 import { headers } from "next/headers";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { Breadcrumbs } from "@/components/breadcrumbs";
+import { parseReportDatePreset, ReportDatePresetPills } from "@/components/report-date-presets";
 import { ReportPicker } from "@/components/report-picker";
+import { formatDateInputValue, resolveDatePreset } from "@/modules/reports/domain/accounting-report";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { permissions } from "@/modules/identity/domain/permissions";
@@ -16,7 +18,7 @@ import { loadReportPickerOptions } from "@/modules/reports/report-catalog";
 export default async function SavingsTransactionsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ officeId?: string; startDate?: string; endDate?: string }>;
+  searchParams: Promise<{ officeId?: string; startDate?: string; endDate?: string; preset?: string }>;
 }) {
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session) redirect("/sign-in");
@@ -31,13 +33,14 @@ export default async function SavingsTransactionsPage({
   if (!context.allowed) redirect("/reports");
 
   const params = await searchParams;
-  const query = querySuffix(params);
+  const preset = parseReportDatePreset(params.preset);
+  const resolvedRange = preset ? resolveDatePreset(new Date(), preset) : null;
+  const startDate = resolvedRange ? formatDateInputValue(resolvedRange.startDate) : params.startDate;
+  const endDate = resolvedRange ? formatDateInputValue(resolvedRange.endDate) : params.endDate;
+  const filterParams = { officeId: params.officeId, startDate, endDate };
+  const query = querySuffix(filterParams);
   const [report, pickerOptions] = await Promise.all([
-    loadSavingsTransactionsReport(prisma, context.scope, {
-      officeId: params.officeId,
-      startDate: params.startDate,
-      endDate: params.endDate,
-    }),
+    loadSavingsTransactionsReport(prisma, context.scope, filterParams),
     loadReportPickerOptions(prisma, session.user.id, context.scope.organizationId),
   ]);
   const apiHref = `/api/reports/savings/transactions${query}`;
@@ -54,9 +57,8 @@ export default async function SavingsTransactionsPage({
       />
       <header className="directory-header">
         <div>
-          <p className="eyebrow">Savings report</p>
           <h1>Savings transactions</h1>
-          <p>Ledger of deposits, withdrawals, and charges posted to savings accounts. Not part of iLend&apos;s canned reports — original to SovLend.</p>
+          <p>Deposits, withdrawals, and charges on savings accounts.</p>
         </div>
         <ReportPicker current="/reports/savings/transactions" options={pickerOptions} />
         <div className="header-actions">
@@ -69,48 +71,35 @@ export default async function SavingsTransactionsPage({
         </div>
       </header>
 
-      <section className="panel">
-        <div className="panel-heading">
-          <div>
-            <h2>Filters</h2>
-            <p>Narrow the ledger by date range or office. Defaults to the current month.</p>
-          </div>
-        </div>
-        <form className="entity-form compact-mapping" method="GET">
-          <fieldset>
-            <legend>Savings transaction filters</legend>
-            <div className="form-row">
-              <label>
-                Start date
-                <input defaultValue={params.startDate ?? isoDate(report.startDate)} name="startDate" type="date" />
-              </label>
-              <label>
-                End date
-                <input defaultValue={params.endDate ?? isoDate(report.endDate)} name="endDate" type="date" />
-              </label>
-            </div>
-            <div className="form-row">
-              <label>
-                Office
-                <select defaultValue={params.officeId ?? ""} name="officeId">
-                  <option value="">All offices</option>
-                  {context.offices.map((office) => (
-                    <option key={office.id} value={office.id}>
-                      {office.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </div>
-          </fieldset>
-          <div className="form-actions">
-            <button className="primary" type="submit">
-              Apply filters
-            </button>
-            <Link className="secondary-action" href="/reports/savings/transactions">
-              Reset
-            </Link>
-          </div>
+      <section className="panel report-toolbar">
+        <ReportDatePresetPills
+          active={preset}
+          pathname="/reports/savings/transactions"
+          query={{ officeId: params.officeId }}
+        />
+        <form className="report-toolbar-form" method="GET">
+          <label>
+            From
+            <input defaultValue={startDate ?? isoDate(report.startDate)} name="startDate" type="date" />
+          </label>
+          <label>
+            To
+            <input defaultValue={endDate ?? isoDate(report.endDate)} name="endDate" type="date" />
+          </label>
+          <label>
+            Office
+            <select defaultValue={params.officeId ?? ""} name="officeId">
+              <option value="">All offices</option>
+              {context.offices.map((office) => (
+                <option key={office.id} value={office.id}>
+                  {office.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button className="primary" type="submit">
+            Apply
+          </button>
         </form>
       </section>
 
@@ -120,14 +109,9 @@ export default async function SavingsTransactionsPage({
             <h2>Transaction ledger</h2>
             <p>{report.rows.length.toLocaleString()} transaction(s)</p>
           </div>
-          <ReceiptText size={19} />
         </div>
         {report.rows.length === 0 ? (
-          <div className="empty-state">
-            <ReceiptText size={28} />
-            <strong>No savings transactions match these filters</strong>
-            <p>Try widening the dates or removing the office filter.</p>
-          </div>
+          <p className="coa-section-empty">No transactions for this range.</p>
         ) : (
           <div className="table-scroll">
             <table className="clickable-rows">

@@ -774,6 +774,11 @@ a.statement-row-link:hover { background: var(--mint, #edf7f0); padding-left: 8px
 }
 .report-toolbar-form .primary { min-height: 36px; padding: 0 14px; }
 .report-toolbar-form .report-toggle { align-self: center; padding-bottom: 2px; }
+.report-toolbar-account { min-width: min(280px, 100%); flex: 1 1 220px; }
+.report-toolbar-more { flex: 1 0 100%; }
+.report-toolbar-more > summary { cursor: pointer; color: #445048; font-size: 12px; font-weight: 650; padding: 4px 0; }
+.report-toolbar-more[open] > summary { margin-bottom: 8px; }
+.report-toolbar-more .report-toolbar-form { padding: 0; }
 .coa-ledger { margin-top: 18px; overflow: hidden; }
 .coa-section { border-bottom: 1px solid var(--line); }
 .coa-section:last-child { border-bottom: 0; }

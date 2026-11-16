@@ -26,9 +26,8 @@ export default async function ReportsPage() {
       <Breadcrumbs items={[{ label: "Reports" }]} />
       <header className="directory-header">
         <div>
-          <p className="eyebrow">Portfolio insight</p>
           <h1>Reports</h1>
-          <p>Operational, risk, accounting, and compliance reports available to your current permission group.</p>
+          <p>Operational, risk, accounting, savings, and insight reports you can open with your current access.</p>
         </div>
         <div className="reports-header-actions">
           {totalVisible > 0 ? <ReportPicker current="" options={pickerOptions} /> : null}

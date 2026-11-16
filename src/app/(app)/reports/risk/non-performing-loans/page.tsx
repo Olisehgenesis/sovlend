@@ -60,7 +60,6 @@ export default async function NonPerformingLoansReportPage({
       />
       <header className="directory-header">
         <div>
-          <p className="eyebrow">Portfolio risk</p>
           <h1>Non-Performing Loans</h1>
           <p>
             Threshold {thresholdDays} days · {report.totals.loanCount.toLocaleString()} loans · {formatMinor(report.totals.totalOutstandingPrincipalMinor, "UGX")} outstanding principal
@@ -71,9 +70,6 @@ export default async function NonPerformingLoansReportPage({
           <a className="secondary-action" href={`/api/reports/risk/non-performing-loans${querySuffix(filters, thresholdDays)}&format=csv`}>
             <Download size={16} /> Export CSV
           </a>
-          <Link className="secondary-action" href={`/api/reports/risk/non-performing-loans${querySuffix(filters, thresholdDays)}`}>
-            API JSON
-          </Link>
           <Link className="secondary-action" href="/loans?status=IN_ARREARS">
             In-arrears loans
           </Link>
@@ -99,44 +95,37 @@ export default async function NonPerformingLoansReportPage({
         </article>
       </section>
 
-      <section className="panel form-panel">
-        <form className="entity-form" method="get">
-          <div className="form-row three">
-            <label>
-              <span>Office</span>
-              <select name="officeId" defaultValue={filters.officeId ?? ""}>
-                <option value="">All accessible offices</option>
-                {options.offices.map((office) => (
-                  <option key={office.id} value={office.id}>
-                    {office.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              <span>Loan officer</span>
-              <select name="loanOfficerId" defaultValue={filters.loanOfficerId ?? ""}>
-                <option value="">All loan officers</option>
-                {options.loanOfficers.map((loanOfficer) => (
-                  <option key={loanOfficer.id} value={loanOfficer.id}>
-                    {loanOfficer.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              <span>Threshold days</span>
-              <input name="thresholdDays" type="number" min={1} max={3650} defaultValue={thresholdDays} />
-            </label>
-          </div>
-          <div className="form-actions">
-            <Link className="secondary-action" href="/reports/risk/non-performing-loans">
-              Clear
-            </Link>
-            <button className="primary" type="submit">
-              Apply filters
-            </button>
-          </div>
+      <section className="panel report-toolbar">
+        <form className="report-toolbar-form" method="get">
+          <label>
+            Office
+            <select name="officeId" defaultValue={filters.officeId ?? ""}>
+              <option value="">All accessible offices</option>
+              {options.offices.map((office) => (
+                <option key={office.id} value={office.id}>
+                  {office.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Loan officer
+            <select name="loanOfficerId" defaultValue={filters.loanOfficerId ?? ""}>
+              <option value="">All loan officers</option>
+              {options.loanOfficers.map((loanOfficer) => (
+                <option key={loanOfficer.id} value={loanOfficer.id}>
+                  {loanOfficer.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Threshold days
+            <input name="thresholdDays" type="number" min={1} max={3650} defaultValue={thresholdDays} />
+          </label>
+          <button className="primary" type="submit">
+            Apply
+          </button>
         </form>
       </section>
 

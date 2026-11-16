@@ -35,8 +35,7 @@ export default async function UnassignedLoansPage() {
     loadUnassignedLoansReport(prisma, context.scope),
     loadReportPickerOptions(prisma, session.user.id, context.scope.organizationId),
   ]);
-  const apiHref = "/api/reports/operations/unassigned-loans";
-  const exportHref = `${apiHref}?format=csv`;
+  const exportHref = "/api/reports/operations/unassigned-loans?format=csv";
 
   return (
     <main className="directory-page">
@@ -49,7 +48,6 @@ export default async function UnassignedLoansPage() {
       />
       <header className="directory-header">
         <div>
-          <p className="eyebrow">Operations report</p>
           <h1>Active loans with no assigned officer</h1>
           <p>Data-hygiene queue for operational accounts that still need a staff owner.</p>
         </div>
@@ -58,12 +56,6 @@ export default async function UnassignedLoansPage() {
           <a className="secondary-action" href={exportHref}>
             <Download size={16} /> Export CSV
           </a>
-          <Link className="secondary-action" href={apiHref}>
-            API JSON
-          </Link>
-          <Link className="secondary-action" href="/reports">
-            Reports
-          </Link>
         </div>
       </header>
 
@@ -73,7 +65,6 @@ export default async function UnassignedLoansPage() {
             <h2>Unassigned active accounts</h2>
             <p>{report.rows.length.toLocaleString()} loan account(s) need officer assignment</p>
           </div>
-          <CircleDollarSign size={19} />
         </div>
         <DataTable
           columns={[

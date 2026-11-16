@@ -4,7 +4,9 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { Breadcrumbs } from "@/components/breadcrumbs";
+import { parseReportDatePreset, ReportDatePresetPills } from "@/components/report-date-presets";
 import { ReportPicker } from "@/components/report-picker";
+import { formatDateInputValue, resolveDatePreset } from "@/modules/reports/domain/accounting-report";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { AuthorizationService } from "@/modules/identity/application/authorization-service";
@@ -14,7 +16,11 @@ import { formatMinor } from "@/modules/money/domain/format-minor";
 import { formatDisplayDate, formatDisplayDateTime, getFeeRevenueFilters, loadFeeRevenueReport } from "@/modules/reports/domain/insights-report";
 import { loadReportPickerOptions } from "@/modules/reports/report-catalog";
 
-export default async function FeeRevenueReportPage({ searchParams }: { searchParams: Promise<{ startDate?: string; endDate?: string }> }) {
+export default async function FeeRevenueReportPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ startDate?: string; endDate?: string; preset?: string }>;
+}) {
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session) redirect("/sign-in");
   const scope = await getUserDataScope(prisma, session.user.id);
@@ -27,7 +33,16 @@ export default async function FeeRevenueReportPage({ searchParams }: { searchPar
   );
   if (!allowed) redirect("/reports");
 
-  const filters = getFeeRevenueFilters(await searchParams);
+  const params = await searchParams;
+  const preset = parseReportDatePreset(params.preset);
+  const filterSource = preset
+    ? {
+        ...params,
+        startDate: formatDateInputValue(resolveDatePreset(new Date(), preset).startDate),
+        endDate: formatDateInputValue(resolveDatePreset(new Date(), preset).endDate),
+      }
+    : params;
+  const filters = getFeeRevenueFilters(filterSource);
   const [report, pickerOptions] = await Promise.all([
     loadFeeRevenueReport(prisma, scope, filters),
     loadReportPickerOptions(prisma, session.user.id, scope.organizationId),
@@ -40,7 +55,6 @@ export default async function FeeRevenueReportPage({ searchParams }: { searchPar
       <Breadcrumbs items={[{ label: "Reports", href: "/reports" }, { label: "Insights", href: "/reports" }, { label: "Fee & charges revenue" }]} />
       <header className="directory-header">
         <div>
-          <p className="eyebrow">SovLend-only insight</p>
           <h1>Fee &amp; charges revenue report</h1>
           <p>{formatDisplayDate(filters.startDate)} to {formatDisplayDate(filters.endDate)} by charge due date</p>
         </div>
@@ -54,33 +68,32 @@ export default async function FeeRevenueReportPage({ searchParams }: { searchPar
         </div>
       </header>
 
-      <section className="panel form-panel">
-        <form className="entity-form compact-mapping" method="get">
-          <fieldset>
-            <legend>Reporting window</legend>
-            <p className="fieldset-intro">Due date is the economic basis for this report because imported historical charges share the same created-at import timestamp.</p>
-            <div className="form-row">
-              <label>
-                Start date
-                <input defaultValue={report.startDate} name="startDate" type="date" />
-              </label>
-              <label>
-                End date
-                <input defaultValue={report.endDate} name="endDate" type="date" />
-              </label>
-            </div>
-          </fieldset>
-          <div className="form-actions"><button className="primary" type="submit">Apply filters</button></div>
+      <section className="panel report-toolbar">
+        <ReportDatePresetPills active={preset} pathname="/reports/insights/fee-revenue" />
+        <form className="report-toolbar-form" method="get">
+          <label>
+            From
+            <input defaultValue={report.startDate} name="startDate" type="date" />
+          </label>
+          <label>
+            To
+            <input defaultValue={report.endDate} name="endDate" type="date" />
+          </label>
+          <button className="primary" type="submit">
+            Apply
+          </button>
         </form>
       </section>
 
-      <section className="readiness-banner attention">
-        <div>
-          <strong>Undated charges are shown separately</strong>
-          <span>{report.undated.chargeCount.toLocaleString()} imported charges have no due date, so they stay out of the date-bounded totals below.</span>
-        </div>
-        <div className="readiness-progress"><i style={{ width: report.undated.chargeCount > 0 ? "100%" : "0%" }} /></div>
-      </section>
+      {report.undated.chargeCount > 0 ? (
+        <section className="readiness-banner attention">
+          <div>
+            <strong>Undated charges</strong>
+            <span>{report.undated.chargeCount.toLocaleString()} charges have no due date and are excluded from the dated totals below.</span>
+          </div>
+          <div className="readiness-progress"><i style={{ width: "100%" }} /></div>
+        </section>
+      ) : null}
 
       <section className="panel">
         <div className="panel-heading">
@@ -88,7 +101,6 @@ export default async function FeeRevenueReportPage({ searchParams }: { searchPar
             <h2>Portfolio totals</h2>
             <p>Generated {formatDisplayDateTime(new Date(report.generatedAt))}</p>
           </div>
-          <ReceiptText size={19} />
         </div>
         <dl className="detail-grid">
           <div><dt>Collected (PAID)</dt><dd>{formatMinor(report.totals.paidMinor, report.totals.currencyCode)}</dd></div>
@@ -111,7 +123,7 @@ export default async function FeeRevenueReportPage({ searchParams }: { searchPar
           <div className="empty-state">
             <ReceiptText size={28} />
             <strong>No dated charges matched this window</strong>
-            <p>Try widening the due-date range.</p>
+            <p>No dated charges in this window.</p>
           </div>
         ) : (
           <div className="table-scroll">

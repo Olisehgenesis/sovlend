@@ -92,14 +92,14 @@ export const reportSections: readonly ReportSection[] = [
       { href: "/reports/insights/guarantor-exposure", permission: permissions.reportGuarantorExposure, title: "Guarantor Exposure", description: "Review guarantor concentration across active loans." },
       { href: "/reports/insights/fee-revenue", permission: permissions.reportFeeRevenue, title: "Fee Revenue", description: "Track income from fees and charges." },
       { href: "/reports/insights/document-completeness", permission: permissions.reportDocumentCompleteness, title: "Document Completeness", description: "Check KYC and required document coverage." },
-      { href: "/reports/insights/audit-trail", permission: permissions.reportAuditTrail, title: "Audit Trail", description: "Search immutable operational events." },
+      { href: "/reports/insights/audit-trail", permission: permissions.reportAuditTrail, title: "Audit Trail", description: "Search operational change history and actor activity." },
     ],
   },
   {
     id: "savings",
     title: "Savings",
     eyebrow: "Deposit operations",
-    description: "Savings account register, transaction ledger, and officer-level balances — not covered by any iLend canned report.",
+    description: "Savings account register, transaction ledger, and officer-level balances.",
     icon: PiggyBank,
     reports: [
       { href: "/reports/savings/account-listing", permission: permissions.reportSavingsAccountListing, title: "Savings Account Listing", description: "Exportable register of every savings account and its current balance." },

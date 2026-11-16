@@ -63,9 +63,8 @@ export default async function SavingsAccountListingPage({
       />
       <header className="directory-header">
         <div>
-          <p className="eyebrow">Savings report</p>
           <h1>Savings account listing</h1>
-          <p>Exportable register of every savings account and its current balance. Not part of iLend&apos;s canned reports — original to SovLend.</p>
+          <p>Register of savings accounts and current balances.</p>
         </div>
         <ReportPicker current="/reports/savings/account-listing" options={pickerOptions} />
         <div className="header-actions">
@@ -78,43 +77,23 @@ export default async function SavingsAccountListingPage({
         </div>
       </header>
 
-      <section className="panel">
-        <div className="panel-heading">
-          <div>
-            <h2>Filters</h2>
-            <p>Limit the register to one office before exporting.</p>
-          </div>
-        </div>
-        <form className="entity-form compact-mapping" method="GET">
-          <fieldset>
-            <legend>Office scope</legend>
-            <div className="form-row">
-              <label>
-                Office
-                <select defaultValue={params.officeId ?? ""} name="officeId">
-                  <option value="">All offices</option>
-                  {context.offices.map((office) => (
-                    <option key={office.id} value={office.id}>
-                      {office.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </div>
-            <ReportZeroToggle
-              defaultChecked={showZero}
-              label="Show zero-balance accounts"
-              name="showZero"
-            />
-          </fieldset>
-          <div className="form-actions">
-            <button className="primary" type="submit">
-              Apply filters
-            </button>
-            <Link className="secondary-action" href="/reports/savings/account-listing">
-              Reset
-            </Link>
-          </div>
+      <section className="panel report-toolbar">
+        <form className="report-toolbar-form" method="GET">
+          <label>
+            Office
+            <select defaultValue={params.officeId ?? ""} name="officeId">
+              <option value="">All offices</option>
+              {context.offices.map((office) => (
+                <option key={office.id} value={office.id}>
+                  {office.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <ReportZeroToggle defaultChecked={showZero} label="Show zero-balance accounts" name="showZero" />
+          <button className="primary" type="submit">
+            Apply
+          </button>
         </form>
       </section>
 

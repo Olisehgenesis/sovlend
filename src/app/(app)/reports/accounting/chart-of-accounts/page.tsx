@@ -4,6 +4,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { Breadcrumbs } from "@/components/breadcrumbs";
+import { parseReportDatePreset, ReportDatePresetPills } from "@/components/report-date-presets";
 import { ReportPicker } from "@/components/report-picker";
 import { ReportZeroToggle } from "@/components/report-zero-toggle";
 import { auth } from "@/lib/auth";
@@ -31,20 +32,7 @@ import {
   summarizeBalance,
   todayDate,
   type ChartOfAccountsRow,
-  type ReportDatePreset,
 } from "@/modules/reports/domain/accounting-report";
-
-const DATE_PRESETS: { value: ReportDatePreset; label: string }[] = [
-  { value: "today", label: "Today" },
-  { value: "week", label: "This week" },
-  { value: "month", label: "This month" },
-  { value: "year", label: "This year" },
-];
-
-function parsePreset(value?: string | null): ReportDatePreset | null {
-  if (value === "today" || value === "week" || value === "month" || value === "year") return value;
-  return null;
-}
 
 export default async function ChartOfAccountsPage({
   searchParams,
@@ -82,7 +70,7 @@ export default async function ChartOfAccountsPage({
   const officeId = resolveOfficeFilter(offices, params.officeId ?? null);
   const accountType = resolveAccountTypeFilter(params.accountType ?? null);
   const showZero = params.showZero === "1";
-  const preset = parsePreset(params.preset);
+  const preset = parseReportDatePreset(params.preset);
   const activityRange = preset
     ? resolveDatePreset(new Date(), preset)
     : normalizeDateRange(
@@ -176,26 +164,17 @@ export default async function ChartOfAccountsPage({
       </section>
 
       <section className="panel report-toolbar">
-        <div className="quick-filters report-toolbar-presets">
-          <span className="quick-filters-label">Activity</span>
-          <div className="quick-filters-pills">
-            {DATE_PRESETS.map((item) => (
-              <Link
-                className={`pill-link ${preset === item.value ? "active" : ""}`}
-                href={`/reports/accounting/chart-of-accounts?${buildReportQueryString({
-                  preset: item.value,
-                  officeId,
-                  accountType: report.accountType,
-                  accountId: report.selectedAccountRow?.id,
-                  showZero: showZero ? "1" : undefined,
-                })}`}
-                key={item.value}
-              >
-                {item.label}
-              </Link>
-            ))}
-          </div>
-        </div>
+        <ReportDatePresetPills
+          active={preset}
+          label="Activity"
+          pathname="/reports/accounting/chart-of-accounts"
+          query={{
+            officeId,
+            accountType: report.accountType,
+            accountId: report.selectedAccountRow?.id,
+            showZero: showZero ? "1" : undefined,
+          }}
+        />
         <form className="report-toolbar-form" method="GET">
           <label>
             As of

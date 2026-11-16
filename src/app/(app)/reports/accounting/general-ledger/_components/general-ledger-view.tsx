@@ -4,6 +4,7 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 
 import { Breadcrumbs } from "@/components/breadcrumbs";
+import { ReportDatePresetPills, parseReportDatePreset } from "@/components/report-date-presets";
 import { ReportPicker } from "@/components/report-picker";
 import { SearchableSelect } from "@/components/searchable-select";
 import { auth } from "@/lib/auth";
@@ -33,15 +34,7 @@ import {
   summarizeBalance,
   type GeneralLedgerAccountBalance,
   type GeneralLedgerEntry,
-  type ReportDatePreset,
 } from "@/modules/reports/domain/accounting-report";
-
-const DATE_PRESETS: { value: ReportDatePreset; label: string }[] = [
-  { value: "today", label: "Today" },
-  { value: "week", label: "This week" },
-  { value: "month", label: "This month" },
-  { value: "year", label: "This year" },
-];
 
 export default async function GeneralLedgerView({
   searchParams,
@@ -80,9 +73,7 @@ export default async function GeneralLedgerView({
     listAccountingReportAccounts(prisma),
     loadReportPickerOptions(prisma, session.user.id, scope.organizationId),
   ]);
-  const preset = params.preset === "today" || params.preset === "week" || params.preset === "month" || params.preset === "year"
-    ? params.preset
-    : null;
+  const preset = parseReportDatePreset(params.preset);
   const { startDate, endDate } = preset
     ? resolveDatePreset(new Date(), preset)
     : normalizeDateRange(
@@ -149,95 +140,86 @@ export default async function GeneralLedgerView({
         </div>
       </header>
 
-      <section className="panel form-panel">
-        <div className="quick-filters">
-          <span className="quick-filters-label">Quick range</span>
-          <div className="quick-filters-pills">
-            {DATE_PRESETS.map((item) => (
-              <Link
-                className={`pill-link ${preset === item.value ? "active" : ""}`}
-                href={`${basePath}?${buildReportQueryString({ preset: item.value, officeId, accountId, fromCode, toCode, accountType, include: include === "balance" ? null : include })}`}
-                key={item.value}
-              >
-                {item.label}
-              </Link>
-            ))}
-          </div>
-        </div>
-        <form action="/reports/accounting/general-ledger" className="entity-form compact-mapping" method="GET">
-          <fieldset>
-            <legend>Filters</legend>
-            <div className="form-row three">
+      <section className="panel report-toolbar">
+        <ReportDatePresetPills
+          active={preset}
+          pathname={basePath}
+          query={{
+            officeId,
+            accountId,
+            fromCode,
+            toCode,
+            accountType,
+            include: include === "balance" ? null : include,
+          }}
+        />
+        <form action="/reports/accounting/general-ledger" className="report-toolbar-form" method="GET">
+          <label>
+            From
+            <input defaultValue={formatDateInputValue(startDate)} name="startDate" required type="date" />
+          </label>
+          <label>
+            To
+            <input defaultValue={formatDateInputValue(endDate)} name="endDate" required type="date" />
+          </label>
+          <label>
+            Office
+            <select defaultValue={officeId ?? ""} name="officeId">
+              <option value="">All offices</option>
+              {offices.map((office) => (
+                <option key={office.id} value={office.id}>
+                  {office.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="report-toolbar-account">
+            Account
+            <SearchableSelect
+              key={accountId ?? "all"}
+              name="accountId"
+              defaultValue={accountId ?? ""}
+              placeholder="Search account by name or code..."
+              options={[{ value: "", label: "All accounts" }, ...accounts.map((account) => ({
+                value: account.id, label: `${account.code} · ${account.name}`, searchText: account.type,
+              }))]}
+            />
+          </label>
+          <button className="primary" type="submit">
+            Apply
+          </button>
+          <details className="more-filters report-toolbar-more" open={Boolean(fromCode || toCode || accountType || include !== "balance")}>
+            <summary>More filters</summary>
+            <div className="report-toolbar-form">
               <label>
-                Start date
-                <input defaultValue={formatDateInputValue(startDate)} name="startDate" required type="date" />
+                From code
+                <input defaultValue={fromCode ?? ""} name="fromCode" placeholder="CA-001" />
               </label>
               <label>
-                End date
-                <input defaultValue={formatDateInputValue(endDate)} name="endDate" required type="date" />
+                To code
+                <input defaultValue={toCode ?? ""} name="toCode" placeholder="CA-003" />
               </label>
               <label>
-                Office
-                <select defaultValue={officeId ?? ""} name="officeId">
-                  <option value="">All offices</option>
-                  {offices.map((office) => (
-                    <option key={office.id} value={office.id}>
-                      {office.name}
+                Type
+                <select defaultValue={accountType ?? ""} name="accountType">
+                  <option value="">All types</option>
+                  {accountingAccountTypeSections.map((section) => (
+                    <option key={section.type} value={section.type}>
+                      {section.label}
                     </option>
                   ))}
                 </select>
               </label>
-            </div>
-            <label>
-              GL account
-              <SearchableSelect
-                key={accountId ?? "all"}
-                name="accountId"
-                defaultValue={accountId ?? ""}
-                placeholder="Search account by name or code..."
-                options={[{ value: "", label: "All accounts" }, ...accounts.map((account) => ({
-                  value: account.id, label: `${account.code} · ${account.name}`, searchText: account.type,
-                }))]}
-              />
-            </label>
-            <details className="more-filters" open={Boolean(fromCode || toCode || accountType || include !== "balance")}>
-              <summary>Account range, type, and which accounts to print</summary>
-              <div className="form-row three">
-                <label>
-                  From account code
-                  <input defaultValue={fromCode ?? ""} name="fromCode" placeholder="CA-001" />
-                </label>
-                <label>
-                  To account code
-                  <input defaultValue={toCode ?? ""} name="toCode" placeholder="CA-003" />
-                </label>
-                <label>
-                  Account type
-                  <select defaultValue={accountType ?? ""} name="accountType">
-                    <option value="">All types</option>
-                    {accountingAccountTypeSections.map((section) => (
-                      <option key={section.type} value={section.type}>
-                        {section.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              </div>
               <label>
-                Accounts to print
+                Print
                 <select defaultValue={include} name="include">
-                  <option value="movement">Only accounts with movement this period</option>
-                  <option value="balance">Accounts with a balance or movement</option>
+                  <option value="movement">Movement this period</option>
+                  <option value="balance">Balance or movement</option>
                   <option value="all">Every account</option>
                 </select>
               </label>
-            </details>
-          </fieldset>
-          <div className="form-actions">
-            <button className="primary" type="submit">
-              Apply filters
-            </button>
-          </div>
+            </div>
+          </details>
         </form>
       </section>
 

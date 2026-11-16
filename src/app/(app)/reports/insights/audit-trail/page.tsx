@@ -1,10 +1,12 @@
-import { Download, Search } from "lucide-react";
+import { Download } from "lucide-react";
 import { headers } from "next/headers";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { Breadcrumbs } from "@/components/breadcrumbs";
+import { parseReportDatePreset, ReportDatePresetPills } from "@/components/report-date-presets";
 import { ReportPicker } from "@/components/report-picker";
+import { formatDateInputValue, resolveDatePreset } from "@/modules/reports/domain/accounting-report";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { AuthorizationService } from "@/modules/identity/application/authorization-service";
@@ -16,7 +18,16 @@ import { loadReportPickerOptions } from "@/modules/reports/report-catalog";
 export default async function AuditTrailReportPage({
   searchParams,
 }: {
-  searchParams: Promise<{ action?: string; entityType?: string; actorId?: string; startDate?: string; endDate?: string; page?: string; pageSize?: string }>;
+  searchParams: Promise<{
+    action?: string;
+    entityType?: string;
+    actorId?: string;
+    startDate?: string;
+    endDate?: string;
+    page?: string;
+    pageSize?: string;
+    preset?: string;
+  }>;
 }) {
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session) redirect("/sign-in");
@@ -30,7 +41,16 @@ export default async function AuditTrailReportPage({
   );
   if (!allowed) redirect("/reports");
 
-  const filters = getAuditTrailFilters(await searchParams);
+  const params = await searchParams;
+  const preset = parseReportDatePreset(params.preset);
+  const filterSource = preset
+    ? {
+        ...params,
+        startDate: formatDateInputValue(resolveDatePreset(new Date(), preset).startDate),
+        endDate: formatDateInputValue(resolveDatePreset(new Date(), preset).endDate),
+      }
+    : params;
+  const filters = getAuditTrailFilters(filterSource);
   const [report, pickerOptions] = await Promise.all([
     loadAuditTrailReport(prisma, scope, filters),
     loadReportPickerOptions(prisma, session.user.id, scope.organizationId),
@@ -43,7 +63,6 @@ export default async function AuditTrailReportPage({
       <Breadcrumbs items={[{ label: "Reports", href: "/reports" }, { label: "Insights", href: "/reports" }, { label: "Audit trail" }]} />
       <header className="directory-header">
         <div>
-          <p className="eyebrow">SovLend-only insight</p>
           <h1>Audit trail report</h1>
           <p>{report.totalRows.toLocaleString()} events in scope · page {report.filters.page} of {report.totalPages}</p>
         </div>
@@ -57,51 +76,72 @@ export default async function AuditTrailReportPage({
         </div>
       </header>
 
-      <section className="panel form-panel">
-        <form className="entity-form compact-mapping" method="get">
-          <fieldset>
-            <legend>Search and filters</legend>
-            <div className="form-row three">
-              <label>
-                Entity type
-                <select defaultValue={report.filters.entityType} name="entityType">
-                  <option value="">All entity types</option>
-                  {report.options.entityTypes.map((option) => <option key={option} value={option}>{option}</option>)}
-                </select>
-              </label>
-              <label>
-                Action
-                <select defaultValue={report.filters.action} name="action">
-                  <option value="">All actions</option>
-                  {report.options.actions.map((option) => <option key={option} value={option}>{option}</option>)}
-                </select>
-              </label>
-              <label>
-                Actor
-                <select defaultValue={report.filters.actorId} name="actorId">
-                  <option value="">All users and system</option>
-                  {report.options.actors.map((actor) => <option key={actor.id} value={actor.id}>{actor.name} ({actor.count})</option>)}
-                </select>
-              </label>
-            </div>
-            <div className="form-row three">
-              <label>
-                Start date
-                <input defaultValue={report.filters.startDate} name="startDate" type="date" />
-              </label>
-              <label>
-                End date
-                <input defaultValue={report.filters.endDate} name="endDate" type="date" />
-              </label>
-              <label>
-                Page size
-                <select defaultValue={String(report.filters.pageSize)} name="pageSize">
-                  {[25, 50, 100].map((size) => <option key={size} value={size}>{size}</option>)}
-                </select>
-              </label>
-            </div>
-          </fieldset>
-          <div className="form-actions"><button className="primary" type="submit"><Search size={16} /> Apply filters</button></div>
+      <section className="panel report-toolbar">
+        <ReportDatePresetPills
+          active={preset}
+          pathname="/reports/insights/audit-trail"
+          query={{
+            action: report.filters.action || undefined,
+            entityType: report.filters.entityType || undefined,
+            actorId: report.filters.actorId || undefined,
+            pageSize: String(report.filters.pageSize),
+          }}
+        />
+        <form className="report-toolbar-form" method="get">
+          <label>
+            Entity type
+            <select defaultValue={report.filters.entityType} name="entityType">
+              <option value="">All entity types</option>
+              {report.options.entityTypes.map((option) => (
+                <option key={option} value={option}>
+                  {option}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Action
+            <select defaultValue={report.filters.action} name="action">
+              <option value="">All actions</option>
+              {report.options.actions.map((option) => (
+                <option key={option} value={option}>
+                  {option}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Actor
+            <select defaultValue={report.filters.actorId} name="actorId">
+              <option value="">All users and system</option>
+              {report.options.actors.map((actor) => (
+                <option key={actor.id} value={actor.id}>
+                  {actor.name} ({actor.count})
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            From
+            <input defaultValue={report.filters.startDate} name="startDate" type="date" />
+          </label>
+          <label>
+            To
+            <input defaultValue={report.filters.endDate} name="endDate" type="date" />
+          </label>
+          <label>
+            Page size
+            <select defaultValue={String(report.filters.pageSize)} name="pageSize">
+              {[25, 50, 100].map((size) => (
+                <option key={size} value={size}>
+                  {size}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button className="primary" type="submit">
+            Apply
+          </button>
         </form>
       </section>
 
@@ -111,14 +151,9 @@ export default async function AuditTrailReportPage({
             <h2>Audit events</h2>
             <p>Generated {formatDisplayDateTime(new Date(report.generatedAt))}</p>
           </div>
-          <Search size={19} />
         </div>
         {report.rows.length === 0 ? (
-          <div className="empty-state">
-            <Search size={28} />
-            <strong>No audit events matched</strong>
-            <p>Try widening the date range or clearing one of the filters.</p>
-          </div>
+          <p className="coa-section-empty">No audit events matched.</p>
         ) : (
           <>
             <div className="table-scroll">

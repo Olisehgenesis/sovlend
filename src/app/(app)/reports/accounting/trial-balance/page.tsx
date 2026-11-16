@@ -1,9 +1,10 @@
-import { Download, Scale } from "lucide-react";
+import { Download } from "lucide-react";
 import { headers } from "next/headers";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { Breadcrumbs } from "@/components/breadcrumbs";
+import { ReportDatePresetPills, parseReportDatePreset } from "@/components/report-date-presets";
 import { ReportPicker } from "@/components/report-picker";
 import { ReportZeroToggle } from "@/components/report-zero-toggle";
 import { auth } from "@/lib/auth";
@@ -26,15 +27,8 @@ import {
   resolveDatePreset,
   resolveOfficeFilter,
   summarizeBalance,
-  type ReportDatePreset,
   type TrialBalanceRow,
 } from "@/modules/reports/domain/accounting-report";
-
-const DATE_PRESETS: { value: ReportDatePreset; label: string }[] = [
-  { value: "today", label: "Today" },
-  { value: "week", label: "This week" },
-  { value: "month", label: "This month" },
-];
 
 export default async function TrialBalancePage({
   searchParams,
@@ -60,7 +54,7 @@ export default async function TrialBalancePage({
     listAccountingReportOffices(prisma, scope),
     loadReportPickerOptions(prisma, session.user.id, scope.organizationId),
   ]);
-  const preset = params.preset === "today" || params.preset === "week" || params.preset === "month" ? params.preset : null;
+  const preset = parseReportDatePreset(params.preset);
   const { startDate, endDate } = preset
     ? resolveDatePreset(new Date(), preset)
     : normalizeDateRange(
@@ -71,14 +65,15 @@ export default async function TrialBalancePage({
   const showZero = params.showZero === "1";
   const report = await getTrialBalanceReport(prisma, scope, { startDate, endDate, officeId });
   const activeOfficeName = offices.find((office) => office.id === officeId)?.name ?? "All offices";
+  const startValue = formatDateInputValue(startDate);
+  const endValue = formatDateInputValue(endDate);
   const queryString = buildReportQueryString({
-    startDate: formatDateInputValue(startDate),
-    endDate: formatDateInputValue(endDate),
+    startDate: startValue,
+    endDate: endValue,
     officeId,
     showZero: showZero ? "1" : undefined,
   });
-  const apiHref = `/api/reports/accounting/trial-balance${queryString ? `?${queryString}` : ""}`;
-  const exportHref = `${apiHref}${queryString ? "&" : "?"}format=csv`;
+  const exportHref = `/api/reports/accounting/trial-balance${queryString ? `?${queryString}&` : "?"}format=csv`;
 
   return (
     <main className="directory-page">
@@ -87,7 +82,7 @@ export default async function TrialBalancePage({
         <div>
           <h1>Trial Balance</h1>
           <p>
-            Ledger debits and credits from {formatReportDate(report.startDate)} to {formatReportDate(report.endDate)} · {activeOfficeName}
+            {formatReportDate(report.startDate)} – {formatReportDate(report.endDate)} · {activeOfficeName}
           </p>
         </div>
         <ReportPicker current="/reports/accounting/trial-balance" options={pickerOptions} />
@@ -98,79 +93,51 @@ export default async function TrialBalancePage({
         </div>
       </header>
 
-      <section className="panel form-panel">
-        <div className="quick-filters">
-          <span className="quick-filters-label">Quick range</span>
-          <div className="quick-filters-pills">
-            {DATE_PRESETS.map((item) => (
-              <Link
-                className={`pill-link ${preset === item.value ? "active" : ""}`}
-                href={`/reports/accounting/trial-balance?${buildReportQueryString({ preset: item.value, officeId, showZero: showZero ? "1" : undefined })}`}
-                key={item.value}
-              >
-                {item.label}
-              </Link>
-            ))}
-          </div>
-          <span className="quick-filters-label">Office</span>
-          <div className="quick-filters-pills">
-            <Link
-              className={`pill-link ${!officeId ? "active" : ""}`}
-              href={`/reports/accounting/trial-balance?${buildReportQueryString({
-                startDate: formatDateInputValue(startDate),
-                endDate: formatDateInputValue(endDate),
-                showZero: showZero ? "1" : undefined,
-              })}`}
-            >
-              All offices
-            </Link>
-            {offices.map((office) => (
-              <Link
-                className={`pill-link ${officeId === office.id ? "active" : ""}`}
-                href={`/reports/accounting/trial-balance?${buildReportQueryString({
-                  startDate: formatDateInputValue(startDate),
-                  endDate: formatDateInputValue(endDate),
-                  officeId: office.id,
-                  showZero: showZero ? "1" : undefined,
-                })}`}
-                key={office.id}
-              >
-                {office.name}
-              </Link>
-            ))}
-          </div>
-        </div>
-        <form className="entity-form compact-mapping" method="GET">
-          <fieldset>
-            <legend>Filters</legend>
-            <div className="form-row three">
-              <label>
-                Start date
-                <input defaultValue={formatDateInputValue(startDate)} name="startDate" required type="date" />
-              </label>
-              <label>
-                End date
-                <input defaultValue={formatDateInputValue(endDate)} name="endDate" required type="date" />
-              </label>
-              <label>
-                Office
-                <select defaultValue={officeId ?? ""} name="officeId">
-                  <option value="">All offices</option>
-                  {offices.map((office) => (
-                    <option key={office.id} value={office.id}>
-                      {office.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </div>
-            <ReportZeroToggle defaultChecked={showZero} label="Show zero-balance accounts" name="showZero" />
-          </fieldset>
-          <div className="form-actions">
-            <button className="primary" type="submit">
-              Apply filters
-            </button>
-          </div>
+      <section className="loan-summary-metrics coa-summary-metrics" aria-label="Trial balance totals" style={{ gridTemplateColumns: "repeat(3, minmax(0, 1fr))" }}>
+        <article>
+          <span>Total debits</span>
+          <strong>{formatMinor(report.totalDebitsMinor, "UGX")}</strong>
+        </article>
+        <article>
+          <span>Total credits</span>
+          <strong>{formatMinor(report.totalCreditsMinor, "UGX")}</strong>
+        </article>
+        <article>
+          <span>Difference</span>
+          <strong>{formatMinor(report.differenceMinor, "UGX")}</strong>
+        </article>
+      </section>
+
+      <section className="panel report-toolbar">
+        <ReportDatePresetPills
+          active={preset}
+          pathname="/reports/accounting/trial-balance"
+          query={{ officeId, showZero: showZero ? "1" : undefined }}
+        />
+        <form className="report-toolbar-form" method="GET">
+          <label>
+            From
+            <input defaultValue={startValue} name="startDate" required type="date" />
+          </label>
+          <label>
+            To
+            <input defaultValue={endValue} name="endDate" required type="date" />
+          </label>
+          <label>
+            Office
+            <select defaultValue={officeId ?? ""} name="officeId">
+              <option value="">All offices</option>
+              {offices.map((office) => (
+                <option key={office.id} value={office.id}>
+                  {office.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <ReportZeroToggle defaultChecked={showZero} label="Show zero balances" name="showZero" />
+          <button className="primary" type="submit">
+            Apply
+          </button>
         </form>
       </section>
 
@@ -179,21 +146,14 @@ export default async function TrialBalancePage({
           <div>
             <h2>Trial balance</h2>
             <p>
-              {report.rows.length.toLocaleString()} account{report.rows.length === 1 ? "" : "s"} · {report.journalCount.toLocaleString()} posted journal
-              {report.journalCount === 1 ? "" : "s"}
+              {report.rows.length.toLocaleString()} accounts · {report.journalCount.toLocaleString()} journals
+              {report.differenceMinor === 0n ? " · Balanced" : " · Out of balance"}
             </p>
           </div>
-          <span className={`status ${report.differenceMinor === 0n ? "up-to-date" : "review"}`}>
-            {report.differenceMinor === 0n ? "Balanced" : "Out of balance"}
-          </span>
         </div>
 
         {!report.hasActivity ? (
-          <div className="empty-state">
-            <Scale size={28} />
-            <strong>No posted journal entries yet</strong>
-            <p>The trial balance will populate once posted journals exist in the selected period and office scope.</p>
-          </div>
+          <p className="coa-section-empty">No posted journals in this period and office.</p>
         ) : (
           <div className="statement-body">
             <div className="statement-columns-heading">
