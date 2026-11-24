@@ -12,6 +12,37 @@ import { BrandActionButton } from "@/components/ui/brand-action-button";
 type LedgerAccountOption = { id: string; code: string; name: string; type: string; currencyCode: string };
 type LineDraft = { key: string; accountId: string; amount: string };
 
+// Shown inside every account picker option so a poster can never grab an income account when
+// they meant the similarly-named expense account (or vice versa) without seeing the difference:
+// "30034 · Administration fee (Revenue)" vs "50004a · Administration Costs (Expense)".
+const ACCOUNT_TYPE_LABELS: Record<string, string> = {
+  ASSET: "Asset",
+  LIABILITY: "Liability",
+  EQUITY: "Equity",
+  REVENUE: "Revenue",
+  EXPENSE: "Expense",
+};
+
+function accountTypeLabel(type: string) {
+  return ACCOUNT_TYPE_LABELS[type] ?? type;
+}
+
+/**
+ * Non-blocking caution when a line debits a revenue account or credits an expense account --
+ * the classic misposting (an expense booked against an income account shows up as negative
+ * income on the P&L). Deliberately a hint, not a block: corrections, waivers, and reversals
+ * legitimately debit income / credit expense accounts.
+ */
+function contraDirectionCaution(side: "debit" | "credit", accountType: string | undefined): string | null {
+  if (side === "debit" && accountType === "REVENUE") {
+    return "Debiting a revenue account reduces income — if this is really an expense, pick an Expense account instead.";
+  }
+  if (side === "credit" && accountType === "EXPENSE") {
+    return "Crediting an expense account reduces expenses — if this is really income, pick a Revenue account instead.";
+  }
+  return null;
+}
+
 function newLine(): LineDraft {
   return { key: crypto.randomUUID(), accountId: "", amount: "" };
 }
@@ -64,8 +95,13 @@ export function GeneralJournalEntryForm({
   const [credits, setCredits] = useState<LineDraft[]>([newLine()]);
 
   const accountsForCurrency = useMemo(() => ledgerAccounts.filter((account) => account.currencyCode === currencyCode), [ledgerAccounts, currencyCode]);
+  const accountById = useMemo(() => new Map(accountsForCurrency.map((account) => [account.id, account])), [accountsForCurrency]);
   const accountOptions = useMemo(
-    () => accountsForCurrency.map((account) => ({ value: account.id, label: `${account.code} · ${account.name}`, searchText: `${account.type} ${account.currencyCode}` })),
+    () => accountsForCurrency.map((account) => ({
+      value: account.id,
+      label: `${account.code} · ${account.name} (${accountTypeLabel(account.type)})`,
+      searchText: `${account.type} ${account.currencyCode}`,
+    })),
     [accountsForCurrency],
   );
 
@@ -170,7 +206,10 @@ export function GeneralJournalEntryForm({
         <div className="journal-entry-side-heading">
           <span>{side === "debit" ? "Debit" : "Credit"}</span>
         </div>
-        {lines.map((line) => (
+        {lines.map((line) => {
+          const selectedAccount = line.accountId ? accountById.get(line.accountId) : undefined;
+          const caution = contraDirectionCaution(side, selectedAccount?.type);
+          return (
           <div className="journal-entry-line" key={line.key}>
             <SearchableSelect
               name={`${side}-account-${line.key}`}
@@ -190,8 +229,10 @@ export function GeneralJournalEntryForm({
             <button type="button" className="journal-entry-remove" disabled={lines.length === 1} onClick={() => removeLine(side, line.key)} aria-label={`Remove ${side} row`}>
               <Trash2 size={15} />
             </button>
+            {caution ? <p className="journal-entry-caution">{caution}</p> : null}
           </div>
-        ))}
+          );
+        })}
         <button type="button" className="secondary-action journal-entry-add" onClick={() => addLine(side)}>
           <Plus size={14} /> Add {side} line
         </button>
