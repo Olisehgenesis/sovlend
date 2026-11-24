@@ -10,7 +10,12 @@ application checkout is `/root/apps/sovlend` and the deployed branch is `master`
   values are encrypted with dotenvx; Compose does not decrypt them and can pass
   ciphertext to containers when creating or recreating services.
 - Wrap every production Compose command with
-  `dotenvx run -f .env -- docker compose ...`.
+  `dotenvx run -f .env -- docker compose ...` -- or simply run
+  `./scripts/deploy/dc.sh <compose args>`, the guarded wrapper that decrypts
+  first and refuses to run when `.env` cannot be decrypted. On 18 Oct 2026 a
+  bare `docker compose` recreate left the production postgres container running
+  with ciphertext environment values; the wrapper exists so that mistake
+  cannot recur silently.
 - Never print or copy `.env`, `.env.keys`, decrypted environment variables,
   runtime override files, or full Compose configuration into logs, tickets, or
   chat. The production `.env.keys` and private database-connection override
