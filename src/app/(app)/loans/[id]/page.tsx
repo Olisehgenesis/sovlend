@@ -46,7 +46,7 @@ import {
 import { formatMonthlyPercent } from "@/modules/lending/domain/monthly-rate";
 import { generateRepaymentSchedule, readInterestDayCount } from "@/modules/lending/domain/repayment-schedule";
 import { repaymentSplitFromAllocations } from "@/modules/lending/domain/repayment-allocation-split";
-import { installmentPaymentTiming } from "@/modules/lending/domain/repayment-timeliness";
+import { installmentDueVsPaid } from "@/modules/lending/domain/repayment-timeliness";
 import { scheduleDateLockReason, utcDay } from "@/modules/lending/domain/schedule-date-change";
 import { statusLabel } from "@/lib/status-label";
 import { formatMinor } from "@/modules/money/domain/format-minor";
@@ -1329,6 +1329,7 @@ export default async function LoanPage({
                 {loan.maturesOn ? formatUgDate(loan.maturesOn) : "not set"}
               </p>
               <p>Payment history includes the payment date and staff member who recorded it. Cancelled payments remain visible but do not count toward totals.</p>
+              <p>Paid on is the most recent non-cancelled payment date. Days late compares it with the due date and keeps counting while an installment is still overdue.</p>
             </div>
           </div>
           {schedule.length === 0 ? (
@@ -1344,6 +1345,8 @@ export default async function LoanPage({
                   <tr>
                     <th className="row-index">#</th>
                     <th>Due</th>
+                    <th>Paid on</th>
+                    <th>Days late</th>
                     <th>Principal</th>
                     <th>Interest</th>
                     <th>Fees</th>
@@ -1368,7 +1371,18 @@ export default async function LoanPage({
                         amountMinor: payment.amountMinor,
                         businessDate: payment.businessDate,
                       }));
-                    const timing = installmentPaymentTiming(item, activePaymentEvidence, today);
+                    const dueVsPaid = installmentDueVsPaid(item, activePaymentEvidence, today);
+                    const timing = dueVsPaid.timing;
+                    const daysLateLabel =
+                      dueVsPaid.daysLate === null
+                        ? "—"
+                        : timing === "PART_PAID_LATE" || timing === "OVERDUE"
+                          ? `${dueVsPaid.daysLate} days overdue`
+                          : dueVsPaid.daysLate > 0
+                            ? `${dueVsPaid.daysLate} days late`
+                            : dueVsPaid.daysLate === 0
+                              ? "0 days"
+                              : `${-dueVsPaid.daysLate} days early`;
                     const rowStatus =
                       timing === "PAID_LATE" ||
                       timing === "PART_PAID_LATE" ||
@@ -1390,6 +1404,20 @@ export default async function LoanPage({
                           ) : null}
                         </td>
                         <td>{formatUgDate(item.dueOn)}</td>
+                        <td>
+                          {dueVsPaid.paidOn ? (
+                            formatUgDate(dueVsPaid.paidOn)
+                          ) : (
+                            <span className="muted-text">—</span>
+                          )}
+                        </td>
+                        <td>
+                          {dueVsPaid.daysLate === null ? (
+                            <span className="muted-text">—</span>
+                          ) : (
+                            daysLateLabel
+                          )}
+                        </td>
                         <td>
                           {formatMinor(
                             item.principalDueMinor,
