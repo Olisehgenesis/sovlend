@@ -94,8 +94,12 @@ export default async function ProvisioningReportPage({
 
       <section className="loan-summary-metrics">
         <article>
-          <span>Outstanding (total)</span>
+          <span>Exposure (P+I+fees+penalties)</span>
           <strong>{formatMinor(report.totals.totalOutstandingMinor, "UGX")}</strong>
+        </article>
+        <article>
+          <span>Portfolio (principal only)</span>
+          <strong>{formatMinor(report.totals.totalPrincipalMinor, "UGX")}</strong>
         </article>
         <article>
           <span>Required provision</span>
@@ -110,6 +114,7 @@ export default async function ProvisioningReportPage({
           <strong>{report.totals.loanCount.toLocaleString()}</strong>
         </article>
       </section>
+      <p className="field-hint">Provisioning uses total exposure (principal + interest + fees + penalties) per bucket. The principal-only portfolio figure is shown for comparison with the Aging/PAR reports, which count principal only.</p>
 
       <section className="panel report-toolbar">
         <form className="report-toolbar-form" method="get">
@@ -168,7 +173,7 @@ export default async function ProvisioningReportPage({
                   <th>Bucket</th>
                   <th>Rate</th>
                   <th>Loans</th>
-                  <th>Outstanding (total)</th>
+                  <th>Exposure (P+I+fees+penalties)</th>
                   <th>Required provision</th>
                 </tr>
               </thead>
@@ -213,7 +218,7 @@ export default async function ProvisioningReportPage({
                       <th>Officer</th>
                       <th>Bucket</th>
                       <th>Days overdue</th>
-                      <th>Outstanding (total)</th>
+                      <th>Exposure (P+I+fees+penalties)</th>
                       <th>Rate</th>
                       <th>Provision</th>
                     </tr>

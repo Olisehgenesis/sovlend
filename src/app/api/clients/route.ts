@@ -50,8 +50,8 @@ export async function POST(request: Request) {
   // Group members must be linked to an existing active group within the user's scope.
   let group: { id: string } | null = null;
   if (parsed.data.groupId) {
-    group = await prisma.group.findFirst({ where: { id: parsed.data.groupId, organizationId: scope.organizationId, ...(scope.officeIds ? { officeId: { in: [...scope.officeIds] } } : {}) } });
-    if (!group) return NextResponse.json({ error: "Group not found in your scope" }, { status: 404 });
+    group = await prisma.group.findFirst({ where: { id: parsed.data.groupId, organizationId: scope.organizationId, status: "ACTIVE", ...(scope.officeIds ? { officeId: { in: [...scope.officeIds] } } : {}) } });
+    if (!group) return NextResponse.json({ error: "Group not found in your scope. Pick an active group from your office, or ask an administrator to assign you to it." }, { status: 404 });
   }
   if (parsed.data.membershipType === "GROUP" && !group) {
     return NextResponse.json({ error: "A group member must select their group" }, { status: 400 });
@@ -93,6 +93,10 @@ export async function POST(request: Request) {
     // Every new client opens with a member-contribution (MSA) sub-account instead of a plain
     // savings account, e.g. "000000926" -> "000000926S". Group members additionally open
     // security, LIF, and a savings account at registration. Existing clients are unaffected.
+    // Group members open four savings accounts (MSA, Security, LIF, plain savings). Each needs
+    // its own sub-account number -- SavingsAccount.accountNumber is unique, so reusing index 0
+    // for all four made the second insert throw P2002 and roll back the whole registration.
+    let nextSavingsSubNumber = 0;
     async function createProductLinkedMemberAccount(shortName: string, fallbackType: string) {
       const organizationId = scope?.organizationId ?? "";
       const product = await transaction.savingsProduct.findFirst({ where: { organizationId, shortName, active: true }, select: { id: true, name: true, shortName: true, nominalAnnualRateBps: true, minOpeningBalanceMinor: true } });
@@ -101,7 +105,7 @@ export async function POST(request: Request) {
           clientId: created.id,
           ...(group ? { groupId: group.id } : {}),
           productId: product?.id,
-          accountNumber: nextSubAccountNumber(created.accountNumber, "S", 0),
+          accountNumber: nextSubAccountNumber(created.accountNumber, "S", nextSavingsSubNumber++),
           currencyCode: "UGX",
           accountType: product ? product.shortName : fallbackType,
           status: "ACTIVE",
@@ -135,7 +139,7 @@ export async function POST(request: Request) {
       await createProductLinkedMemberAccount(SECURITY_SAVINGS_SHORT_NAME, "LOAN_SECURITY");
       await createProductLinkedMemberAccount(LIF_SAVINGS_SHORT_NAME, "LOAN_INSURANCE");
       await transaction.savingsAccount.create({
-        data: { clientId: created.id, groupId: group.id, accountNumber: nextSubAccountNumber(created.accountNumber, "S", 0), currencyCode: "UGX", status: "ACTIVE", accountType: "SAVINGS" },
+        data: { clientId: created.id, groupId: group.id, accountNumber: nextSubAccountNumber(created.accountNumber, "S", nextSavingsSubNumber++), currencyCode: "UGX", status: "ACTIVE", accountType: "SAVINGS" },
       });
     }
     return created;

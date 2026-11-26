@@ -78,6 +78,7 @@ export default async function AgingReportPage({
           <p>
             {report.totals.loanCount.toLocaleString()} open loans · snapshot {generatedAt}
           </p>
+          <p className="field-hint">The export contains every loan row from this report (all pages), with the same office/officer filters and only ACTIVE or IN_ARREARS loans — written-off and closed loans are excluded.</p>
         </div>
         <ReportPicker current="/reports/risk/aging" options={pickerOptions} />
         <div className="header-actions">

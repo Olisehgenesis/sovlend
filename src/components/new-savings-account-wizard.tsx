@@ -102,7 +102,7 @@ export function NewSavingsAccountWizard({ clientId, products, officers, charges,
 
           {step === 0 ? (
             <div className="savings-wizard-body">
-              <label>Membership<select onChange={(event) => setMembership(event.target.value as MembershipKind)} value={membership}><option value="INDIVIDUAL">Individual · admission 25,000</option><option value="GROUP">Group · admission 7,000</option></select></label>
+              <label>Membership<select onChange={(event) => setMembership(event.target.value as MembershipKind)} value={membership}><option value="INDIVIDUAL">Individual · admission 25,000</option><option value="GROUP">Group · admission 10,000</option></select></label>
               <label>Product *<select onChange={(event) => setProductId(event.target.value)} required value={productId}><option value="">Select savings product</option>{products.map((item) => <option key={item.id} value={item.id}>{displaySavingsProductName(item.name)}</option>)}</select></label>
               <div className="form-row">
                 <label>Submitted on<input onChange={(event) => setSubmittedOn(event.target.value)} type="date" value={submittedOn} /></label>

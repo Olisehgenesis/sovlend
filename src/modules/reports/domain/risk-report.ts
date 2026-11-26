@@ -228,9 +228,10 @@ export async function loadAgingReport(prisma: PrismaClient, scope: UserDataScope
     (loan) => loan.outstandingTotalMinor > 0n,
   );
   const totalOutstandingPrincipalMinor = sumBigInt(loans.map((loan) => loan.outstandingPrincipalMinor));
-  const overdueOutstandingPrincipalMinor = sumBigInt(
-    loans.filter((loan) => loan.daysOverdue > 0).map((loan) => loan.outstandingPrincipalMinor),
-  );
+  // PAR = principal overdue on past-due installments / total principal outstanding (the same
+  // definition the dashboard uses). Counting the whole principal balance of every delinquent
+  // loan would wrongly treat its not-yet-due installments as at risk and inflate PAR.
+  const overdueOutstandingPrincipalMinor = sumBigInt(loans.map((loan) => loan.overduePrincipalMinor));
 
   const buckets = agingBucketOrder.map((bucket) => {
     const bucketLoans = loans.filter((loan) => loan.agingBucket === bucket);
@@ -415,7 +416,12 @@ export async function loadProvisioningReport(prisma: PrismaClient, scope: UserDa
     filters,
     totals: {
       loanCount: loans.length,
+      // Exposure = principal + interest + fees + penalties. The principal-only figure is kept
+      // alongside it so this report can be compared with the PAR/Aging screens, which use
+      // principal only. Without both figures, a 180+ exposure above the principal portfolio
+      // looks impossible even though the two are simply different bases.
       totalOutstandingMinor,
+      totalPrincipalMinor: sumBigInt(loans.map((loan) => loan.outstandingPrincipalMinor)),
       totalProvisionMinor,
       coverageBps: ratioBps(totalProvisionMinor, totalOutstandingMinor),
     },
@@ -764,7 +770,7 @@ export function provisioningReportCsv(report: ProvisioningReport) {
       Product: loan.productName,
       Status: loan.status,
       Currency: loan.currencyCode,
-      "Total Outstanding": loan.outstandingMinor.toString(),
+      "Exposure (P+I+fees+penalties)": loan.outstandingMinor.toString(),
       "Days Overdue": String(loan.daysOverdue),
       "Provisioning Bucket": loan.provisioningBucket,
       "Provision Rate %": String(loan.provisionRatePercent),
@@ -778,7 +784,7 @@ export function provisioningReportCsv(report: ProvisioningReport) {
       "Product",
       "Status",
       "Currency",
-      "Total Outstanding",
+      "Exposure (P+I+fees+penalties)",
       "Days Overdue",
       "Provisioning Bucket",
       "Provision Rate %",
