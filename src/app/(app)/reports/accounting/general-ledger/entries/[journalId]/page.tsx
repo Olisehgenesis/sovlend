@@ -139,7 +139,7 @@ export default async function LedgerEntryPage({
                 <tr key={line.id}>
                   <td><Link className="green-link" href={accountHref(line.accountId)}>{line.account.code} · {line.account.name}</Link></td>
                   <td>{line.account.type}</td>
-                  <td>{journalLineDescription(journal.narration, line.memo)}</td>
+                  <td>{journalLineDescription(journal.narration, line.memo, journal.referenceType)}</td>
                   <td className="numeric">{line.direction === "DEBIT" ? formatMinor(line.amountMinor, line.account.currencyCode) : "—"}</td>
                   <td className="numeric">{line.direction === "CREDIT" ? formatMinor(line.amountMinor, line.account.currencyCode) : "—"}</td>
                 </tr>

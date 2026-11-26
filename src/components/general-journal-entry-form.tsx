@@ -10,7 +10,7 @@ import { journalSearchHref } from "@/lib/journal-search-href";
 import { BrandActionButton } from "@/components/ui/brand-action-button";
 
 type LedgerAccountOption = { id: string; code: string; name: string; type: string; currencyCode: string };
-type LineDraft = { key: string; accountId: string; amount: string };
+type LineDraft = { key: string; accountId: string; amount: string; narration: string };
 
 // Shown inside every account picker option so a poster can never grab an income account when
 // they meant the similarly-named expense account (or vice versa) without seeing the difference:
@@ -44,7 +44,7 @@ function contraDirectionCaution(side: "debit" | "credit", accountType: string | 
 }
 
 function newLine(): LineDraft {
-  return { key: crypto.randomUUID(), accountId: "", amount: "" };
+  return { key: crypto.randomUUID(), accountId: "", amount: "", narration: "" };
 }
 
 function parseAmountMinor(amount: string): bigint | null {
@@ -127,20 +127,20 @@ export function GeneralJournalEntryForm({
     if (!businessDate) return toast.error("Select a transaction date");
 
     const buildLines = (lines: LineDraft[], label: string) => {
-      const built: Array<{ ledgerAccountId: string; amountMinor: string }> = [];
+      const built: Array<{ ledgerAccountId: string; amountMinor: string; narration: string }> = [];
       for (const line of lines) {
-        if (!line.accountId && !line.amount.trim()) continue;
+        if (!line.accountId && !line.amount.trim() && !line.narration.trim()) continue;
         if (!line.accountId) throw new Error(`Select a GL account for every ${label} row`);
         const amountMinor = parseAmountMinor(line.amount);
         if (amountMinor === null || amountMinor <= 0n) throw new Error(`Enter a valid amount for every ${label} row`);
-        built.push({ ledgerAccountId: line.accountId, amountMinor: amountMinor.toString() });
+        built.push({ ledgerAccountId: line.accountId, amountMinor: amountMinor.toString(), narration: line.narration.trim() });
       }
       if (built.length === 0) throw new Error(`At least one ${label} entry is required`);
       return built;
     };
 
-    let debitLines: Array<{ ledgerAccountId: string; amountMinor: string }>;
-    let creditLines: Array<{ ledgerAccountId: string; amountMinor: string }>;
+    let debitLines: Array<{ ledgerAccountId: string; amountMinor: string; narration: string }>;
+    let creditLines: Array<{ ledgerAccountId: string; amountMinor: string; narration: string }>;
     try {
       debitLines = buildLines(debits, "debit");
       creditLines = buildLines(credits, "credit");
@@ -229,6 +229,15 @@ export function GeneralJournalEntryForm({
             <button type="button" className="journal-entry-remove" disabled={lines.length === 1} onClick={() => removeLine(side, line.key)} aria-label={`Remove ${side} row`}>
               <Trash2 size={15} />
             </button>
+            <label className="journal-entry-narration">
+              Narration
+              <input
+                value={line.narration}
+                maxLength={200}
+                placeholder={side === "debit" ? "What this debit is for" : "What this credit is for"}
+                onChange={(event) => updateLine(side, line.key, { narration: event.target.value })}
+              />
+            </label>
             {caution ? <p className="journal-entry-caution">{caution}</p> : null}
           </div>
           );
@@ -345,7 +354,7 @@ export function GeneralJournalEntryForm({
         </label>
         <label>
           Comments
-          <textarea value={narration} onChange={(event) => setNarration(event.target.value)} maxLength={200} rows={3} placeholder="Optional description of this entry" />
+          <textarea value={narration} onChange={(event) => setNarration(event.target.value)} maxLength={200} rows={3} placeholder="Optional note for the whole entry. Each debit and credit keeps its own narration." />
         </label>
       </fieldset>
       <div className="form-actions">

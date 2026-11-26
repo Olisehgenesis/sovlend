@@ -32,7 +32,7 @@ export type PostProvisioningEntryResult = Readonly<{
  * Provisioning Entries (item 6, iLend "Provisioning Entries"): posts a journal recognizing the
  * change in required loan-loss provision for an office, computed from the same PAR-aging ladder
  * as reports/risk/provisioning (see loadProvisioningReport) -- Normal/Watch/Substandard/Doubtful/
- * Loss at 1%/5%/25%/50%/100% of outstanding exposure. Unlike a report, this posts a real balanced
+ * Loss at 1%/5%/25%/50%/100% of outstanding principal. Unlike a report, this posts a real balanced
  * journal: only the *change* since the last posting for this office (deltaMinor) is posted, so
  * running this repeatedly never double-counts the provision balance -- a growing requirement
  * debits provisionExpenseAccountId / credits loanLossProvisionAccountId, a shrinking one (an

@@ -93,6 +93,26 @@ describe("recordJournalEntry", () => {
     });
   });
 
+  it("stores a different narration on the debit and the credit", async () => {
+    const { prisma, journalLineCreateMany, journalCreate } = buildPrisma({});
+    await recordJournalEntry(prisma, {
+      ...baseCommand,
+      narration: "Office transfer",
+      debits: [{ ledgerAccountId: "cash-1", amountMinor: 10_000n, narration: "Airtel received" }],
+      credits: [{ ledgerAccountId: "suspense-1", amountMinor: 10_000n, narration: "Savings credited" }],
+    });
+
+    expect(journalCreate).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ narration: "Office transfer" }),
+    }));
+    expect(journalLineCreateMany).toHaveBeenCalledWith({
+      data: [
+        { journalId: "journal-1", accountId: "cash-1", direction: "DEBIT", amountMinor: 10_000n, memo: "Airtel received" },
+        { journalId: "journal-1", accountId: "suspense-1", direction: "CREDIT", amountMinor: 10_000n, memo: "Savings credited" },
+      ],
+    });
+  });
+
   it("rejects when debits and credits don't balance", async () => {
     const { prisma } = buildPrisma({});
     await expect(

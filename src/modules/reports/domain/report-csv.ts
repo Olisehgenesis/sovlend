@@ -4,11 +4,12 @@ const MONEY_COLUMN = /(amount|principal|interest|balance|fees?|penalt|others|deb
 // "days" must not be a bare substring — "180+ Days Outstanding" is money (minor units),
 // while "Days Overdue" is a day count. Matching /days/ left PAR bucket columns in cents,
 // so Excel showed ~100× the on-screen shilling total.
-const NON_MONEY_COLUMN = /(count|number of|rate|percent|%|days overdue|loans|accounts|transactions|installments|ratio|date|period|cohort|concentration)/i;
+const NON_MONEY_COLUMN = /(count|number of|rate|percent|%|days overdue|in arrears|loans|accounts|transactions|installments|ratio|date|period|cohort|concentration)/i;
 
 function currencyDivisor(currencyCode: string): bigint | null {
   switch (currencyCode.toUpperCase()) {
     case "UGX":
+    case "USH":
     case "USD":
       return 100n;
     case "USDC":
@@ -35,7 +36,8 @@ function toMajorAmount(value: string, currencyCode: string): string {
   const absolute = negative ? -amount : amount;
   const sign = negative ? "-" : "";
 
-  if (currencyCode.toUpperCase() === "UGX") {
+  const code = currencyCode.toUpperCase();
+  if (code === "UGX" || code === "USH") {
     return `${sign}${(absolute + divisor / 2n) / divisor}`;
   }
 

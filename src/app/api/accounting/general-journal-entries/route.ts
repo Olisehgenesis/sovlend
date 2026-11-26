@@ -11,6 +11,7 @@ import { recordJournalEntry } from "@/modules/ledger/application/record-journal-
 const lineSchema = z.object({
   ledgerAccountId: z.string().uuid(),
   amountMinor: z.string().regex(/^\d+$/),
+  narration: z.string().trim().max(200).optional().default(""),
 });
 
 const schema = z.object({
@@ -55,8 +56,8 @@ export async function POST(request: Request) {
       referenceNumber: parsed.data.referenceNumber?.trim() || null,
       narration: parsed.data.narration ?? "",
       payeeName: parsed.data.payeeName,
-      debits: parsed.data.debits.map((line) => ({ ledgerAccountId: line.ledgerAccountId, amountMinor: BigInt(line.amountMinor) })),
-      credits: parsed.data.credits.map((line) => ({ ledgerAccountId: line.ledgerAccountId, amountMinor: BigInt(line.amountMinor) })),
+      debits: parsed.data.debits.map((line) => ({ ledgerAccountId: line.ledgerAccountId, amountMinor: BigInt(line.amountMinor), narration: line.narration })),
+      credits: parsed.data.credits.map((line) => ({ ledgerAccountId: line.ledgerAccountId, amountMinor: BigInt(line.amountMinor), narration: line.narration })),
       paymentDetails: parsed.data.paymentDetails
         ? {
             paymentType: parsed.data.paymentDetails.paymentType?.trim() || null,

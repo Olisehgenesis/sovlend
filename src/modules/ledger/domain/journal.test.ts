@@ -7,6 +7,11 @@ describe("journalLineDescription", () => {
     expect(journalLineDescription("Office rent for September", "Cash")).toBe("Office rent for September");
   });
 
+  it("shows each side's own narration on a manual journal entry", () => {
+    expect(journalLineDescription("Office transfer", "Airtel deposit", "MANUAL_JOURNAL_ENTRY")).toBe("Airtel deposit");
+    expect(journalLineDescription("Office transfer", "Savings credit", "MANUAL_JOURNAL_ENTRY")).toBe("Savings credit");
+  });
+
   it("falls back to memo when narration is empty", () => {
     expect(journalLineDescription("  ", "Waive monitoring fee")).toBe("Waive monitoring fee");
     expect(journalLineDescription(null, "Deposit")).toBe("Deposit");

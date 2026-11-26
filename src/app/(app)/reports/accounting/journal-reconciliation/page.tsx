@@ -416,7 +416,7 @@ export default async function JournalReconciliationPage({
                         <small>{line.code}</small>
                       </td>
                       <td>
-                        {journalLineDescription(journal.narration, line.memo)}
+                        {journalLineDescription(journal.narration, line.memo, journal.referenceType)}
                         {journal.payeeName ? <small>{journal.payeeName}</small> : null}
                         <small>{isManualJournalReferenceType(journal.referenceType) ? "Manual" : journal.referenceType.replaceAll("_", " ")}</small>
                       </td>

@@ -12,6 +12,7 @@ import { assertPeriodOpen } from "./assert-period-open";
 export type JournalEntryLineCommand = Readonly<{
   ledgerAccountId: string;
   amountMinor: bigint;
+  narration?: string | null;
 }>;
 
 export type JournalEntryPaymentDetails = Readonly<{
@@ -86,19 +87,22 @@ export async function recordJournalEntry(prisma: PrismaClient, command: RecordJo
   });
   await assertPeriodOpen(prisma, { officeId: command.officeId, businessDate: command.businessDate });
 
-  const narration = command.narration.trim() || "Manual journal entry";
+  const requestedNarration = command.narration.trim();
+  const firstLineNarration = [...command.debits, ...command.credits].map((line) => line.narration?.trim() ?? "").find(Boolean) ?? "";
+  const narration = requestedNarration || firstLineNarration || "Manual journal entry";
+  const memoFor = (line: JournalEntryLineCommand) => line.narration?.trim() || narration;
   const journalLines = [
     ...command.debits.map((line) => ({
       accountId: line.ledgerAccountId,
       direction: "DEBIT" as const,
       amountMinor: line.amountMinor,
-      memo: narration,
+      memo: memoFor(line),
     })),
     ...command.credits.map((line) => ({
       accountId: line.ledgerAccountId,
       direction: "CREDIT" as const,
       amountMinor: line.amountMinor,
-      memo: narration,
+      memo: memoFor(line),
     })),
   ];
   assertBalancedJournal(journalLines.map((line) => ({ ...line, currencyCode: command.currencyCode })));
@@ -126,8 +130,16 @@ export async function recordJournalEntry(prisma: PrismaClient, command: RecordJo
       referenceNumber: command.referenceNumber,
       totalDebitMinor: totalDebitMinor.toString(),
       totalCreditMinor: totalCreditMinor.toString(),
-      debits: command.debits.map((line) => ({ ledgerAccountId: line.ledgerAccountId, amountMinor: line.amountMinor.toString() })),
-      credits: command.credits.map((line) => ({ ledgerAccountId: line.ledgerAccountId, amountMinor: line.amountMinor.toString() })),
+      debits: command.debits.map((line) => ({
+        ledgerAccountId: line.ledgerAccountId,
+        amountMinor: line.amountMinor.toString(),
+        narration: line.narration?.trim() || null,
+      })),
+      credits: command.credits.map((line) => ({
+        ledgerAccountId: line.ledgerAccountId,
+        amountMinor: line.amountMinor.toString(),
+        narration: line.narration?.trim() || null,
+      })),
       paymentDetails: command.paymentDetails,
       narration,
       payeeName: command.payeeName?.trim() || null,

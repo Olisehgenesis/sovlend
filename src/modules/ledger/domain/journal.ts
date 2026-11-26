@@ -47,14 +47,21 @@ export function payeeReferencePlaceholder(payeeType: PayeeType | ""): string {
 }
 
 /**
- * Prefer the journal-level narration (what the user typed) over a line memo.
- * Manual posts historically wrote the GL account name into memo, which hid narration
- * in Description columns that used `memo ?? narration`.
+ * System posts keep one narration for the whole journal. A manual journal entry can
+ * give the debit and the credit different narrations, stored on the line. Those win
+ * for MANUAL_JOURNAL_ENTRY. Everywhere else the journal narration still wins, because
+ * older line memos are account names.
  */
-export function journalLineDescription(narration: string | null | undefined, memo: string | null | undefined): string {
-  const trimmedNarration = narration?.trim() ?? "";
-  if (trimmedNarration) return trimmedNarration;
-  return memo?.trim() || "";
+export function journalLineDescription(
+  narration: string | null | undefined,
+  memo: string | null | undefined,
+  referenceType?: string | null,
+): string {
+  const header = narration?.trim() ?? "";
+  const line = memo?.trim() ?? "";
+  if (referenceType === "MANUAL_JOURNAL_ENTRY" && line) return line;
+  if (header) return header;
+  return line;
 }
 
 export function assertBalancedJournal(lines: readonly JournalDraftLine[]): void {

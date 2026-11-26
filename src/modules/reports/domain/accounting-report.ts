@@ -1321,7 +1321,7 @@ export function generalLedgerReportCsv(report: GeneralLedgerReport) {
       "Reference ID": entry.referenceId ?? "",
       "Journal ID": entry.journalId,
       "Office/Branch": entry.officeName,
-      Memo: journalLineDescription(entry.narration, entry.memo),
+      Memo: journalLineDescription(entry.narration, entry.memo, entry.referenceType),
       Debit: entry.direction === "DEBIT" ? entry.amountMinor.toString() : "",
       Credit: entry.direction === "CREDIT" ? entry.amountMinor.toString() : "",
       "Running Balance": entry.runningBalanceMinor.toString(),

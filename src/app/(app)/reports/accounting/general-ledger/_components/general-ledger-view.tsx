@@ -373,7 +373,7 @@ function LedgerAccountSection({
                     <small>{entry.referenceType.replaceAll("_", " ")}</small>
                   </td>
                   <td>{entry.officeName}</td>
-                  <td>{journalLineDescription(entry.narration, entry.memo)}</td>
+                  <td>{journalLineDescription(entry.narration, entry.memo, entry.referenceType)}</td>
                   <td className="numeric">{entry.direction === "DEBIT" ? formatMinor(entry.amountMinor, entry.account.currencyCode) : "—"}</td>
                   <td className="numeric">{entry.direction === "CREDIT" ? formatMinor(entry.amountMinor, entry.account.currencyCode) : "—"}</td>
                   <td className="numeric">

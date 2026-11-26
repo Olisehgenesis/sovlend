@@ -94,11 +94,7 @@ export default async function ProvisioningReportPage({
 
       <section className="loan-summary-metrics">
         <article>
-          <span>Exposure (P+I+fees+penalties)</span>
-          <strong>{formatMinor(report.totals.totalOutstandingMinor, "UGX")}</strong>
-        </article>
-        <article>
-          <span>Portfolio (principal only)</span>
+          <span>Outstanding principal</span>
           <strong>{formatMinor(report.totals.totalPrincipalMinor, "UGX")}</strong>
         </article>
         <article>
@@ -114,7 +110,7 @@ export default async function ProvisioningReportPage({
           <strong>{report.totals.loanCount.toLocaleString()}</strong>
         </article>
       </section>
-      <p className="field-hint">Provisioning uses total exposure (principal + interest + fees + penalties) per bucket. The principal-only portfolio figure is shown for comparison with the Aging/PAR reports, which count principal only.</p>
+      <p className="field-hint">Each bucket is outstanding principal, classified by days past due. Loss (180+ days) is 100% of that principal, so it stays inside the portfolio. Interest, fees, and penalties are not provisioned.</p>
 
       <section className="panel report-toolbar">
         <form className="report-toolbar-form" method="get">
@@ -173,7 +169,7 @@ export default async function ProvisioningReportPage({
                   <th>Bucket</th>
                   <th>Rate</th>
                   <th>Loans</th>
-                  <th>Exposure (P+I+fees+penalties)</th>
+                  <th>Outstanding principal</th>
                   <th>Required provision</th>
                 </tr>
               </thead>
@@ -218,7 +214,7 @@ export default async function ProvisioningReportPage({
                       <th>Officer</th>
                       <th>Bucket</th>
                       <th>Days overdue</th>
-                      <th>Exposure (P+I+fees+penalties)</th>
+                      <th>Outstanding principal</th>
                       <th>Rate</th>
                       <th>Provision</th>
                     </tr>

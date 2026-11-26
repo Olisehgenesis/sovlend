@@ -41,6 +41,24 @@ describe("reportRowsToCsv", () => {
     expect(csv).toContain('"UGX","58902188","1720000","200"');
   });
 
+  it("exports aging arrears columns in shillings and leaves the bands unchanged", () => {
+    const csv = reportRowsToCsv(
+      [
+        {
+          Currency: "USh",
+          "Loan Amount": "150000000",
+          "Principal Overdue": "15750000",
+          "Days in Arrears": "422",
+          "Weeks In Arrears Band": "12+",
+          "Days in Arrears Band": "> 360",
+        },
+      ],
+      ["Currency", "Loan Amount", "Principal Overdue", "Days in Arrears", "Weeks In Arrears Band", "Days in Arrears Band"],
+    );
+
+    expect(csv).toContain('"USh","1500000","157500","422","12+","> 360"');
+  });
+
   it("does not convert non-money columns or non-numeric report cells", () => {
     const csv = reportRowsToCsv(
       [{ Currency: "UGX", "Loan Account No.": "001234", "Aging Bucket": "1-30 days", Balance: "" }],

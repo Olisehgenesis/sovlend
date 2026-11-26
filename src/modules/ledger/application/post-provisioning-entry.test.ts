@@ -120,6 +120,7 @@ function buildPrisma(options: MockOptions = {}) {
     provisioningAccountingDefaults: { findUnique: vi.fn(async () => defaults) },
     accountingClosure: { findFirst: vi.fn(async () => (options.closureDate ? { closingDate: options.closureDate } : null)) },
     loan: { findMany: vi.fn(async () => options.loans ?? [buildLoan()]) },
+    $queryRaw: vi.fn(async () => []),
     $transaction: vi.fn(async (callback: (transaction: typeof tx) => unknown) => callback(tx)),
   } as unknown as PrismaClient;
 

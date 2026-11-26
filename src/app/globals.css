@@ -828,6 +828,8 @@ a.statement-row-link:hover { background: var(--mint, #edf7f0); padding-left: 8px
 .journal-entry-line .searchable-select { min-width: 0; }
 .journal-entry-remove { width: 36px; height: 36px; display: grid; place-items: center; color: #853724; background: #f7e3dd; border: 0; border-radius: 4px; cursor: pointer; }
 .journal-entry-remove:disabled { opacity: 0.4; cursor: not-allowed; }
+.journal-entry-narration { grid-column: 1 / -1; display: grid; gap: 4px; color: #445048; font-size: 12px; font-weight: 650; }
+.journal-entry-narration input { width: 100%; min-height: 40px; padding: 0 10px; color: var(--ink); background: white; border: 1px solid #cfd7d1; border-radius: 4px; font: 13px var(--font-body); font-weight: 400; }
 .journal-entry-caution { grid-column: 1 / -1; margin: 0; font-size: 12px; line-height: 1.4; color: #853724; }
 .journal-entry-add { justify-self: start; }
 .journal-entry-totals { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; padding: 12px; background: #f7f9f7; border: 1px solid var(--line); border-radius: 5px; }

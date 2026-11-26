@@ -68,6 +68,35 @@ export function classifyProvisioningBucket(daysOverdue: number): ProvisioningBuc
   return "LOSS";
 }
 
+/** Outstanding principal the provision is calculated on. Penalties and unearned interest are excluded. */
+export function provisioningPrincipalMinor(loan: {
+  outstandingPrincipalMinor: bigint;
+  principalWrittenOffMinor?: bigint | null;
+}) {
+  return positive(loan.outstandingPrincipalMinor - (loan.principalWrittenOffMinor ?? 0n));
+}
+
+// iLend Aging sheet bands. Weeks: under 7 days is "<1", 12 weeks stays "12", 13+ is "12+".
+export function weeksInArrearsBand(daysOverdue: number): string {
+  if (daysOverdue < 7) return "<1";
+  const weeks = Math.ceil(daysOverdue / 7);
+  if (weeks >= 13) return "12+";
+  return String(weeks);
+}
+
+export function daysInArrearsBand(daysOverdue: number): string {
+  if (daysOverdue <= 30) return "0 - 30";
+  if (daysOverdue <= 60) return "30 - 60";
+  if (daysOverdue <= 90) return "60 - 90";
+  if (daysOverdue <= 180) return "90 - 180";
+  if (daysOverdue <= 360) return "180 - 360";
+  return "> 360";
+}
+
+export function agingCurrencyLabel(currencyCode: string) {
+  return currencyCode === "UGX" ? "USh" : currencyCode;
+}
+
 export function provisioningBucketTone(bucket: ProvisioningBucketKey) {
   if (bucket === "NORMAL") return "up-to-date";
   if (bucket === "WATCH" || bucket === "SUBSTANDARD") return "review";
@@ -135,6 +164,7 @@ type PortfolioLoanSnapshot = {
   loanOfficerId: string | null;
   loanOfficerName: string;
   borrowerName: string;
+  clientAccountNumber: string;
   productName: string;
   disbursedOn: Date | null;
   maturesOn: Date | null;
@@ -146,6 +176,7 @@ type PortfolioLoanSnapshot = {
   feesRepaidMinor: bigint;
   monitoringFeeRepaidMinor: bigint;
   penaltiesRepaidMinor: bigint;
+  originalInterestMinor: bigint;
   outstandingPrincipalMinor: bigint;
   outstandingInterestMinor: bigint;
   outstandingFeesMinor: bigint;
@@ -267,14 +298,23 @@ export async function loadAgingReport(prisma: PrismaClient, scope: UserDataScope
         id: loan.id,
         accountNumber: loan.accountNumber,
         borrowerName: loan.borrowerName,
+        clientAccountNumber: loan.clientAccountNumber,
         officeName: loan.officeName,
         loanOfficerName: loan.loanOfficerName,
         productName: loan.productName,
         status: loan.status,
         currencyCode: loan.denominationCurrency,
+        principalMinor: loan.principalMinor,
+        originalInterestMinor: loan.originalInterestMinor,
+        principalRepaidMinor: loan.principalRepaidMinor,
+        interestRepaidMinor: loan.interestRepaidMinor,
+        overduePrincipalMinor: loan.overduePrincipalMinor,
+        overdueInterestMinor: loan.overdueInterestMinor,
         outstandingPrincipalMinor: loan.outstandingPrincipalMinor,
         outstandingTotalMinor: loan.outstandingTotalMinor,
         daysOverdue: loan.daysOverdue,
+        weeksInArrearsBand: weeksInArrearsBand(loan.daysOverdue),
+        daysInArrearsBand: daysInArrearsBand(loan.daysOverdue),
         overdueSince: loan.overdueSince,
         agingBucket: loan.agingBucket,
       }))
@@ -384,15 +424,17 @@ export async function loadNonPerformingLoansReport(
 
 export async function loadProvisioningReport(prisma: PrismaClient, scope: UserDataScope, filters: RiskFilters, now = new Date()) {
   const today = startOfUtcDay(now);
-  // Provisioning basis matches iLend's canned Provision Report: total outstanding exposure
-  // (principal + interest + fees + penalties), not principal alone.
+  // Provision on outstanding principal only. Interest, fees, and penalties are not part of the
+  // loan book, and migrated penalty rows were large enough to push the 180+ bucket above the
+  // whole portfolio.
   const loans = (await loadPortfolioLoans(prisma, scope, filters, { statuses: openRiskStatuses }, today))
-    .filter((loan) => loan.outstandingTotalMinor > 0n)
+    .map((loan) => ({ ...loan, principalForProvisionMinor: provisioningPrincipalMinor(loan) }))
+    .filter((loan) => loan.principalForProvisionMinor > 0n)
     .map((loan) => ({ ...loan, provisioningBucket: classifyProvisioningBucket(loan.daysOverdue) }));
 
   const buckets = provisioningBucketOrder.map((bucket) => {
     const bucketLoans = loans.filter((loan) => loan.provisioningBucket === bucket);
-    const outstandingMinor = sumBigInt(bucketLoans.map((loan) => loan.outstandingTotalMinor));
+    const outstandingMinor = sumBigInt(bucketLoans.map((loan) => loan.principalForProvisionMinor));
     const provisionRatePercent = provisioningRates[bucket];
     const provisionMinor = percentageOf(outstandingMinor, provisionRatePercent);
     return {
@@ -413,12 +455,8 @@ export async function loadProvisioningReport(prisma: PrismaClient, scope: UserDa
     filters,
     totals: {
       loanCount: loans.length,
-      // Exposure = principal + interest + fees + penalties. The principal-only figure is kept
-      // alongside it so this report can be compared with the PAR/Aging screens, which use
-      // principal only. Without both figures, a 180+ exposure above the principal portfolio
-      // looks impossible even though the two are simply different bases.
       totalOutstandingMinor,
-      totalPrincipalMinor: sumBigInt(loans.map((loan) => loan.outstandingPrincipalMinor)),
+      totalPrincipalMinor: totalOutstandingMinor,
       totalProvisionMinor,
       coverageBps: ratioBps(totalProvisionMinor, totalOutstandingMinor),
     },
@@ -433,11 +471,11 @@ export async function loadProvisioningReport(prisma: PrismaClient, scope: UserDa
         productName: loan.productName,
         status: loan.status,
         currencyCode: loan.denominationCurrency,
-        outstandingMinor: loan.outstandingTotalMinor,
+        outstandingMinor: loan.principalForProvisionMinor,
         daysOverdue: loan.daysOverdue,
         provisioningBucket: loan.provisioningBucket,
         provisionRatePercent: provisioningRates[loan.provisioningBucket],
-        provisionMinor: percentageOf(loan.outstandingTotalMinor, provisioningRates[loan.provisioningBucket]),
+        provisionMinor: percentageOf(loan.principalForProvisionMinor, provisioningRates[loan.provisioningBucket]),
       }))
       .sort((left, right) => {
         if (left.provisionMinor === right.provisionMinor) {
@@ -674,7 +712,52 @@ export async function loadParRollRateReport(
   };
 }
 
-const agingLoanColumns = [
+const agingDetailColumns = [
+  "Office/Branch",
+  "Currency",
+  "Client Account No.",
+  "Client Name",
+  "Account Number",
+  "Loan Amount",
+  "Original Principal",
+  "Original Interest",
+  "Principal Paid",
+  "Interest Paid",
+  "Principal Overdue",
+  "Interest Overdue",
+  "Days in Arrears",
+  "Weeks In Arrears Band",
+  "Days in Arrears Band",
+] as const;
+
+function agingDetailRow(loan: AgingReport["loans"][number]) {
+  return {
+    "Office/Branch": loan.officeName,
+    Currency: agingCurrencyLabel(loan.currencyCode),
+    "Client Account No.": loan.clientAccountNumber,
+    "Client Name": loan.borrowerName,
+    "Account Number": loan.accountNumber,
+    "Loan Amount": loan.principalMinor.toString(),
+    "Original Principal": loan.principalMinor.toString(),
+    "Original Interest": loan.originalInterestMinor.toString(),
+    "Principal Paid": loan.principalRepaidMinor.toString(),
+    "Interest Paid": loan.interestRepaidMinor.toString(),
+    "Principal Overdue": loan.overduePrincipalMinor.toString(),
+    "Interest Overdue": loan.overdueInterestMinor.toString(),
+    "Days in Arrears": String(loan.daysOverdue),
+    "Weeks In Arrears Band": loan.weeksInArrearsBand,
+    "Days in Arrears Band": loan.daysInArrearsBand,
+  };
+}
+
+export function agingReportCsv(report: AgingReport) {
+  return rowsToCsv(
+    report.loans.filter((loan) => loan.daysOverdue > 0).map(agingDetailRow),
+    [...agingDetailColumns],
+  );
+}
+
+const nplLoanColumns = [
   "Loan Account No.",
   "Client",
   "Office/Branch",
@@ -687,7 +770,7 @@ const agingLoanColumns = [
   "Aging Bucket",
 ] as const;
 
-function agingLoanRow(loan: AgingReport["loans"][number]) {
+function nplLoanRow(loan: NonPerformingLoansReport["loans"][number]) {
   return {
     "Loan Account No.": loan.accountNumber,
     Client: loan.borrowerName,
@@ -700,10 +783,6 @@ function agingLoanRow(loan: AgingReport["loans"][number]) {
     "Days Overdue": String(loan.daysOverdue),
     "Aging Bucket": loan.agingBucket,
   };
-}
-
-export function agingReportCsv(report: AgingReport) {
-  return rowsToCsv(report.loans.map(agingLoanRow), [...agingLoanColumns]);
 }
 
 const arrearsLoanColumns = [
@@ -754,7 +833,7 @@ export function arrearsReportCsv(report: ArrearsReport) {
 }
 
 export function nonPerformingLoansReportCsv(report: NonPerformingLoansReport) {
-  return rowsToCsv(report.loans.map(agingLoanRow), [...agingLoanColumns]);
+  return rowsToCsv(report.loans.map(nplLoanRow), [...nplLoanColumns]);
 }
 
 export function provisioningReportCsv(report: ProvisioningReport) {
@@ -767,7 +846,7 @@ export function provisioningReportCsv(report: ProvisioningReport) {
       Product: loan.productName,
       Status: loan.status,
       Currency: loan.currencyCode,
-      "Exposure (P+I+fees+penalties)": loan.outstandingMinor.toString(),
+      "Outstanding Principal": loan.outstandingMinor.toString(),
       "Days Overdue": String(loan.daysOverdue),
       "Provisioning Bucket": loan.provisioningBucket,
       "Provision Rate %": String(loan.provisionRatePercent),
@@ -781,7 +860,7 @@ export function provisioningReportCsv(report: ProvisioningReport) {
       "Product",
       "Status",
       "Currency",
-      "Exposure (P+I+fees+penalties)",
+      "Outstanding Principal",
       "Days Overdue",
       "Provisioning Bucket",
       "Provision Rate %",
@@ -918,8 +997,8 @@ export async function loadPortfolioLoans(
       termsSnapshot: true,
       loanOfficerId: true,
       loanOfficer: { select: { name: true } },
-      client: { select: { firstName: true, middleName: true, lastName: true } },
-      group: { select: { name: true } },
+      client: { select: { accountNumber: true, firstName: true, middleName: true, lastName: true } },
+      group: { select: { accountNumber: true, name: true } },
       installments: {
         select: {
           dueOn: true,
@@ -977,13 +1056,14 @@ export async function loadPortfolioLoans(
       accountNumber: loan.accountNumber,
       status: loan.status,
       principalMinor: loan.principalMinor,
-      principalWrittenOffMinor: loan.principalWrittenOffMinor,
+      principalWrittenOffMinor: loan.principalWrittenOffMinor ?? 0n,
       denominationCurrency: loan.denominationCurrency,
       officeId: loan.officeId,
       officeName: loan.office.name,
       loanOfficerId: loan.loanOfficerId,
       loanOfficerName: loan.loanOfficer?.name ?? "Unassigned",
       borrowerName: borrowerLabel(loan.client, loan.group),
+      clientAccountNumber: loan.client?.accountNumber ?? loan.group?.accountNumber ?? "",
       productName: loan.product.name,
       disbursedOn: loan.disbursedOn,
       maturesOn: loan.maturesOn,
@@ -1001,6 +1081,7 @@ export async function loadPortfolioLoans(
       feesRepaidMinor,
       monitoringFeeRepaidMinor,
       penaltiesRepaidMinor,
+      originalInterestMinor: sumBigInt(installments.map((installment) => installment.interestDueMinor)),
       outstandingPrincipalMinor: loanOutstandingPrincipalMinor,
       outstandingInterestMinor: loanOutstandingInterestMinor,
       outstandingFeesMinor: loanOutstandingFeesMinor,

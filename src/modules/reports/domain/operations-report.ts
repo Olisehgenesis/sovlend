@@ -738,9 +738,11 @@ export async function loadBranchPortfolioReport(
       row.disbursedThisMonthMinor += loan.principalMinor;
     }
 
-    if (loan.daysOverdue > 0 && loan.overdueTotalMinor > 0n) {
+    // Day buckets are overdue principal. Adding interest, fees, and penalties made the 180+
+    // column larger than the whole principal portfolio.
+    if (loan.daysOverdue > 0 && loan.overduePrincipalMinor > 0n) {
       const bucket = branchPortfolioBucket(loan.daysOverdue);
-      row.bucketsMinor[bucket] += loan.overdueTotalMinor;
+      row.bucketsMinor[bucket] += loan.overduePrincipalMinor;
     }
   }
 

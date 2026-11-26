@@ -16,11 +16,9 @@ import { formatMinor } from "@/modules/money/domain/format-minor";
 import { paginateItems, parseReportPagination } from "@/modules/reports/domain/report-pagination";
 import { loadReportPickerOptions } from "@/modules/reports/report-catalog";
 import {
-  agingBucketTone,
   formatBps,
   loadAgingReport,
   loadRiskFilterOptions,
-  loanStatusTone,
   parseRiskFilters,
 } from "@/modules/reports/domain/risk-report";
 
@@ -46,14 +44,15 @@ export default async function AgingReportPage({
 
   const params = await searchParams;
   const filters = parseRiskFilters(params);
-  const tab = parseReportTab(params.tab, TABS, "summary");
+  const tab = parseReportTab(params.tab, TABS, "loans");
   const pagination = parseReportPagination(params);
   const [report, options, pickerOptions] = await Promise.all([
     loadAgingReport(prisma, scope, filters),
     loadRiskFilterOptions(prisma, scope),
     loadReportPickerOptions(prisma, session.user.id, scope.organizationId),
   ]);
-  const loanPage = paginateItems(report.loans, pagination);
+  const arrearsLoans = report.loans.filter((loan) => loan.daysOverdue > 0);
+  const loanPage = paginateItems(arrearsLoans, pagination);
   const generatedAt = formatDateTime(report.generatedAt);
   const exportHref = `/api/reports/risk/aging${querySuffix(filters)}${querySuffix(filters) ? "&" : "?"}format=csv`;
   const tabQuery = {
@@ -76,9 +75,11 @@ export default async function AgingReportPage({
         <div>
           <h1>Aging / Portfolio-at-Risk</h1>
           <p>
-            {report.totals.loanCount.toLocaleString()} open loans · snapshot {generatedAt}
+            {arrearsLoans.length.toLocaleString()} loans in arrears · snapshot {generatedAt}
           </p>
-          <p className="field-hint">The export contains every loan row from this report (all pages), with the same office/officer filters and only ACTIVE or IN_ARREARS loans — written-off and closed loans are excluded.</p>
+          <p className="field-hint">
+            The download lists every loan in arrears, on every page, with the office and officer filters applied. Columns match the aging sheet: client, original and paid amounts, overdue principal and interest, days in arrears, and the week and day bands.
+          </p>
         </div>
         <ReportPicker current="/reports/risk/aging" options={pickerOptions} />
         <div className="header-actions">
@@ -147,7 +148,7 @@ export default async function AgingReportPage({
         query={{ officeId: filters.officeId, loanOfficerId: filters.loanOfficerId }}
         tabs={[
           { id: "summary", label: "Bucket summary" },
-          { id: "loans", label: "Loans", count: report.loans.length },
+          { id: "loans", label: "Loans", count: arrearsLoans.length },
         ]}
       />
 
@@ -192,13 +193,13 @@ export default async function AgingReportPage({
           <div className="panel-heading">
             <div>
               <h2>Loan-level aging</h2>
-              <p>Bucketed by the earliest unpaid overdue installment · {loanPage.pageSize} per page</p>
+              <p>Same columns as the aging download · {loanPage.pageSize} per page</p>
             </div>
           </div>
           {loanPage.totalRows === 0 ? (
             <div className="empty-state">
               <CircleDollarSign size={28} />
-              <strong>No loans in scope</strong>
+              <strong>No loans in arrears</strong>
               <p>Change the filter and try again.</p>
             </div>
           ) : (
@@ -207,35 +208,39 @@ export default async function AgingReportPage({
                 <table className="clickable-rows">
                   <thead>
                     <tr>
-                      <th>Borrower</th>
-                      <th>Product</th>
-                      <th>Office</th>
-                      <th>Officer</th>
-                      <th>Status</th>
-                      <th>Bucket</th>
-                      <th>Days overdue</th>
-                      <th>Outstanding principal</th>
+                      <th>Office/Branch</th>
+                      <th>Client</th>
+                      <th>Loan</th>
+                      <th>Loan amount</th>
+                      <th>Original interest</th>
+                      <th>Principal paid</th>
+                      <th>Interest paid</th>
+                      <th>Principal overdue</th>
+                      <th>Interest overdue</th>
+                      <th>Days in arrears</th>
+                      <th>Weeks band</th>
+                      <th>Days band</th>
                     </tr>
                   </thead>
                   <tbody>
                     {loanPage.items.map((loan) => (
                       <tr key={loan.id}>
+                        <td>{loan.officeName}</td>
                         <td>
                           <strong>{loan.borrowerName}</strong>
-                          <small className="mono">{loan.accountNumber}</small>
+                          <small className="mono">{loan.clientAccountNumber}</small>
                           <Link className="row-link" href={`/loans/${loan.id}`} aria-label={`Open ${loan.accountNumber}`} />
                         </td>
-                        <td>{loan.productName}</td>
-                        <td>{loan.officeName}</td>
-                        <td>{loan.loanOfficerName}</td>
-                        <td>
-                          <span className={`status ${loanStatusTone(loan.status)}`}>{loan.status.replaceAll("_", " ")}</span>
-                        </td>
-                        <td>
-                          <span className={`status ${agingBucketTone(loan.agingBucket)}`}>{bucketLabel(loan.agingBucket)}</span>
-                        </td>
+                        <td className="mono">{loan.accountNumber}</td>
+                        <td>{formatMinor(loan.principalMinor, loan.currencyCode)}</td>
+                        <td>{formatMinor(loan.originalInterestMinor, loan.currencyCode)}</td>
+                        <td>{formatMinor(loan.principalRepaidMinor, loan.currencyCode)}</td>
+                        <td>{formatMinor(loan.interestRepaidMinor, loan.currencyCode)}</td>
+                        <td>{formatMinor(loan.overduePrincipalMinor, loan.currencyCode)}</td>
+                        <td>{formatMinor(loan.overdueInterestMinor, loan.currencyCode)}</td>
                         <td>{loan.daysOverdue.toLocaleString()}</td>
-                        <td>{formatMinor(loan.outstandingPrincipalMinor, loan.currencyCode)}</td>
+                        <td>{loan.weeksInArrearsBand}</td>
+                        <td>{loan.daysInArrearsBand}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -256,21 +261,6 @@ export default async function AgingReportPage({
       )}
     </main>
   );
-}
-
-function bucketLabel(bucket: string) {
-  switch (bucket) {
-    case "CURRENT":
-      return "Current";
-    case "1_30":
-      return "1-30 days";
-    case "31_60":
-      return "31-60 days";
-    case "61_90":
-      return "61-90 days";
-    default:
-      return "90+ days";
-  }
 }
 
 function formatDateTime(date: Date) {

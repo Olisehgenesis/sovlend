@@ -343,7 +343,7 @@ export default async function ChartOfAccountsPage({
                         <small>{entry.referenceId ?? entry.journalId}</small>
                       </td>
                       <td>{entry.officeName}</td>
-                      <td>{journalLineDescription(entry.narration, entry.memo)}</td>
+                      <td>{journalLineDescription(entry.narration, entry.memo, entry.referenceType)}</td>
                       <td className="mono">
                         {entry.direction === "DEBIT" ? formatMinor(entry.amountMinor, report.generalLedger.account!.currencyCode) : "—"}
                       </td>
