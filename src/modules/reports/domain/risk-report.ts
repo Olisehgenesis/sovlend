@@ -128,6 +128,7 @@ type PortfolioLoanSnapshot = {
   accountNumber: string;
   status: LoanStatus;
   principalMinor: bigint;
+  principalWrittenOffMinor: bigint;
   denominationCurrency: string;
   officeId: string;
   officeName: string;
@@ -227,11 +228,7 @@ export async function loadAgingReport(prisma: PrismaClient, scope: UserDataScope
   const loans = (await loadPortfolioLoans(prisma, scope, filters, { statuses: openRiskStatuses }, today)).filter(
     (loan) => loan.outstandingTotalMinor > 0n,
   );
-  const totalOutstandingPrincipalMinor = sumBigInt(loans.map((loan) => loan.outstandingPrincipalMinor));
-  // PAR = principal overdue on past-due installments / total principal outstanding (the same
-  // definition the dashboard uses). Counting the whole principal balance of every delinquent
-  // loan would wrongly treat its not-yet-due installments as at risk and inflate PAR.
-  const overdueOutstandingPrincipalMinor = sumBigInt(loans.map((loan) => loan.overduePrincipalMinor));
+  const { totalOutstandingPrincipalMinor, overdueOutstandingPrincipalMinor, parBps } = parTotals(loans);
 
   const buckets = agingBucketOrder.map((bucket) => {
     const bucketLoans = loans.filter((loan) => loan.agingBucket === bucket);
@@ -262,7 +259,7 @@ export async function loadAgingReport(prisma: PrismaClient, scope: UserDataScope
       overdueLoanCount: loans.filter((loan) => loan.daysOverdue > 0).length,
       totalOutstandingPrincipalMinor,
       overdueOutstandingPrincipalMinor,
-      overallParBps: ratioBps(overdueOutstandingPrincipalMinor, totalOutstandingPrincipalMinor),
+      overallParBps: parBps,
     },
     buckets,
     loans: loans
@@ -911,6 +908,7 @@ export async function loadPortfolioLoans(
       accountNumber: true,
       status: true,
       principalMinor: true,
+      principalWrittenOffMinor: true,
       denominationCurrency: true,
       officeId: true,
       disbursedOn: true,
@@ -979,6 +977,7 @@ export async function loadPortfolioLoans(
       accountNumber: loan.accountNumber,
       status: loan.status,
       principalMinor: loan.principalMinor,
+      principalWrittenOffMinor: loan.principalWrittenOffMinor,
       denominationCurrency: loan.denominationCurrency,
       officeId: loan.officeId,
       officeName: loan.office.name,
@@ -1024,6 +1023,25 @@ export async function loadPortfolioLoans(
       agingBucket: agingBucket(daysOverdue),
     };
   });
+}
+
+/**
+ * PAR = principal overdue on past-due installments / total principal outstanding, net of
+ * loan-level write-offs in the denominator -- the same definition the dashboard uses. Kept
+ * pure so the money arithmetic has a regression test (see risk-report.test.ts).
+ */
+export function parTotals(
+  loans: readonly Pick<PortfolioLoanSnapshot, "outstandingPrincipalMinor" | "principalWrittenOffMinor" | "overduePrincipalMinor">[],
+) {
+  const totalOutstandingPrincipalMinor = sumBigInt(
+    loans.map((loan) => positive(loan.outstandingPrincipalMinor - loan.principalWrittenOffMinor)),
+  );
+  const overdueOutstandingPrincipalMinor = sumBigInt(loans.map((loan) => loan.overduePrincipalMinor));
+  return {
+    totalOutstandingPrincipalMinor,
+    overdueOutstandingPrincipalMinor,
+    parBps: ratioBps(overdueOutstandingPrincipalMinor, totalOutstandingPrincipalMinor),
+  };
 }
 
 function asOptionalString(value: string | string[] | undefined) {
